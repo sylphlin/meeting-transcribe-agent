@@ -188,7 +188,6 @@ def generate_interactive_html(
     markdown_content: str,
     output_html_path: Path,
     template_path: Path = None,
-    auto_open: bool = False
 ) -> Path:
     """
     Renders standalone interactive meeting player HTML from markdown content
@@ -265,14 +264,6 @@ def generate_interactive_html(
     output_html_path.write_text(rendered_html, encoding="utf-8")
     print(f"[*] 🌐 Interactive meeting player HTML generated: {output_html_path}")
 
-    if auto_open:
-        try:
-            import webbrowser
-            webbrowser.open(output_html_path.resolve().as_uri())
-            print(f"[*] 🚀 Opened interactive player in default browser: {output_html_path.name}")
-        except Exception as e:
-            print(f"[!] Failed to open browser automatically: {e}")
-
     return output_html_path
 
 
@@ -282,7 +273,6 @@ if __name__ == "__main__":
     parser.add_argument("audio", help="Path to audio file (mp3, m4a, wav, etc.)")
     parser.add_argument("markdown", help="Path to structured meeting minutes markdown file")
     parser.add_argument("-o", "--output", help="Output HTML file path (default: <audio_stem>_player.html)")
-    parser.add_argument("--open", action="store_true", help="Automatically open generated HTML in browser")
 
     args = parser.parse_args()
     audio_p = Path(args.audio)
@@ -296,4 +286,5 @@ if __name__ == "__main__":
 
     out_p = Path(args.output) if args.output else audio_p.parent / f"{audio_p.stem}_player.html"
     md_text = md_p.read_text(encoding="utf-8")
-    generate_interactive_html(audio_p, md_text, out_p, auto_open=args.open)
+    generate_interactive_html(audio_p, md_text, out_p)
+

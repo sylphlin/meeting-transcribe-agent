@@ -72,6 +72,25 @@ meeting-transcribe-agent/
 
 ---
 
+## Strict Operational Constraints & Execution Rules
+
+When Antigravity or any agent executes this skill, it must adhere strictly to the following three behavioral invariants:
+
+1. **Strict 3-Stage Pipeline Discipline**:
+   - **Stage 1 (ASR)**: MUST run with `--only-transcript` to produce `<stem>_transcript.md`. Never run summarization or full pipeline during Stage 1.
+   - **Stage 2 (Agent-Native Structuring)**: Antigravity directly reads `<stem>_transcript.md`, synthesizes the structured minutes, resolves speaker identities, and writes `<stem>_會議記錄.md` (or `<stem>_minutes.md`).
+   - **Stage 3 (HTML Generation)**: Call `scripts/html_generator.py` to compile `<stem>_player.html`.
+
+2. **Code Immutability Principle During Operational Tasks**:
+   - When the user's intent is operational (e.g. "transcribe this audio", "generate meeting minutes"), all codebase files (`*.py`) are **strictly READ-ONLY / IMMUTABLE**.
+   - If a runtime error or dependency exception occurs, the Agent **MUST NOT** silently patch `.py` files. The Agent must immediately halt execution, report the exact error traceback and diagnosed root cause to the user, and obtain explicit user approval before modifying any code.
+
+3. **Decoupled Presentation Lifecycle (Antigravity-Controlled Browser Launch)**:
+   - Python scripts (`scripts/*.py`) are pure data pipeline tools and must NEVER invoke browser opening or produce GUI side effects.
+   - The interactive player HTML must **ONLY** be opened by Antigravity via an OS command (e.g., `open path/to/<stem>_player.html` on macOS) at the very end of the task, after all files are completely written, verified, and ready for user review.
+
+---
+
 ## Standard Agent Workflow (Autonomous Pipeline Execution)
 
 When Antigravity or any compatible agent is instructed by the user to transcribe, summarize, or analyze an audio meeting file, follow this standard operational protocol:
@@ -100,12 +119,12 @@ When Antigravity or any compatible agent is instructed by the user to transcribe
      - Formats the consolidated verbatim transcript with speaker tags (`[MM:SS - MM:SS] **Speaker**: Text`).
    - Saves the complete structured markdown to `<stem>_會議記錄.md` (or `<stem>_minutes.md`).
 
-3. **Stage 3: Interactive HTML Player Generation & Browser Launch**:
-   - Execute the lightweight generator script:
+3. **Stage 3: Interactive HTML Player Generation & Final Delivery**:
+   - Execute the lightweight generator script to compile HTML:
      ```bash
-     python3 scripts/html_generator.py "path/to/audio" "path/to/<stem>_會議記錄.md" --open
+     python3 scripts/html_generator.py "path/to/audio" "path/to/<stem>_會議記錄.md"
      ```
-   - This compiles `<stem>_player.html` and automatically launches the user's browser for an instant interactive review experience.
+   - Once all stages are 100% complete and verified, Antigravity opens the player in the user's browser (e.g. via `open path/to/<stem>_player.html` on macOS) for review.
 
 ---
 
@@ -113,10 +132,10 @@ When Antigravity or any compatible agent is instructed by the user to transcribe
 
 ```bash
 # Cloud Gemini (Default)
-python3 meeting_transcribe.py "meeting_recording.mp3" --open
+python3 meeting_transcribe.py "meeting_recording.mp3"
 
 # Offline Local Whisper Fallback
-python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto --open
+python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
 ```
 
 | Option | Description | Default |
@@ -139,4 +158,6 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 | `--no-player` | Disable interactive HTML player generation | `False` |
 | `--no-compress` | Do not compress audio before uploading to Gemini API | `False` |
 | `--summary-language` | Target summary language (`auto` mirrors user dialogue; or `en`, `zh-TW`, `ja`, etc.) | `None` (auto) |
-| `--open` | Automatically open the interactive HTML player in default browser upon completion | `False` |
+| `--only-transcript` | Run only Stage 1 transcription and output verbatim transcript without Stage 2 | `False` |
+| `--language` | Spoken audio language code for offline Whisper ASR (`zh`, `en`, `ja`, `auto`) | `zh` |
+

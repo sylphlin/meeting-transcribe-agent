@@ -53,7 +53,6 @@ def generate_meeting_minutes_and_transcript(
     no_player: bool = False,
     compress: bool = True,
     summary_language: str = None,
-    open_browser: bool = False,
     only_transcript: bool = False,
     language: str | None = "zh"
 ) -> Path:
@@ -67,7 +66,6 @@ def generate_meeting_minutes_and_transcript(
     3. Executive Minutes Structuring & Speaker Role Arbitration (Gemini 3.7 Flash).
     4. Canonical Speaker Identity Consolidation & Sequential Turn Merging.
     5. Interactive Zero-Dependency HTML Playback Player Generation.
-    6. Frictionless Browser Launch (if open_browser=True).
     """
     audio_path = Path(audio_file).resolve()
     if not audio_path.exists():
@@ -213,15 +211,14 @@ def generate_meeting_minutes_and_transcript(
     print(f"⏱️  ASR Time: {asr_time:.1f}s | Summary Time: {summary_time:.1f}s | Total Time: {total_time:.1f}s")
     print(f"========================================================\n")
 
-    # Step 3: Interactive HTML Player Generation
-    if not no_player:
+    # Step 3: Interactive HTML Player Generation (Skipped in only_transcript mode)
+    if not no_player and not only_transcript:
         player_path = out_path.parent / f"{audio_path.stem}_player.html"
         try:
             generate_interactive_html(
                 audio_file_path=audio_path,
                 markdown_content=final_markdown,
-                output_html_path=player_path,
-                auto_open=open_browser
+                output_html_path=player_path
             )
         except Exception as e:
             print(f"[!] Warning: Interactive HTML player generation failed ({e}).")
@@ -318,11 +315,6 @@ def main():
         help="Target language for meeting summary and analysis (default: auto mirrors user prompt language; or specify en, zh-TW, ja, ko, etc.)"
     )
     parser.add_argument(
-        "--open",
-        action="store_true",
-        help="Automatically open the interactive HTML player in the default browser upon completion"
-    )
-    parser.add_argument(
         "--only-transcript",
         action="store_true",
         help="Run only Stage 1 transcription and output verbatim transcript without Stage 2 summarization (ideal for Agent-native processing)"
@@ -357,7 +349,6 @@ def main():
             no_player=args.no_player,
             compress=not args.no_compress,
             summary_language=args.summary_language,
-            open_browser=args.open,
             only_transcript=args.only_transcript,
             language=args.language
         )
