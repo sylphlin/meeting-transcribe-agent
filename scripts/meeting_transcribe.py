@@ -131,7 +131,8 @@ def generate_meeting_minutes_and_transcript(
             client=client,
             audio_path=audio_path,
             model_name=transcribe_model,
-            compress=compress
+            compress=compress,
+            language=language
         )
 
     # Step 1.5: If only verbatim transcript is requested (for Agent-Native Stage 2 processing)
@@ -213,7 +214,10 @@ def generate_meeting_minutes_and_transcript(
 
     # Step 3: Interactive HTML Player Generation (Skipped in only_transcript mode)
     if not no_player and not only_transcript:
-        player_path = out_path.parent / f"{audio_path.stem}_player.html"
+        if out_path.stem.endswith("_minutes"):
+            player_path = out_path.parent / f"{out_path.stem[:-8]}_player.html"
+        else:
+            player_path = out_path.parent / f"{out_path.stem}_player.html"
         try:
             generate_interactive_html(
                 audio_file_path=audio_path,

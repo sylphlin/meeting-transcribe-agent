@@ -60,11 +60,20 @@ def parse_transcription_parts(raw_text: str) -> str:
     return "\n".join(lines)
 
 
+def _parse_offset_to_seconds(val) -> float:
+    """Parse Gemini timestamp offset (seconds float/int or string ending in 's') to float."""
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).rstrip("s")
+    return float(s) if s else 0.0
+
+
 def transcribe_with_gemini_cloud(
     client: genai.Client,
     audio_path: Path,
     model_name: str = "gemini-3.5-transcribe",
-    compress: bool = True
+    compress: bool = True,
+    language: str = "auto"
 ) -> tuple[str, float]:
     """Upload audio to Gemini Files API and run cloud transcription."""
     t0 = time.time()
@@ -72,7 +81,7 @@ def transcribe_with_gemini_cloud(
     temp_compressed = None
 
     if compress:
-        temp_compressed = compress_audio_for_upload(audio_path, bitrate="64k")
+        temp_compressed = compress_audio_for_upload(audio_path, bitrate="48k")
         upload_file_path = temp_compressed
 
     uploaded_file = None
@@ -89,18 +98,64 @@ def transcribe_with_gemini_cloud(
             raise RuntimeError(f"Audio file upload failed: {uploaded_file.error}")
 
         print(f"[*] Invoking Gemini transcription model `{model_name}` for speech recognition and turn timestamps...")
-        prompt = (
-            "Transcribe this audio recording completely and accurately. "
-            "Include precise turn timestamps in [MM:SS - MM:SS] format for every utterance. "
-            "Faithfully preserve the original spoken language and words."
-        )
-        
-        response = client.models.generate_content(
-            model=model_name,
-            contents=[uploaded_file, prompt],
-        )
-        
-        raw_text = response.text or ""
+        lines = []
+        raw_parts = []
+        has_at = False
+
+        if "transcribe" in model_name.lower():
+            at_kwargs = {
+                "diarization": True,
+                "word_timestamp": True,
+            }
+            if language and language.lower() != "auto":
+                at_kwargs["language_codes"] = [language]
+
+            config = types.GenerateContentConfig(
+                audio_transcription_config=types.AudioTranscriptionConfig(**at_kwargs)
+            )
+            stream = client.models.generate_content_stream(
+                model=model_name,
+                contents=[uploaded_file],
+                config=config
+            )
+        else:
+            prompt = (
+                "Transcribe this audio recording completely and accurately. "
+                "Include precise turn timestamps in [MM:SS - MM:SS] format for every utterance. "
+                "Faithfully preserve the original spoken language and words."
+            )
+            stream = client.models.generate_content_stream(
+                model=model_name,
+                contents=[uploaded_file, prompt],
+            )
+
+        for chunk in stream:
+            if not chunk.candidates or not chunk.candidates[0].content or not chunk.candidates[0].content.parts:
+                continue
+            for part in chunk.candidates[0].content.parts:
+                if getattr(part, "audio_transcription", None):
+                    has_at = True
+                    at = part.audio_transcription
+                    spk_raw = at.speaker_label or "spk:0"
+                    spk_clean = spk_raw.replace(":", "_")
+                    start_str = "00:00"
+                    end_str = "00:00"
+                    if at.words:
+                        s_sec = _parse_offset_to_seconds(at.words[0].start_offset)
+                        e_sec = _parse_offset_to_seconds(at.words[-1].end_offset)
+                        start_str = format_offset(s_sec)
+                        end_str = format_offset(e_sec)
+                    text = (at.text or "").strip()
+                    if text:
+                        lines.append(f"[{start_str} - {end_str}] **{spk_clean}**: {text}")
+                elif part.text:
+                    raw_parts.append(part.text)
+
+        if has_at:
+            raw_text = "\n\n".join(lines)
+        else:
+            raw_text = "".join(raw_parts)
+
         duration = time.time() - t0
         print(f"[*] ✓ Cloud transcription complete in {duration:.1f}s ({len(raw_text)} chars).")
         return raw_text, duration
