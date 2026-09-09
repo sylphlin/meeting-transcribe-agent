@@ -1,104 +1,119 @@
-# Meeting Transcribe Agent - 泛用型會議記錄與語音轉譯 Agent Skill
-### Universal Meeting Intelligence & Interactive Transcription Suite (Cloud-Scale & Offline Backup)
+# Meeting Transcribe Agent
+
+> **基於 Google Gemini 3.5 Transcribe 的高精度多語者會議轉譯與智慧會議記錄 Agent**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Agent Skills Spec](https://img.shields.io/badge/Agent%20Skills-Spec%20Compliant-00C853.svg)](https://agentskills.io/specification)
 [![Google GenAI SDK](https://img.shields.io/badge/Google%20GenAI%20SDK-v1.0+-4285F4.svg)](https://github.com/google-gemini/generative-ai-python)
+[![Gemini 3.5 Transcribe](https://img.shields.io/badge/Gemini%203.5-Transcribe-orange.svg)](https://ai.google.dev/)
+[![Gemini 3.8 Flash](https://img.shields.io/badge/Gemini%203.8-Flash-yellow.svg)](https://ai.google.dev/)
 
-一套專為高精度會議轉譯、聲學說話者切分（Speaker Diarization）、術語探勘與結構化會議記錄生成設計的 **Agent Skill**。通用於各類企業會議、技術工程週會、訪談紀錄、公開演說與公務會議。
-
-遵循開放的 **[Agent Skills 規格標準 (agentskills.io)](https://agentskills.io/specification)**，原生相容於 Google Antigravity、Claude Code、Cursor、Windsurf 等各大 AI Agent 開發環境，支援在轉譯完成後自動喚起瀏覽器展示成果。
+**Meeting Transcribe Agent** 是一套專為企業、公務機關與專業工程團隊設計的會議智慧轉譯系統。只需向 AI Agent 提供會議錄音檔案，系統即可全自動完成「聲學語者識別」、「詞級時間戳記轉譯」、「前後文脈絡修飾與繁體化」、「核心決策結構化重構」，並輸出獨立的雙欄互動式音訊審閱播放器。
 
 ---
 
-## 雙引擎架構 (Dual-Engine Architecture)
+## 🎯 核心功能與適用場景
 
-- **預設核心（全雲端模式 `--engine gemini`）**：
-  - 核心採用 **Google Gemini 3.5 Transcribe** 搭配 **Gemini 3.8 Flash**。
-  - **極速轉譯與雙軌並行 (Dual-Track Concurrency)**：
-    - Stage 1 智慧音訊偵測：檔案 $\le 10\text{MB}$ 或原始碼率 $\le 48\text{kbps}$ 自動免轉碼直傳，大檔以 48k 壓至串流最佳區間。
-    - Stage 2 雙軌並行化：核心決策摘要（軌道 A）與萬字逐字稿智慧繁體化（軌道 B）由 `ThreadPoolExecutor` 同步發送，配合 `thinking_budget=0` 消除延遲，總生成時間砍半！
-  - Google Files API 自動暫存與**零殘留自動銷毀**（`client.files.delete`），無持續雲端儲存費用與資料隱私疑慮。
-- **備援備案（離線本地模式 `--engine whisper`）**：
-  - 本地離線執行：支援 Apple Silicon GPU 加速（`mlx-whisper`）或跨平台 CPU/CUDA（`faster-whisper`）。
-  - 聲學聲紋分離：整合新世代 **Sherpa-ONNX (3D-Speaker / PyAnnote)** 本地聲學聲紋聚類與重疊語音偵測。
-  - **雙指針滑動窗口 (Two-Pointer Sliding Window)**：單詞級聲紋對齊演算法提升 106 倍速（$O(N)$ 線性掃描），毫秒級精確切分。
-  - 專為**企業機房 IP 限制、隔離網閘 (Air-gapped) 或機敏無法上雲情境**設計。
+### 它能為您做什麼？
+- 🎙️ **高精度語者區分與逐字轉譯**：原生支援說話者分群（Diarization）與詞級時間戳記，清楚標記每位與會者的發言起訖。
+- ✍️ **前後文理解與地道繁體化**：超越死板字典轉換，透過 LLM 前後文理解自動校正同音錯字（如專有名詞、官銜），並將語音辨識內容流暢轉為標準繁體中文。
+- 📋 **高管級結構化會議記錄**：自動提取會議基本資訊、執行摘要、重大決策事項表、討論議題分析與具體待辦追蹤事項（Action Items）。
+- 🌐 **零外部依賴互動式 HTML 播放器**：產出單一輕量 HTML 檔案，支援點擊字句即時跳轉音訊、語者色彩標記、關鍵字即時搜尋與深淺主題切換。
+
+### 適用場景
+1. **公務機關與市政主管會議**：長達 1~2 小時、數十位局處長輪番發言，需精確紀錄案由、裁示要點並消除長音訊聲紋漂移。
+2. **跨國企業與技術工程週會**：中英夾雜術語豐富（如 PR, Kubernetes, CI/CD, Roadmap），自動探勘並校正技術術語。
+3. **訪談錄音、記者會與法務存證**：需完整保留每一句發言的真實原意與秒級時間戳，方便事後雙向對照音訊查證。
+4. **機敏與隔離網閘環境 (Air-Gapped)**：具備離線備援引擎，可完全在本地 Apple Silicon GPU 或一般本機運作，語音絕不上雲。
+
+---
+
+## 🚀 雙引擎架構 (Dual-Engine Architecture)
+
+### 1. 全雲端極速模式（預設核心）
+* **雙模型旗艦組合**：採用 **Google Gemini 3.5 Transcribe**（語音多模態辨識與語者切分）搭配 **Gemini 3.8 Flash**（結構化記錄重構）。
+* **Stage 1 智慧音訊探測**：
+  * 自動檢測原始檔案大小與碼率。
+  * 小檔（$\le 10\text{MB}$）或低碼率（$\le 48\text{kbps}$）**自動略過 FFmpeg 轉碼秒傳**，大檔自動以 48k mono AAC 預壓縮至串流最佳區間。
+* **Stage 2 雙軌非同步並行 (Dual-Track Concurrency)**：
+  * **軌道 A（決策摘要）** 與 **軌道 B（萬字逐字稿繁體化）** 同步並行生成，徹底解決長篇文本循序輸出的延遲。
+  * 啟用 `thinking_budget=0`，消除推理首字等待延遲，使會議記錄生成時間**直接砍半**。
+* **零殘留隱私保護**：
+  * 音訊經由 Google Files API 傳輸，轉譯完成後觸發 `client.files.delete` **自動銷毀雲端暫存**，不留雲端存儲隱患。
+
+### 2. 本地離線隱私模式（備援方案）
+* **無網環境支援**：專為企業機房 IP 限制、隔離網閘 (Air-gapped) 或極機敏內容設計。
+* **雙架構加速**：支援 Apple Silicon GPU 原生加速（`mlx-whisper`）或跨平台 CPU/CUDA（`faster-whisper`）。
+* **聲學特徵向量聚類**：整合新世代 **Sherpa-ONNX (3D-Speaker / PyAnnote)** 本地聲學聲紋特徵抽取。
+* **雙指針滑動窗口 (Sliding Window)**：單詞級聲紋對齊演算法提速 **106 倍**（$O(N)$ 線性時間複雜度），毫秒級對齊說話者。
 
 ---
 
 ## 🤖 Agent 對話使用指南 (推薦情境與 Prompt 範例)
 
-本專案主要作為 **Agent Skill** 由 AI Assistant（如 Google Antigravity、Claude Code 等）直接調用。使用者只需在對話框中輸入自然的日常語言，Agent 便會自主識別參數、執行轉譯管線，並自動為您彈出互動式審閱播放器：
+本專案主要作為 **AI Agent Skill** 使用。您**不需要**手動輸入複雜的命令列參數，只需在對話框中向 Agent 提出需求，Agent 便會自主調度後台轉譯管線：
 
-### 常用呼叫語句範例：
+### 常用情境與對話範例：
 
-1. **基本會議轉譯與整理（雲端極速預設）**：
+1. **標準會議轉譯（全自動雲端極速處理）**：
    > 「請幫我轉譯這場會議錄音 `meeting.mp3`，整理出重點摘要、決策事項與逐字稿播放器。」
 
-2. **搭配會議大綱/通知提升術語與人名精準度**：
-   > 「這是今天下午技術會議的錄音 `backend_sync.m4a`，旁邊附有會議通知 `agenda.md`。請幫我轉譯並校準專有名詞與發言人身分。」
+2. **搭配會議大綱／通知文件（強烈推薦：人名與術語最精準）**：
+   > 「這是今天技術會議的錄音 `backend_sync.m4a`，旁邊附有會議通知 `agenda.md`。請幫我轉譯並校對人名職稱與專有名詞。」
 
-3. **離線/本地模式轉譯（機房網路受限或機敏資料）**：
-   > 「這份錄音 `internal_audit.m4a` 屬於機敏內容，請使用本地離線模型（Whisper + Sherpa-ONNX）進行轉譯與聲紋切分。」
+3. **機敏會議離線轉譯（不連外網、純本地運作）**：
+   > 「這份錄音 `internal_audit.m4a` 涉及機敏內容，請使用本地離線模式（Whisper + 聲紋切分）進行處理。」
 
-4. **跨語言生成摘要（例如英文會議紀錄）**：
+4. **指定會議摘要語言（如跨國團隊需英文記錄）**：
    > 「Please transcribe `executive_call.mp3`. Keep the verbatim transcript in original languages, but generate the executive summary and action items in English.」
 
-5. **公務或大型多講者會議（消除發言人身分漂移）**：
+5. **公務或大型多人會議（長官身分正規化）**：
    > 「請幫我轉譯市政會議音檔 `council.mp3`，產出完整的各案由討論摘要、決策事項追蹤表，並自動將市長與局處首長的發言人標記正規化。」
 
 ---
 
 ## 🏗️ 核心處理流水線 (Pipeline Architecture)
 
-Meeting Transcribe Agent 採用高精度並行流水線，將多模態大模型轉譯、長音訊聲學漂移收斂與效能最佳化深度結合：
-
 ```text
 音訊輸入 (.mp3 / .m4a / .wav) + 可選會議大綱 (.txt / .md)
   │
   ├─▶ 階段 0：智慧音訊探測 (Smart Ingestion & Probing)
-  │     └─ 自動偵測檔案大小與碼率 (<=10MB 或 <=48k 零轉碼秒傳；大檔 48k 智慧壓縮)
+  │     └─ 檢測檔案大小與碼率 (<=10MB 或 <=48k 免轉碼直傳；大檔 48k 智慧預壓縮)
   │
   ├─▶ 階段 1：雙軌專有名詞探勘 (Dual-Track Glossary Mining)
   │     └─ 百萬上下文輕量預掃描 + 議程解析 ──▶ 提煉權威術語與人員官銜對照表
   │
   ├─▶ 階段 2：語音辨識與聲學切分 (Speech Recognition & Diarization)
-  │     ├─【雲端】Gemini 3.5 Transcribe：極速多模態辨識 + 零暫存自動銷毀 + 階梯式自適應輪詢
-  │     └─【本地】Whisper + Sherpa-ONNX：雙指針滑動窗口 106x 加速聲學對齊與重疊偵測
+  │     ├─【雲端預設】Gemini 3.5 Transcribe：極速多模態辨識 + 零暫存自動銷毀 + 階梯式自適應輪詢
+  │     └─【本地離線】Whisper + Sherpa-ONNX：雙指針滑動窗口 106x 加速聲學對齊
   │
   ├─▶ 階段 3：雙軌非同步並行會議重構 (Dual-Track Concurrent Restructuring)
   │     ├─ 軌道 A：Gemini 3.8 Flash 提煉第 1~5 節摘要、議題決策、待辦清單與角色對照表 (~3-5 秒)
   │     ├─ 軌道 B：Gemini 3.8 Flash 專責第 6 節逐字稿角色對齊、錯字校正與脈絡級繁體化 (~18-20 秒)
-  │     └─ 本地身分收斂平滑 (spk_X 角色替換 + 2.0 秒內連貫語句合併)
+  │     └─ 聲學身分收斂平滑 (spk_X 角色替換 + 2.0 秒內連貫語句合併)
   │
   └─▶ 階段 4：現代化獨立互動播放器 (Modern Web Guidance UI)
-        ├─ 70 行極簡 JSON 注入器，零依賴產出完全獨立的單一 HTML 播放器
-        └─ 自動喚起系統預設瀏覽器 (Zero-Click Auto-Open)
+        └─ 輕量 JSON 注入器，零依賴產出完全獨立的單一 HTML 審閱播放器
 ```
 
-### 核心特性亮點：
-- **極致效能與並行化**：Stage 2 採雙軌非同步並行，徹底消除長逐字稿循序輸出的等待瓶頸，配合 `thinking_budget=0`，整體時間砍半！
-- **脈絡級繁體化與專有名詞校正**：逐字稿保留原發言內容的同時，透過 LLM 前後文理解精準修正語音同音錯字，並將 ASR 的簡體輸出自然化為地道繁體中文（避免字典式錯字）。
-- **極速與資料隱私兼備**：預設雲端模式透過 Google 官方 Files API 傳輸，轉譯完畢後**自動銷毀雲端暫存檔**，免除自建 Storage Bucket 的維護與長期存儲外洩風險。
-- **聲學分群漂移收斂 (Canonical Consolidation)**：公務會議長達 1~2 小時，發言人常因情緒高低、距離麥克風遠近等因素產生聲紋特徵向量偏移。系統透過語義推理仲裁與時間窗口平滑，自動將分散的聲學群集收斂為單一權威身分。
-- **動態語言跟隨 (Dynamic Language Adaptation)**：會議記錄的主旨、討論重點與待辦清單會自動跟隨使用者的對話語言（繁體中文、English、日本語等），而逐字稿嚴格保留原生發言內容，兼顧閱讀便利與法規存證真實性。
-- **唱片級雙欄互動播放器**：獨立 HTML5 檔案，左欄公文記錄、右欄逐字稿。支援單詞點擊跳轉、發言中卡片平滑滾動置頂、即時關鍵字搜尋高亮、深淺色主題切換與一鍵複製富文本至 Google Docs。
+### 產出成果檔案：
+每次轉譯完成後，會在音訊同層目錄自動產出：
+1. **📄 `<檔案名>_會議記錄.md`**：完整結構化會議記錄（基本資訊、重點摘要、專題討論、決策事項、待辦追蹤與帶時間戳記發言逐字稿）。
+2. **🌐 `<檔案名>_player.html`**：獨立零外部依賴的**雙欄互動式音訊審閱播放器**。
+3. **📚 `<檔案名>_glossary.md`**：**全域權威術語與人員對照表**（若有啟用探勘）。
 
 ---
 
 ## 📦 安裝與環境設定 (Quick Setup)
 
-### 1. 系統環境依賴
-- **Python** 3.10 或以上
-- **FFmpeg**（用於音訊最佳化預壓縮與時長探測）：
-  - macOS: `brew install ffmpeg`
-  - Ubuntu/Debian: `sudo apt update && sudo apt install ffmpeg`
-  - Windows: `winget install Gyan.FFmpeg`
+### 1. 系統依賴 (FFmpeg)
+用於音訊格式探測與預壓縮：
+- **macOS**: `brew install ffmpeg`
+- **Ubuntu/Debian**: `sudo apt update && sudo apt install ffmpeg`
+- **Windows**: `winget install Gyan.FFmpeg`
 
 ### 2. 安裝 Python 套件
 
-**雲端預設模式核心套件**：
+**雲端預設模式套件**：
 ```bash
 pip install google-genai
 ```
@@ -108,44 +123,64 @@ pip install google-genai
 # Apple Silicon Mac (推薦 GPU 加速)
 pip install mlx-whisper sherpa-onnx
 
-# 或通用平台 (CPU / NVIDIA CUDA)
+# 通用平台 (CPU / NVIDIA CUDA)
 pip install faster-whisper sherpa-onnx
 ```
 
-### 3. 設定 Gemini API Key (全雲端預設模式)
+### 3. 設定 Gemini API Key
 從 [Google AI Studio](https://aistudio.google.com/) 取得 API Key，並設定環境變數：
 ```bash
 export GEMINI_API_KEY="AIzaSy..."
 ```
 *(亦可填入工作區的 `.env` 或 `~/.gemini/.env` 檔案中，系統會自動載入)*
 
----
-
-## 🔌 Agent Skills 規格安裝 (Cross-Agent Support)
-
-本專案完全符合開放的 **[Agent Skills Specification (agentskills.io)](https://agentskills.io/specification)** 規範，可原生無縫安裝於各大 AI Agent：
-
-### 1. Google Antigravity
-- **全域技能 (Global Skill)**：
+### 4. 安裝為 Agent Skill
+本專案符合通用 Agent Skill 規格，可直接安裝至您的 AI 工作區：
+- **Google Antigravity 全域技能**：
   ```bash
   git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/skills/meeting-transcribe-agent
   ```
-- **專案專用 (Workspace Skill)**：
+- **工作區專屬技能 (Workspace Skill)**：
   ```bash
   git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
   ```
+- **Claude Code / Cursor / Windsurf**：
+  Clone 至相應平台的 skills 目錄（如 `~/.claude/skills/`）即可自動被 Agent 索引調用。
 
-### 2. Claude Code / Cursor / Windsurf
-直接將本倉庫 clone 至各大平台支援的 skills 目錄（如 `~/.claude/skills/`）即可自動被索引與調用。
+---
+
+## 📂 專案目錄結構
+
+```text
+meeting-transcribe-agent/
+├── SKILL.md                          # Agent Skill 專用作業手冊與參數架構
+├── README.md                         # 專案介紹、使用情境與技術架構
+├── LICENSE                           # MIT 開源授權
+├── .gitignore                        # 忽略測試音訊與本機快取
+├── .env.example                      # API Key 環境變數範例
+├── meeting_transcribe.py             # 根目錄命令列入口
+├── scripts/                          # 核心模組
+│   ├── __init__.py
+│   ├── meeting_transcribe.py         # 主流程調度器 (支援雙引擎)
+│   ├── audio_utils.py                # 智慧碼率探測與 FFmpeg 預壓縮
+│   ├── gemini_engine.py              # Gemini 3.5 Transcribe 轉譯與 3.8 Flash 雙軌重構
+│   ├── diarization.py                # 本地聲學切分 (Sherpa-ONNX) 與滑動窗口對齊
+│   ├── glossary.py                   # 雙軌專有名詞探勘
+│   ├── canonicalizer.py              # 聲學分群收斂與語者正規化
+│   └── html_generator.py             # 現代獨立 HTML 播放器生成器
+└── assets/                           # 播放器模板與提示詞
+    ├── player_template.html          # 互動式會議播放器模板
+    └── prompts/                      # 提示詞模板目錄
+```
 
 ---
 
 ## 💻 進階：開發者與命令列呼叫 (Developer & Headless CLI)
 
 > [!TIP]
-> **一般使用者注意**：如果您是在 **Google Antigravity、Claude Code、Cursor** 等 AI Agent 中使用本技能，您**不需要**手動輸入任何指令！只需在對話中以自然語言告訴 Agent 您的需求，Agent 便會自動閱讀 `SKILL.md` 並配置最佳參數。
+> **一般使用者注意**：如果您是透過 AI Agent（如 Antigravity / Claude Code）使用本系統，您**不需要手動輸入這些命令**！Agent 會依據對話自動閱讀 `SKILL.md` 並配置最佳參數。
 >
-> 以下內容僅供開發者進行本機除錯、批次腳本排程或無頭伺服器整合參考：
+> 以下內容僅供開發者進行本機除錯、批次腳本自動化或無頭伺服器排程參考：
 
 ### 基本執行（雲端預設）
 ```bash
@@ -187,42 +222,9 @@ python3 meeting_transcribe.py "會議錄音.mp3" --outline "agenda.txt" --summar
 | `--only-transcript` | 僅執行第一階段轉譯輸出純逐字稿，跳過結構化摘要 | `False` |
 | `--language` | 離線 Whisper 語音語言代碼 (`auto`, `en`, `zh`, `ja`) | `auto` |
 
-### 產出成果
-每次轉譯完成後，會在音訊同層目錄自動產出成果：
-1. **📄 `<檔案名>_會議記錄.md`**：完整結構化會議記錄（基本資訊、重點摘要、專題討論、決策事項、待辦追蹤與帶時間戳記發言逐字稿）。
-2. **🌐 `<檔案名>_player.html`**：獨立零外部依賴的**雙欄互動式音訊審閱播放器**。
-3. **📚 `<檔案名>_glossary.md`**：**全域權威術語與人員對照表**（若有啟用探勘）。
-
----
-
-## 📂 專案目錄結構
-
-```text
-meeting-transcribe-agent/
-├── SKILL.md                          # Agent Skill 標準規格手冊 (YAML frontmatter)
-├── README.md                         # 專案說明、Agent Prompt 範例與技術架構
-├── LICENSE                           # MIT 開源授權
-├── .gitignore                        # 忽略測試音訊、成果檔案與本機暫存
-├── .env.example                      # API Key 環境變數範例檔
-├── meeting_transcribe.py             # 根目錄 CLI 入口 (CLI Forwarder)
-├── scripts/                          # 模組化核心功能
-│   ├── __init__.py
-│   ├── meeting_transcribe.py         # 主轉譯流程調度器 (支援雙引擎)
-│   ├── audio_utils.py                # 音訊處理工具 (時長偵測、格式化與 FFmpeg 預壓縮)
-│   ├── gemini_engine.py              # Gemini 3.5 轉譯 (Files API + 自動銷毀) 與會議記錄生成
-│   ├── diarization.py                # 本地聲學聲紋切分 (Sherpa-ONNX) 與 Whisper/MLX 轉譯
-│   ├── glossary.py                   # 雙軌專有名詞探勘 (音訊預掃描 + 大綱摘要)
-│   ├── canonicalizer.py              # 聲學分群收斂、語者正規化與連貫發言合併
-│   └── html_generator.py             # 輕量 Markdown 解析器與現代 HTML 播放器渲染引擎
-└── assets/                           # 靜態資源與外部模板
-    ├── player_template.html          # 互動式會議播放器 HTML/CSS/JS
-    └── prompts/                      # 提示詞模板目錄 (Markdown 格式)
-        ├── minutes_prompt.md         # Stage 2 會議記錄與逐字稿提示詞
-        └── audio_glossary_prompt.md  # Track 1 音訊預掃描術語提示詞
-```
-
 ---
 
 ## 📄 授權條款 (License)
 
 本專案採用 [MIT License](LICENSE) 開源授權。
+
