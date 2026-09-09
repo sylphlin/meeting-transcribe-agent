@@ -34,16 +34,16 @@
 ### 常用呼叫語句範例：
 
 1. **基本會議轉譯與整理（雲端極速預設）**：
-   > 「請幫我轉譯這場會議錄音 `meeting.mp3`，整理出重點摘要與逐字稿，完成後幫我開啟播放器。」
+   > 「請幫我轉譯這場會議錄音 `meeting.mp3`，整理出重點摘要、決策事項與逐字稿播放器。」
 
 2. **搭配會議大綱/通知提升術語與人名精準度**：
    > 「這是今天下午技術會議的錄音 `backend_sync.m4a`，旁邊附有會議通知 `agenda.md`。請幫我轉譯並校準專有名詞與發言人身分。」
 
 3. **離線/本地模式轉譯（機房網路受限或機敏資料）**：
-   > 「這份錄音 `internal_audit.m4a` 屬於機敏內容，請使用本地離線模型（Whisper + Sherpa-ONNX）進行轉譯與聲紋切分，完成後開啟播放器。」
+   > 「這份錄音 `internal_audit.m4a` 屬於機敏內容，請使用本地離線模型（Whisper + Sherpa-ONNX）進行轉譯與聲紋切分。」
 
 4. **跨語言生成摘要（例如英文會議紀錄）**：
-   > 「Please transcribe `executive_call.mp3`. Keep the verbatim transcript in original languages, but generate the executive summary and action items in English, then open the interactive player.」
+   > 「Please transcribe `executive_call.mp3`. Keep the verbatim transcript in original languages, but generate the executive summary and action items in English.」
 
 5. **公務或大型多講者會議（消除發言人身分漂移）**：
    > 「請幫我轉譯市政會議音檔 `council.mp3`，產出完整的各案由討論摘要、決策事項追蹤表，並自動將市長與局處首長的發言人標記正規化。」
@@ -140,26 +140,29 @@ export GEMINI_API_KEY="AIzaSy..."
 
 ---
 
-## 💻 CLI 開發者命令列手冊 (Developer Reference)
+## 💻 進階：開發者與命令列呼叫 (Developer & Headless CLI)
 
-如果需要在終端機手動批次處理音訊或除錯，可直接透過命令列調用：
+> [!TIP]
+> **一般使用者注意**：如果您是在 **Google Antigravity、Claude Code、Cursor** 等 AI Agent 中使用本技能，您**不需要**手動輸入任何指令！只需在對話中以自然語言告訴 Agent 您的需求，Agent 便會自動閱讀 `SKILL.md` 並配置最佳參數。
+>
+> 以下內容僅供開發者進行本機除錯、批次腳本排程或無頭伺服器整合參考：
 
 ### 基本執行（雲端預設）
 ```bash
-python3 meeting_transcribe.py "會議錄音.mp3" --open
+python3 meeting_transcribe.py "會議錄音.mp3"
 ```
 
 ### 本地離線備援執行（Apple Silicon GPU / Sherpa-ONNX）
 ```bash
-python3 meeting_transcribe.py "會議錄音.mp3" --engine whisper --whisper-backend auto --open
+python3 meeting_transcribe.py "會議錄音.mp3" --engine whisper --whisper-backend auto
 ```
 
 ### 帶會議大綱與指定輸出語言
 ```bash
-python3 meeting_transcribe.py "會議錄音.mp3" --outline "agenda.txt" --summary-language en --open
+python3 meeting_transcribe.py "會議錄音.mp3" --outline "agenda.txt" --summary-language en
 ```
 
-### 參數一覽
+### 完整參數手冊
 
 | 參數 | 說明 | 預設值 |
 | :--- | :--- | :--- |
@@ -181,9 +184,10 @@ python3 meeting_transcribe.py "會議錄音.mp3" --outline "agenda.txt" --summar
 | `--no-player` | 停用獨立互動式 HTML 播放器生成 | `False` |
 | `--no-compress` | 停用上傳前 FFmpeg 自動預壓縮 | `False` |
 | `--summary-language` | 指定會議記錄語言 (`auto` 自動跟隨對話；或 `en`, `zh-TW`, `ja` 等) | `None` (auto) |
-| `--open` | 轉譯完成後自動以預設瀏覽器開啟 HTML 播放器 | `False` |
+| `--only-transcript` | 僅執行第一階段轉譯輸出純逐字稿，跳過結構化摘要 | `False` |
+| `--language` | 離線 Whisper 語音語言代碼 (`auto`, `en`, `zh`, `ja`) | `auto` |
 
-### 產出檔案
+### 產出成果
 每次轉譯完成後，會在音訊同層目錄自動產出成果：
 1. **📄 `<檔案名>_會議記錄.md`**：完整結構化會議記錄（基本資訊、重點摘要、專題討論、決策事項、待辦追蹤與帶時間戳記發言逐字稿）。
 2. **🌐 `<檔案名>_player.html`**：獨立零外部依賴的**雙欄互動式音訊審閱播放器**。
@@ -203,7 +207,7 @@ meeting-transcribe-agent/
 ├── meeting_transcribe.py             # 根目錄 CLI 入口 (CLI Forwarder)
 ├── scripts/                          # 模組化核心功能
 │   ├── __init__.py
-│   ├── meeting_transcribe.py         # 主轉譯流程調度器 (支援雙引擎與 --open)
+│   ├── meeting_transcribe.py         # 主轉譯流程調度器 (支援雙引擎)
 │   ├── audio_utils.py                # 音訊處理工具 (時長偵測、格式化與 FFmpeg 預壓縮)
 │   ├── gemini_engine.py              # Gemini 3.5 轉譯 (Files API + 自動銷毀) 與會議記錄生成
 │   ├── diarization.py                # 本地聲學聲紋切分 (Sherpa-ONNX) 與 Whisper/MLX 轉譯
