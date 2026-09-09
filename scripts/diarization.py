@@ -290,37 +290,53 @@ def transcribe_with_local_whisper_and_diarization(
                         })
 
 
-    # Step 3: Word-level Temporal Voting Alignment & Overlap Tagging
+    # Step 3: Word-level Temporal Voting Alignment & Overlap Tagging (Optimized Sliding Window)
     if diar_segments and words_list:
         print("[*] Aligning word-level timestamps with speaker diarization clusters and merging overlaps...")
         valid_words = []
-        for w in words_list:
+        d_idx = 0
+        num_d = len(diar_segments)
 
+        for w in words_list:
             w_s, w_e = w["start"], w["end"]
+
+            # Fast-forward sliding window start pointer: skip segments ending well before w_s
+            while d_idx < num_d and diar_segments[d_idx].end < (w_s - 1.5):
+                d_idx += 1
+
             best_spk = None
             max_overlap = 0.0
-            for d in diar_segments:
+            closest_dist = 999.0
+
+            # Scan only segments in temporal vicinity of word [w_s - 1.5, w_e + 1.5]
+            for j in range(d_idx, num_d):
+                d = diar_segments[j]
+                if d.start > (w_e + 1.5):
+                    break
+
                 overlap = max(0.0, min(w_e, d.end) - max(w_s, d.start))
                 if overlap > max_overlap:
                     max_overlap = overlap
                     best_spk = str(d.speaker)
-            
-            # Micro-pause proximity match
-            if best_spk is None or max_overlap <= 0.0:
-                closest_dist = 999.0
-                for d in diar_segments:
-                    dist = min(abs(w_s - d.end), abs(w_e - d.start))
-                    if dist < closest_dist and dist < 1.0:
-                        closest_dist = dist
+
+                # Micro-pause proximity match
+                dist = min(abs(w_s - d.end), abs(w_e - d.start))
+                if dist < closest_dist and dist < 1.0:
+                    closest_dist = dist
+                    if best_spk is None or max_overlap <= 0.0:
                         best_spk = str(d.speaker)
 
             # Drop acoustic silence hallucinations
             if best_spk is None:
                 continue
 
-            # Check overlap tagging
+            # Check overlap tagging in vicinity
             is_overlap = False
             for ov in overlap_intervals:
+                if ov["end"] < (w_s - 0.5):
+                    continue
+                if ov["start"] > (w_e + 0.5):
+                    break
                 if max(0.0, min(w_e, ov["end"]) - max(w_s, ov["start"])) > 0.2:
                     is_overlap = True
                     break

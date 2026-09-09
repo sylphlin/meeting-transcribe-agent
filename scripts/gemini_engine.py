@@ -7,10 +7,16 @@ import os
 import re
 import time
 from pathlib import Path
+import concurrent.futures
 from google import genai
 from google.genai import types
 
-from scripts.audio_utils import format_offset, compress_audio_for_upload, safe_ascii_upload_path
+from scripts.audio_utils import (
+    format_offset,
+    compress_audio_for_upload,
+    safe_ascii_upload_path,
+    should_compress_audio,
+)
 
 
 def load_env_file():
@@ -81,8 +87,13 @@ def transcribe_with_gemini_cloud(
     temp_compressed = None
 
     if compress:
-        temp_compressed = compress_audio_for_upload(audio_path, bitrate="48k")
-        upload_file_path = temp_compressed
+        needs_comp, reason = should_compress_audio(audio_path, max_size_mb=10.0, target_bitrate_kbps=48)
+        if needs_comp:
+            print(f"[*] Audio compression required: {reason}. Compressing to 48k...")
+            temp_compressed = compress_audio_for_upload(audio_path, bitrate="48k")
+            upload_file_path = temp_compressed
+        else:
+            print(f"[*] Skipping audio compression: {reason}.")
 
     uploaded_file = None
     try:
@@ -90,8 +101,12 @@ def transcribe_with_gemini_cloud(
             print(f"[*] Uploading audio file to Gemini Files API ({safe_upload_path.stat().st_size / (1024*1024):.1f} MB)...")
             uploaded_file = client.files.upload(file=str(safe_upload_path))
         
+        poll_delays = [0.5, 1.0, 2.0]
+        poll_idx = 0
         while uploaded_file.state.name == "PROCESSING":
-            time.sleep(2)
+            delay = poll_delays[min(poll_idx, len(poll_delays) - 1)]
+            time.sleep(delay)
+            poll_idx += 1
             uploaded_file = client.files.get(name=uploaded_file.name)
             
         if uploaded_file.state.name == "FAILED":
@@ -181,6 +196,8 @@ def generate_minutes_with_gemini(
 ) -> tuple[str, float]:
     """
     Executes Stage 2: Generates complete 6-section meeting minutes and verbatim transcript.
+    Uses Dual-Track Concurrency (Track A: Sections 1-5; Track B: Section 6 verbatim localization)
+    to minimize wall-clock latency while preserving 100% transcript quality.
     """
     t0 = time.time()
     
@@ -196,41 +213,132 @@ Strictly adhere to the spelling, names, titles, organizations, and technical ter
             f"Output Sections 1 to 5 strictly in the requested target language: '{summary_language}'. "
             f"Ensure section headings and narrative analysis are written naturally and professionally in '{summary_language}'."
         )
+        verbatim_lang_instruction = (
+            f"If the spoken audio is Chinese, render cleanly in Traditional Chinese (繁體中文). "
+            f"For other languages, strictly preserve original spoken words while fixing phonetic errors against the glossary."
+        )
     else:
         summary_lang_instruction = (
             "Output Sections 1 to 5 dynamically in the primary language of the user's prompt / conversation "
             "(e.g., Traditional Chinese if the user prompts in Traditional Chinese; English if in English; Japanese if in Japanese). "
             "Render section headings and executive synthesis naturally in that target language."
         )
+        verbatim_lang_instruction = (
+            "If the dialogue is in Chinese (Mandarin/Taiwanese), faithfully render it in fluent Traditional Chinese (繁體中文), "
+            "strictly preserving the authentic spoken words, technical terms, and colloquial phrasing. For other languages, preserve original spoken words."
+        )
 
-    if prompt_template_path is None:
-        md_candidate = Path(__file__).parent.parent / "assets" / "prompts" / "minutes_prompt.md"
-        txt_candidate = Path(__file__).parent.parent / "assets" / "prompts" / "minutes_prompt.txt"
-        prompt_template_path = md_candidate if md_candidate.exists() else txt_candidate
+    def _call_gemini_track(prompt_content: str, label: str) -> str:
+        gen_kwargs = {"model": summary_model, "contents": prompt_content}
+        if hasattr(types, "ThinkingConfig"):
+            try:
+                gen_kwargs["config"] = types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_budget=0)
+                )
+            except Exception:
+                pass
+        print(f"[*] [Dual-Track Stage 2] Launching {label} with `{summary_model}` (thinking_budget=0)...")
+        resp = client.models.generate_content(**gen_kwargs)
+        return resp.text or ""
 
-    if prompt_template_path.exists():
-        template_text = prompt_template_path.read_text(encoding="utf-8")
+    if prompt_template_path is not None:
+        template_text = Path(prompt_template_path).read_text(encoding="utf-8")
         prompt = template_text.replace("{audio_filename}", audio_path.name)
         prompt = prompt.replace("{glossary_injection}", glossary_injection)
         prompt = prompt.replace("{raw_transcript_text}", raw_transcript_text)
         prompt = prompt.replace("{summary_language_instruction}", summary_lang_instruction)
-    else:
-        prompt = f"""You are an elite executive meeting secretary and transcription editor.
-Analyze the following draft transcript and glossary:
+        print(f"[*] Invoking Gemini model `{summary_model}` for custom-templated meeting minutes structuring...")
+        final_text = _call_gemini_track(prompt, "Custom Single-Prompt Template")
+        duration = time.time() - t0
+        return final_text, duration
+
+    prompt_a = f"""# Role & Objective
+You are an elite, highly professional executive meeting secretary. Your mission is to analyze the draft transcript of a recorded meeting and produce Sections 1 to 5 of an impeccably formatted, executive-ready meeting record in Markdown.
+
 {glossary_injection}
-【Draft Transcript】:
+
+---
+# Draft Transcript
 {raw_transcript_text}
-【Language Policy】:
+
+---
+# Language Policy
 {summary_lang_instruction}
-Please output a structured Markdown meeting record containing Meeting Metadata, Executive Summary, Key Discussion Topics, Key Decisions, Action Items, and Full Verbatim Transcript.
+
+---
+# Output Structure (Sections 1 to 5 ONLY)
+Output strictly and exclusively Sections 1 to 5:
+
+## 1. 📌 Meeting Metadata & Attendees
+- **Meeting Title**: Inferred or established title.
+- **Audio Source**: `{audio_path.name}`
+- **Estimated Date / Time**: Inferred from context or agenda.
+- **Chairperson / Host**: Identified meeting leader.
+- **Speaker Mapping Table**:
+  Cross-reference dialogue context and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role:
+  | Speaker ID | Role / Title | Name | Organization / Team |
+  | :--- | :--- | :--- | :--- |
+  | `spk_0, spk_1` | [Role/Title, e.g., Host / Chair / VP] | [Name or Inferred Name] | [Department / Org] |
+
+## 2. 🎯 Executive Summary
+- A high-level, 200–300 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
+
+## 3. 💡 Key Discussion Topics & Agenda Items
+- Structured breakdown for each topic discussed: Context & Motivation, Key Arguments & Data, Discussion Flow, Outcome.
+
+## 4. ⚖️ Key Decisions & Resolutions
+- Bulleted list of formal decisions, policy directives, approved motions, or consensus reached.
+
+## 5. 📋 Action Items & Next Steps
+- Structured Markdown table assigning clear ownership and timelines:
+  | # | Action Item / Task | Owner / Assignee | Due Date / Timeline | Status / Notes |
+  | :--- | :--- | :--- | :--- | :--- |
+  | 1 | [Clear, actionable task description] | [Name / Role] | [Timeline] | [Notes] |
+
+IMPORTANT: Stop immediately after Section 5. Do NOT output Section 6.
 """
 
-    print(f"[*] Invoking Gemini model `{summary_model}` for meeting minutes structuring & speaker arbitration...")
-    response = client.models.generate_content(
-        model=summary_model,
-        contents=prompt,
-    )
-    
-    duration = time.time() - t0
-    final_text = response.text or ""
-    return final_text, duration
+    prompt_b = f"""# Role & Objective
+You are an elite verbatim meeting transcription editor. Your mission is to transform the draft transcript into Section 6: Full Verbatim Transcript.
+
+{glossary_injection}
+
+---
+# Draft Transcript
+{raw_transcript_text}
+
+---
+# Instructions
+1. Map every speaker ID (`spk_X`, `spk-X`, or `Speaker X`) to their identified Role / Name based on dialogue context (e.g. Chair, Host, Presenter, Department Head, or identified Name).
+2. Faithfully preserve all spoken dialogue turns, words, numbers, and chronological order without dropping or truncating sentences.
+3. {verbatim_lang_instruction}
+4. Format every dialogue turn strictly as:
+   `[MM:SS - MM:SS] **Role / Name**: Spoken utterance`
+
+---
+# Output Format
+Output strictly and exclusively Section 6:
+## 6. 🎙️ Full Verbatim Transcript
+
+[MM:SS - MM:SS] **Role / Name**: Utterance
+"""
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            fut_a = executor.submit(_call_gemini_track, prompt_a, "Track A (Executive Synthesis & Metadata)")
+            fut_b = executor.submit(_call_gemini_track, prompt_b, "Track B (Verbatim Transcript Localization)")
+            
+            text_a = fut_a.result()
+            text_b = fut_b.result()
+
+        final_text = f"{text_a.strip()}\n\n---\n\n{text_b.strip()}\n"
+        duration = time.time() - t0
+        print(f"[*] ✓ [Dual-Track Stage 2] Both tracks successfully completed in {duration:.1f}s.")
+        return final_text, duration
+
+    except Exception as e:
+        print(f"[!] Dual-track concurrent generation encountered error ({e}). Falling back to single-prompt execution...")
+        single_prompt = f"{prompt_a}\n\n---\n\n{prompt_b}"
+        final_text = _call_gemini_track(single_prompt, "Fallback Single-Prompt")
+        duration = time.time() - t0
+        return final_text, duration

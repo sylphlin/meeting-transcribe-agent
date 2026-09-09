@@ -27,6 +27,57 @@ def get_audio_duration(audio_path: Path) -> float:
         return 0.0
 
 
+def get_audio_bitrate(audio_path: Path) -> int:
+    """Get audio bitrate in bps via ffprobe, or calculate from size/duration."""
+    try:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=bit_rate",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(audio_path)
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        val = res.stdout.strip()
+        if val.isdigit() and int(val) > 0:
+            return int(val)
+    except Exception:
+        pass
+
+    try:
+        dur = get_audio_duration(audio_path)
+        if dur > 0:
+            size_bytes = audio_path.stat().st_size
+            return int((size_bytes * 8) / dur)
+    except Exception:
+        pass
+    return 0
+
+
+def should_compress_audio(
+    audio_path: Path,
+    max_size_mb: float = 10.0,
+    target_bitrate_kbps: int = 48
+) -> tuple[bool, str]:
+    """
+    Decide whether audio file requires FFmpeg re-encoding.
+    Returns (should_compress, reason).
+    Skips compression if:
+      - File size is already <= max_size_mb
+      - Existing bitrate is already <= target_bitrate_kbps
+    """
+    size_mb = audio_path.stat().st_size / (1024 * 1024)
+    if size_mb <= max_size_mb:
+        return False, f"file size is {size_mb:.1f} MB (<= {max_size_mb} MB threshold)"
+
+    current_bps = get_audio_bitrate(audio_path)
+    target_bps = target_bitrate_kbps * 1000
+    if current_bps > 0 and current_bps <= target_bps:
+        current_kbps = current_bps // 1000
+        return False, f"original bitrate is {current_kbps} kbps (<= {target_bitrate_kbps} kbps target)"
+
+    return True, f"file size is {size_mb:.1f} MB (> {max_size_mb} MB) and bitrate is {current_bps // 1000 if current_bps else 'unknown'} kbps"
+
+
 def format_offset(seconds: float) -> str:
     """Format seconds into MM:SS or HH:MM:SS for long meetings."""
     if seconds is None:
