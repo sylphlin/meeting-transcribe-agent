@@ -72,25 +72,6 @@ meeting-transcribe-agent/
 
 ---
 
-## Strict Operational Constraints & Execution Rules
-
-When Antigravity or any agent executes this skill, it must adhere strictly to the following three behavioral invariants:
-
-1. **Strict 3-Stage Pipeline Discipline**:
-   - **Stage 1 (ASR)**: MUST run with `--only-transcript` to produce `<stem>_transcript.md`. Never run summarization or full pipeline during Stage 1.
-   - **Stage 2 (Agent-Native Structuring)**: Antigravity directly reads `<stem>_transcript.md`, synthesizes the structured minutes, resolves speaker identities, and writes `<stem>_會議記錄.md` (or `<stem>_minutes.md`).
-   - **Stage 3 (HTML Generation)**: Call `scripts/html_generator.py` to compile `<stem>_player.html`.
-
-2. **Code Immutability Principle During Operational Tasks**:
-   - When the user's intent is operational (e.g. "transcribe this audio", "generate meeting minutes"), all codebase files (`*.py`) are **strictly READ-ONLY / IMMUTABLE**.
-   - If a runtime error or dependency exception occurs, the Agent **MUST NOT** silently patch `.py` files. The Agent must immediately halt execution, report the exact error traceback and diagnosed root cause to the user, and obtain explicit user approval before modifying any code.
-
-3. **Decoupled Presentation Lifecycle (Antigravity-Controlled Browser Launch)**:
-   - Python scripts (`scripts/*.py`) are pure data pipeline tools and must NEVER invoke browser opening or produce GUI side effects.
-   - The interactive player HTML must **ONLY** be opened by Antigravity via an OS command (e.g., `open path/to/<stem>_player.html` on macOS) at the very end of the task, after all files are completely written, verified, and ready for user review.
-
----
-
 ## Standard Agent Workflow (Autonomous Pipeline Execution)
 
 When Antigravity or any compatible agent is instructed by the user to transcribe, summarize, or analyze an audio meeting file, follow this standard operational protocol:
