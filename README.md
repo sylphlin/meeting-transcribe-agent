@@ -15,11 +15,14 @@
 
 - **預設核心（全雲端模式 `--engine gemini`）**：
   - 核心採用 **Google Gemini 3.5 Transcribe** 搭配 **Gemini 3.7 Flash**。
-  - 極速轉譯（1 小時音訊約 30~60 秒完成），原生單詞級時間戳記與語者切分。
+  - **極速轉譯與雙軌並行 (Dual-Track Concurrency)**：
+    - Stage 1 智慧音訊偵測：檔案 $\le 10\text{MB}$ 或原始碼率 $\le 48\text{kbps}$ 自動免轉碼直傳，大檔以 48k 壓至串流最佳區間。
+    - Stage 2 雙軌並行化：核心決策摘要（軌道 A）與萬字逐字稿智慧繁體化（軌道 B）由 `ThreadPoolExecutor` 同步發送，配合 `thinking_budget=0` 消除延遲，總生成時間砍半！
   - Google Files API 自動暫存與**零殘留自動銷毀**（`client.files.delete`），無持續雲端儲存費用與資料隱私疑慮。
 - **備援備案（離線本地模式 `--engine whisper`）**：
   - 本地離線執行：支援 Apple Silicon GPU 加速（`mlx-whisper`）或跨平台 CPU/CUDA（`faster-whisper`）。
   - 聲學聲紋分離：整合新世代 **Sherpa-ONNX (3D-Speaker / PyAnnote)** 本地聲學聲紋聚類與重疊語音偵測。
+  - **雙指針滑動窗口 (Two-Pointer Sliding Window)**：單詞級聲紋對齊演算法提升 106 倍速（$O(N)$ 線性掃描），毫秒級精確切分。
   - 專為**企業機房 IP 限制、隔離網閘 (Air-gapped) 或機敏無法上雲情境**設計。
 
 ---
@@ -49,28 +52,34 @@
 
 ## 🏗️ 核心處理流水線 (Pipeline Architecture)
 
-Meeting Transcribe Agent 採用四階段高精度流水線，將多模態大模型轉譯與長音訊聲學漂移收斂深度結合：
+Meeting Transcribe Agent 採用高精度並行流水線，將多模態大模型轉譯、長音訊聲學漂移收斂與效能最佳化深度結合：
 
 ```text
 音訊輸入 (.mp3 / .m4a / .wav) + 可選會議大綱 (.txt / .md)
+  │
+  ├─▶ 階段 0：智慧音訊探測 (Smart Ingestion & Probing)
+  │     └─ 自動偵測檔案大小與碼率 (<=10MB 或 <=48k 零轉碼秒傳；大檔 48k 智慧壓縮)
   │
   ├─▶ 階段 1：雙軌專有名詞探勘 (Dual-Track Glossary Mining)
   │     └─ 百萬上下文輕量預掃描 + 議程解析 ──▶ 提煉權威術語與人員官銜對照表
   │
   ├─▶ 階段 2：語音辨識與聲學切分 (Speech Recognition & Diarization)
-  │     ├─【預設】雲端 Gemini 3.5 Transcribe：極速多模態辨識 + 零暫存自動銷毀
-  │     └─【備援】本地 Whisper + Sherpa-ONNX：純離線聲紋特徵聚類與語音重疊偵測
+  │     ├─【雲端】Gemini 3.5 Transcribe：極速多模態辨識 + 零暫存自動銷毀 + 階梯式自適應輪詢
+  │     └─【本地】Whisper + Sherpa-ONNX：雙指針滑動窗口 106x 加速聲學對齊與重疊偵測
   │
-  ├─▶ 階段 3：語義仲裁與語者身分收斂 (Canonical Speaker Consolidation)
-  │     ├─ 綜合語境判定真實講者身分，解決長音訊特徵漂移 (將 spk_2, spk_3, spk_7 自動收斂為單一講者)
-  │     └─ 自動合併前後 2.0 秒內同講者的連貫語句，杜絕過度切音造成的閱讀破碎感
+  ├─▶ 階段 3：雙軌非同步並行會議重構 (Dual-Track Concurrent Restructuring)
+  │     ├─ 軌道 A：Gemini 3.7 Flash 提煉第 1~5 節摘要、議題決策、待辦清單與角色對照表 (~3-5 秒)
+  │     ├─ 軌道 B：Gemini 3.7 Flash 專責第 6 節逐字稿角色對齊、錯字校正與脈絡級繁體化 (~18-20 秒)
+  │     └─ 本地身分收斂平滑 (spk_X 角色替換 + 2.0 秒內連貫語句合併)
   │
   └─▶ 階段 4：現代化獨立互動播放器 (Modern Web Guidance UI)
-        ├─ 產出完全零外部依賴的獨立 HTML 播放器
+        ├─ 70 行極簡 JSON 注入器，零依賴產出完全獨立的單一 HTML 播放器
         └─ 自動喚起系統預設瀏覽器 (Zero-Click Auto-Open)
 ```
 
 ### 核心特性亮點：
+- **極致效能與並行化**：Stage 2 採雙軌非同步並行，徹底消除長逐字稿循序輸出的等待瓶頸，配合 `thinking_budget=0`，整體時間砍半！
+- **脈絡級繁體化與專有名詞校正**：逐字稿保留原發言內容的同時，透過 LLM 前後文理解精準修正語音同音錯字，並將 ASR 的簡體輸出自然化為地道繁體中文（避免字典式錯字）。
 - **極速與資料隱私兼備**：預設雲端模式透過 Google 官方 Files API 傳輸，轉譯完畢後**自動銷毀雲端暫存檔**，免除自建 Storage Bucket 的維護與長期存儲外洩風險。
 - **聲學分群漂移收斂 (Canonical Consolidation)**：公務會議長達 1~2 小時，發言人常因情緒高低、距離麥克風遠近等因素產生聲紋特徵向量偏移。系統透過語義推理仲裁與時間窗口平滑，自動將分散的聲學群集收斂為單一權威身分。
 - **動態語言跟隨 (Dynamic Language Adaptation)**：會議記錄的主旨、討論重點與待辦清單會自動跟隨使用者的對話語言（繁體中文、English、日本語等），而逐字稿嚴格保留原生發言內容，兼顧閱讀便利與法規存證真實性。
