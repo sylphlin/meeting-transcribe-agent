@@ -1,0 +1,1725 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <title>會議記錄與互動式播放器 - {{TITLE}}</title>
+    <script>
+        // Anti-FOUC immediate theme detection
+        (function() {
+            try {
+                const savedTheme = localStorage.getItem('meeting_transcribe_theme');
+                const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (e) {}
+        })();
+    </script>
+    <style>
+        :root {
+            color-scheme: light dark;
+            --bg-color: #0f172a;
+            --surface-color: #1e293b;
+            --surface-hover: #334155;
+            --border-color: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #38bdf8;
+            --primary-hover: #0ea5e9;
+            --accent-green: #34d399;
+            --accent-amber: #fbbf24;
+            --accent-purple: #c084fc;
+            --accent-red: #f87171;
+            --highlight-bg: rgba(56, 189, 248, 0.15);
+            --highlight-border: #38bdf8;
+            --turn-bg: rgba(15, 23, 42, 0.65);
+            --header-bg: rgba(30, 41, 59, 0.95);
+            --audio-bar-bg: rgba(30, 41, 59, 0.95);
+            --scrollbar-thumb: #475569;
+            --scrollbar-track: #1e293b;
+            --modal-overlay: rgba(0, 0, 0, 0.65);
+            --kbd-bg: #334155;
+            --kbd-text: #f8fafc;
+        }
+
+        [data-theme="light"] {
+            color-scheme: light;
+            --bg-color: #f8fafc;
+            --surface-color: #ffffff;
+            --surface-hover: #f1f5f9;
+            --border-color: #e2e8f0;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --primary: #0284c7;
+            --primary-hover: #0369a1;
+            --accent-green: #059669;
+            --accent-amber: #d97706;
+            --accent-purple: #7c3aed;
+            --accent-red: #dc2626;
+            --highlight-bg: rgba(2, 132, 199, 0.12);
+            --highlight-border: #0284c7;
+            --turn-bg: #ffffff;
+            --header-bg: rgba(255, 255, 255, 0.95);
+            --audio-bar-bg: rgba(255, 255, 255, 0.95);
+            --scrollbar-thumb: #cbd5e1;
+            --scrollbar-track: #f1f5f9;
+            --modal-overlay: rgba(15, 23, 42, 0.45);
+            --kbd-bg: #e2e8f0;
+            --kbd-text: #1e293b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+            scrollbar-width: thin;
+        }
+
+        @supports not (scrollbar-color: auto) {
+            ::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+            ::-webkit-scrollbar-track {
+                background: var(--scrollbar-track);
+            }
+            ::-webkit-scrollbar-thumb {
+                background: var(--scrollbar-thumb);
+                border-radius: 4px;
+            }
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            transition: background-color 0.25s ease, color 0.25s ease;
+        }
+
+        /* Typography optimizations */
+        h1, h2, h3, h4, h5, h6, .header-title, .panel-header-title {
+            text-wrap: balance;
+        }
+
+        .summary-content-body p, .summary-content-body li, .turn-text {
+            text-wrap: pretty;
+        }
+
+        header.top-header {
+            background: var(--header-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 12px 24px;
+            flex-shrink: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            z-index: 100;
+            transition: background-color 0.25s ease, border-color 0.25s ease;
+        }
+
+        .header-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-main);
+            letter-spacing: -0.01em;
+        }
+
+        .header-sub {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .theme-toggle-btn {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.05rem;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .theme-toggle-btn:hover {
+            border-color: var(--primary);
+            transform: scale(1.05);
+        }
+
+        .lang-selector-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            padding: 5px 10px;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .lang-selector-wrapper:hover {
+            border-color: var(--primary);
+        }
+
+        .lang-icon {
+            font-size: 0.95rem;
+            line-height: 1;
+        }
+
+        .lang-select {
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .lang-select option {
+            background: var(--surface-color);
+            color: var(--text-main);
+        }
+
+        main.container {
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+            max-width: 1440px;
+            margin: 12px auto 14px auto;
+            padding: 0 20px;
+            display: grid;
+            grid-template-columns: 1.05fr 1.25fr;
+            gap: 20px;
+            overflow: hidden;
+        }
+
+        @media (max-width: 960px) {
+            main.container {
+                grid-template-columns: 1fr;
+                overflow-y: auto;
+            }
+        }
+
+        .panel {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            height: 100%;
+            min-height: 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: background-color 0.25s ease, border-color 0.25s ease;
+        }
+
+        #summary-panel {
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 12px 18px;
+            background: var(--surface-color);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            min-height: 57px;
+        }
+
+        .panel-header-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .gdoc-btn {
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            color: var(--primary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .gdoc-btn:hover {
+            background: var(--primary);
+            color: #ffffff;
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+            transform: translateY(-1px);
+        }
+
+        /* Soft edge content fade using CSS masking */
+        .summary-content-body {
+            flex: 1;
+            min-height: 0;
+            padding: 20px 24px;
+            overflow-y: auto;
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 20px), transparent 100%);
+            mask-image: linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 20px), transparent 100%);
+        }
+
+        .toast-notification {
+            position: fixed;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-20px);
+            background: var(--surface-color);
+            color: var(--text-main);
+            border: 1px solid var(--primary);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3), 0 0 15px rgba(56, 189, 248, 0.2);
+            padding: 10px 22px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 2000;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .toast-notification.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+            pointer-events: auto;
+        }
+
+        #transcript-panel {
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .transcript-header {
+            padding: 12px 18px;
+            background: var(--surface-color);
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+            min-height: 57px;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 4px 12px;
+            transition: all 0.2s;
+            width: 100%;
+        }
+
+        .search-bar:focus-within {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+        }
+
+        .search-icon {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-size: 0.9rem;
+            padding: 8px 0;
+            outline: none;
+        }
+
+        .search-count {
+            font-size: 0.8rem;
+            color: var(--accent-amber);
+            font-family: monospace;
+            font-weight: 600;
+            background: rgba(251, 191, 36, 0.15);
+            padding: 2px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
+        .search-nav-btn {
+            background: var(--surface-hover);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: all 0.15s;
+        }
+
+        .search-nav-btn:hover:not(:disabled) {
+            background: var(--primary);
+            color: #ffffff;
+        }
+
+        .search-nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .search-clear-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 0 4px;
+        }
+
+        .search-clear-btn:hover {
+            color: var(--text-main);
+        }
+
+        #transcript-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px 24px 20px;
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 20px), transparent 100%);
+            mask-image: linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 20px), transparent 100%);
+        }
+
+        mark.search-match {
+            background-color: rgba(250, 204, 21, 0.35);
+            color: var(--text-main);
+            border-radius: 3px;
+            padding: 1px 3px;
+            box-shadow: 0 0 4px rgba(250, 204, 21, 0.4);
+            transition: all 0.2s;
+        }
+
+        mark.search-match.current {
+            background-color: #f59e0b;
+            color: #ffffff;
+            font-weight: 700;
+            box-shadow: 0 0 10px #f59e0b;
+        }
+
+        /* High-Performance Transcript Turn with content-visibility */
+        .transcript-turn {
+            content-visibility: auto;
+            contain-intrinsic-size: auto none auto 75px;
+            background: var(--turn-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            scroll-margin-top: 14px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+        }
+
+        .transcript-turn:hover {
+            border-color: var(--primary);
+        }
+
+        .transcript-turn.active {
+            background: var(--highlight-bg);
+            border-color: var(--highlight-border);
+            box-shadow: 0 0 16px rgba(56, 189, 248, 0.2);
+            transform: scale(1.008);
+        }
+
+        .turn-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .ts-badge {
+            background: rgba(56, 189, 248, 0.12);
+            color: var(--primary);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 6px;
+            padding: 3px 8px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.2s;
+        }
+
+        .ts-badge:hover {
+            background: var(--primary);
+            color: #ffffff;
+            box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+        }
+
+        .speaker-tag {
+            font-weight: 600;
+            font-size: 0.88rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .spk-mayor {
+            background: rgba(251, 191, 36, 0.15);
+            color: var(--accent-amber);
+            border: 1px solid rgba(251, 191, 36, 0.4);
+        }
+
+        .spk-emcee {
+            background: rgba(192, 132, 252, 0.15);
+            color: var(--accent-purple);
+            border: 1px solid rgba(192, 132, 252, 0.4);
+        }
+
+        .spk-chief {
+            background: rgba(52, 211, 153, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(52, 211, 153, 0.4);
+        }
+
+        .spk-overlap {
+            background: rgba(248, 113, 113, 0.15);
+            color: var(--accent-red);
+            border: 1px solid rgba(248, 113, 113, 0.4);
+        }
+
+        .spk-default {
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--text-muted);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+
+        .turn-text {
+            color: var(--text-main);
+            font-size: 0.95rem;
+            line-height: 1.68;
+        }
+
+        /* Summary Markdown Styling */
+        .summary-content-body h2 {
+            font-size: 1.15rem;
+            color: var(--primary);
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 6px;
+            margin: 18px 0 12px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .summary-content-body h2:first-child {
+            margin-top: 0;
+        }
+
+        .summary-content-body h3 {
+            font-size: 1.02rem;
+            color: var(--text-main);
+            margin: 14px 0 8px 0;
+        }
+
+        .summary-content-body p {
+            margin-bottom: 10px;
+            font-size: 0.92rem;
+            color: var(--text-main);
+        }
+
+        .summary-content-body ul, .summary-content-body ol {
+            padding-left: 20px;
+            margin-bottom: 12px;
+        }
+
+        .summary-content-body li {
+            font-size: 0.92rem;
+            margin-bottom: 5px;
+            color: var(--text-main);
+        }
+
+        .summary-content-body table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 14px 0;
+            font-size: 0.88rem;
+        }
+
+        .summary-content-body th, .summary-content-body td {
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        .summary-content-body th {
+            background: var(--surface-hover);
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .summary-content-body blockquote {
+            border-left: 3px solid var(--primary);
+            padding: 6px 14px;
+            margin: 10px 0;
+            background: rgba(56, 189, 248, 0.08);
+            border-radius: 0 6px 6px 0;
+            font-size: 0.88rem;
+        }
+
+        /* Bottom Sticky Audio Player */
+        footer.audio-bar {
+            background: var(--audio-bar-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-top: 1px solid var(--border-color);
+            padding: 10px 24px 12px 24px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            box-shadow: 0 -4px 12px rgba(0,0,0,0.08);
+            z-index: 100;
+            transition: background-color 0.25s ease, border-color 0.25s ease;
+        }
+
+        .progress-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+        }
+
+        .time-label {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            min-width: 44px;
+        }
+
+        .time-label#current-time {
+            text-align: right;
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .progress-slider {
+            flex: 1;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--surface-hover);
+            outline: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .progress-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+            box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+            transition: all 0.15s;
+        }
+
+        .progress-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.25);
+        }
+
+        .controls-row {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            align-items: center;
+            width: 100%;
+            gap: 16px;
+        }
+
+        .controls-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .skip-config {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            padding: 4px 8px;
+            border-radius: 6px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .mini-select {
+            background: var(--surface-hover);
+            border: 1px solid var(--border-color);
+            color: var(--primary);
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.78rem;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .shortcuts-btn {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            padding: 4px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s;
+        }
+
+        .shortcuts-btn:hover {
+            color: var(--text-main);
+            border-color: var(--primary);
+        }
+
+        .controls-center {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+        }
+
+        .controls-right {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 14px;
+        }
+
+        .ctrl-btn {
+            background: var(--surface-hover);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .ctrl-btn svg {
+            pointer-events: none;
+            display: block;
+        }
+
+        .ctrl-btn:hover {
+            background: var(--primary);
+            color: #ffffff;
+            border-color: var(--primary);
+            transform: scale(1.08);
+        }
+
+        .ctrl-btn.play-btn {
+            width: 46px;
+            height: 46px;
+            background: var(--primary);
+            color: #ffffff;
+            box-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
+        }
+
+        .ctrl-btn.play-btn:hover {
+            background: var(--primary-hover);
+            transform: scale(1.1);
+            box-shadow: 0 0 22px rgba(56, 189, 248, 0.55);
+        }
+
+        /* Volume controls */
+        .volume-control-wrap {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .volume-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            font-size: 0.95rem;
+            transition: color 0.15s;
+        }
+
+        .volume-btn:hover {
+            color: var(--text-main);
+        }
+
+        .volume-slider {
+            width: 70px;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 4px;
+            border-radius: 2px;
+            background: var(--surface-hover);
+            outline: none;
+            cursor: pointer;
+        }
+
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .volume-slider::-webkit-slider-thumb:hover {
+            background: var(--primary);
+            transform: scale(1.2);
+        }
+
+        .speed-select {
+            background: var(--surface-hover);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            cursor: pointer;
+            outline: none;
+        }
+
+        /* Keyboard Shortcuts Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: var(--modal-overlay);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 3000;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal-dialog {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            width: 90%;
+            max-width: 480px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .modal-title {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .modal-close-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            cursor: pointer;
+        }
+
+        .modal-close-btn:hover {
+            color: var(--text-main);
+        }
+
+        .shortcuts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px 18px;
+            font-size: 0.88rem;
+        }
+
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-main);
+        }
+
+        kbd {
+            background: var(--kbd-bg);
+            color: var(--kbd-text);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 2px 7px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.78rem;
+            box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <header class="top-header">
+        <div>
+            <div class="header-title">🎙️ {{TITLE}}</div>
+            <div id="header-sub-text" class="header-sub" data-i18n="header_sub">Gemini Transcribe 雙引擎會議記錄與多模態互動審閱系統</div>
+        </div>
+        <div class="header-actions">
+            <!-- Theme Toggle Button -->
+            <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="toggleTheme()" data-i18n-title="theme_toggle_tooltip" title="切換淺色/深色主題" aria-label="Toggle Theme">
+                <span id="theme-icon">🌙</span>
+            </button>
+            <div class="lang-selector-wrapper">
+                <span class="lang-icon">🌐</span>
+                <select id="lang-select" class="lang-select" onchange="changeLanguage(this.value)">
+                    <option value="zh-TW" selected>繁體中文</option>
+                    <option value="en">English</option>
+                    <option value="ja">日本語</option>
+                    <option value="ko">한국어</option>
+                    <option value="zh-CN">简体中文</option>
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Left Panel: Minutes & Executive Summary -->
+        <section class="panel" id="summary-panel">
+            <div class="panel-header">
+                <div class="panel-header-title">
+                    <span>📋</span>
+                    <span id="summary-title-text" data-i18n="summary_title">會議摘要</span>
+                </div>
+                <div class="panel-header-actions">
+                    <button id="copy-gdoc-btn" class="gdoc-btn" onclick="copyToGoogleDoc()" data-i18n-title="copy_gdoc_tooltip" title="複製排版內容並開啟 Google 文件">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                            <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                        </svg>
+                        <span id="copy-gdoc-btn-text" data-i18n="copy_gdoc_btn">複製至 Google 文件</span>
+                    </button>
+                </div>
+            </div>
+            <div id="summary-content" class="summary-content-body">
+                {{SUMMARY_HTML}}
+            </div>
+        </section>
+
+        <!-- Right Panel: Interactive Verbatim Transcript -->
+        <section class="panel" id="transcript-panel">
+            <div class="transcript-header">
+                <div class="search-bar">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="search-input" class="search-input" placeholder="搜尋逐字稿關鍵字與發言人..." data-i18n-placeholder="search_placeholder" oninput="onSearchInput()">
+                    <span id="search-count" class="search-count" style="display: none;">0 / 0</span>
+                    <button id="search-prev-btn" class="search-nav-btn" onclick="navigateSearch(-1)" data-i18n-title="search_prev_tooltip" title="上一個 (Shift+Enter)" disabled>▲</button>
+                    <button id="search-next-btn" class="search-nav-btn" onclick="navigateSearch(1)" data-i18n-title="search_next_tooltip" title="下一個 (Enter)" disabled>▼</button>
+                    <button id="search-clear-btn" class="search-clear-btn" onclick="clearSearch()" data-i18n-title="search_clear_tooltip" title="清除搜尋" style="display: none;">✕</button>
+                </div>
+            </div>
+            <div id="transcript-container">
+                {{TRANSCRIPT_TURNS}}
+            </div>
+        </section>
+    </main>
+
+    <!-- Floating Toast Notification -->
+    <div id="toast" class="toast-notification"></div>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div id="shortcuts-modal" class="modal-overlay" onclick="closeShortcutsModal(event)">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title" data-i18n="shortcuts_title">⌨️ 快捷鍵導覽</div>
+                <button class="modal-close-btn" onclick="toggleShortcutsModal(false)">✕</button>
+            </div>
+            <div class="shortcuts-grid">
+                <div class="shortcut-item">
+                    <span data-i18n="shortcut_space">播放 / 暫停</span>
+                    <kbd>Space</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span data-i18n="shortcut_seek">快退 / 快進</span>
+                    <div><kbd>←</kbd> <kbd>→</kbd></div>
+                </div>
+                <div class="shortcut-item">
+                    <span data-i18n="shortcut_vol">音量調高 / 低</span>
+                    <div><kbd>↑</kbd> <kbd>↓</kbd></div>
+                </div>
+                <div class="shortcut-item">
+                    <span data-i18n="shortcut_mute">靜音切換</span>
+                    <kbd>M</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span data-i18n="shortcut_search">聚焦搜尋</span>
+                    <kbd>/</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span data-i18n="shortcut_esc">關閉 / 清除</span>
+                    <kbd>Esc</kbd>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Sticky Audio Bar -->
+    <footer class="audio-bar">
+        <audio id="main-audio" preload="metadata" src="{{AUDIO_SRC}}"></audio>
+        
+        <div class="progress-row">
+            <span id="current-time" class="time-label">00:00</span>
+            <input type="range" id="seek-slider" class="progress-slider" min="0" max="100" value="0" step="0.1" oninput="onSeekChange(this.value)">
+            <span id="total-duration" class="time-label">00:00</span>
+        </div>
+
+        <div class="controls-row">
+            <div class="controls-left">
+                <div class="skip-config">
+                    <label id="skip-label" for="skip-step-select" data-i18n="skip_label">快進/退：</label>
+                    <select id="skip-step-select" class="mini-select" onchange="setSkipStep(this.value)">
+                        <option value="3">3 秒</option>
+                        <option value="5">5 秒</option>
+                        <option value="10" selected>10 秒</option>
+                        <option value="15">15 秒</option>
+                        <option value="30">30 秒</option>
+                    </select>
+                </div>
+                <button class="shortcuts-btn" onclick="toggleShortcutsModal(true)" data-i18n-title="shortcuts_tooltip" title="檢視鍵盤快捷鍵">
+                    <span>⌨️</span>
+                    <span data-i18n="shortcuts_btn">快捷鍵</span>
+                </button>
+            </div>
+
+            <div class="controls-center">
+                <button id="skip-back-btn" class="ctrl-btn" onclick="skipAudio(-1)" title="快退 10 秒">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                        <polygon points="11,19 2,12 11,5"/>
+                        <polygon points="22,19 13,12 22,5"/>
+                    </svg>
+                </button>
+                <button id="play-toggle-btn" class="ctrl-btn play-btn" onclick="togglePlay()" data-i18n-title="play_tooltip" title="播放">
+                    <svg id="play-icon-svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                        <polygon points="6,4 20,12 6,20"/>
+                    </svg>
+                </button>
+                <button id="skip-forward-btn" class="ctrl-btn" onclick="skipAudio(1)" title="快進 10 秒">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                        <polygon points="13,19 22,12 13,5"/>
+                        <polygon points="2,19 11,12 2,5"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="controls-right">
+                <!-- Volume Control -->
+                <div class="volume-control-wrap">
+                    <button id="volume-btn" class="volume-btn" onclick="toggleMute()" data-i18n-title="volume_tooltip" title="靜音 / 取消靜音">
+                        <span id="volume-icon">🔊</span>
+                    </button>
+                    <input type="range" id="volume-slider" class="volume-slider" min="0" max="1" step="0.05" value="1" oninput="setVolume(this.value)">
+                </div>
+
+                <label id="speed-label" style="font-size:0.85rem; color:var(--text-muted);" data-i18n="speed_label">播放速度：</label>
+                <select id="speed-picker" class="speed-select" onchange="setPlaybackSpeed(this.value)">
+                    <option value="0.75">0.75x</option>
+                    <option value="1.0" selected>1.0x</option>
+                    <option value="1.25">1.25x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2.0">2.0x</option>
+                </select>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        /* Internationalization (i18n) Dictionary */
+        const I18N = {
+            'zh-TW': {
+                header_sub: 'Gemini Transcribe 雙引擎會議記錄與多模態互動審閱系統',
+                summary_title: '會議摘要',
+                copy_gdoc_btn: '複製至 Google 文件',
+                copy_gdoc_tooltip: '複製排版內容並開啟 Google 文件',
+                search_placeholder: '搜尋逐字稿關鍵字與發言人...',
+                search_prev_tooltip: '上一個 (Shift+Enter)',
+                search_next_tooltip: '下一個 (Enter)',
+                search_clear_tooltip: '清除搜尋',
+                skip_label: '快進/退：',
+                speed_label: '播放速度：',
+                sec_unit: '{s} 秒',
+                play_tooltip: '播放',
+                pause_tooltip: '暫停',
+                skip_back_tooltip: '快退 {s} 秒',
+                skip_forward_tooltip: '快進 {s} 秒',
+                gdoc_copied_toast: '📋 會議摘要已複製！已在新分頁開啟 Google 文件，請直接按下 ⌘+V (Ctrl+V) 貼上。',
+                copy_failed_alert: '複製失敗，請手動選取左側內容複製。',
+                theme_toggle_tooltip: '切換淺色 / 深色主題',
+                shortcuts_btn: '快捷鍵',
+                shortcuts_tooltip: '檢視鍵盤快捷鍵 (Space, ←, →, M, /)',
+                shortcuts_title: '⌨️ 鍵盤快捷鍵',
+                shortcut_space: '播放 / 暫停',
+                shortcut_seek: '快退 / 快進',
+                shortcut_vol: '音量調高 / 低',
+                shortcut_mute: '靜音切換',
+                shortcut_search: '快速搜尋',
+                shortcut_esc: '關閉 / 清除',
+                volume_tooltip: '音量 / 靜音切換'
+            },
+            'en': {
+                header_sub: 'Gemini Transcribe Dual-Engine Meeting Minutes & Interactive Player',
+                summary_title: 'Meeting Summary',
+                copy_gdoc_btn: 'Copy to Google Docs',
+                copy_gdoc_tooltip: 'Copy formatted summary and open Google Docs',
+                search_placeholder: 'Search transcript keywords and speakers...',
+                search_prev_tooltip: 'Previous (Shift+Enter)',
+                search_next_tooltip: 'Next (Enter)',
+                search_clear_tooltip: 'Clear search',
+                skip_label: 'Skip:',
+                speed_label: 'Playback speed:',
+                sec_unit: '{s}s',
+                play_tooltip: 'Play',
+                pause_tooltip: 'Pause',
+                skip_back_tooltip: 'Rewind {s}s',
+                skip_forward_tooltip: 'Forward {s}s',
+                gdoc_copied_toast: '📋 Meeting summary copied! Opening Google Docs in a new tab, press ⌘+V (Ctrl+V) to paste.',
+                copy_failed_alert: 'Copy failed. Please manually select and copy the left panel content.',
+                theme_toggle_tooltip: 'Toggle Light / Dark Theme',
+                shortcuts_btn: 'Shortcuts',
+                shortcuts_tooltip: 'View Keyboard Shortcuts (Space, ←, →, M, /)',
+                shortcuts_title: '⌨️ Keyboard Shortcuts',
+                shortcut_space: 'Play / Pause',
+                shortcut_seek: 'Rewind / Forward',
+                shortcut_vol: 'Volume Up / Down',
+                shortcut_mute: 'Toggle Mute',
+                shortcut_search: 'Focus Search',
+                shortcut_esc: 'Close / Clear',
+                volume_tooltip: 'Volume / Toggle Mute'
+            },
+            'ja': {
+                header_sub: 'Gemini Transcribe デュアルエンジン議事録＆マルチモーダル再生システム',
+                summary_title: '会議概要',
+                copy_gdoc_btn: 'Google ドキュメントにコピー',
+                copy_gdoc_tooltip: '書式付き要約をコピーして Google ドキュメントを開く',
+                search_placeholder: '文字起こしや話者を検索...',
+                search_prev_tooltip: '前へ (Shift+Enter)',
+                search_next_tooltip: '次へ (Enter)',
+                search_clear_tooltip: '検索をクリア',
+                skip_label: 'スキップ：',
+                speed_label: '再生速度：',
+                sec_unit: '{s} 秒',
+                play_tooltip: '再生',
+                pause_tooltip: '一時停止',
+                skip_back_tooltip: '{s} 秒戻る',
+                skip_forward_tooltip: '{s} 秒進む',
+                gdoc_copied_toast: '📋 会議概要をコピーしました！Google ドキュメントを開きます。⌘+V (Ctrl+V) で貼り付けてください。',
+                copy_failed_alert: 'コピーに失敗しました。手動でコピーしてください。',
+                theme_toggle_tooltip: 'ライト / ダークテーマ切り替え',
+                shortcuts_btn: 'ショートカット',
+                shortcuts_tooltip: 'キーボードショートカット一覧',
+                shortcuts_title: '⌨️ キーボードショートカット',
+                shortcut_space: '再生 / 一時停止',
+                shortcut_seek: '巻き戻し / 早送り',
+                shortcut_vol: '音量 上 / 下',
+                shortcut_mute: '消音 (ミュート)',
+                shortcut_search: '検索フォーカス',
+                shortcut_esc: '閉じる / クリア',
+                volume_tooltip: '音量 / ミュート切替'
+            },
+            'ko': {
+                header_sub: 'Gemini Transcribe 듀얼 엔진 회의록 및 멀티모달 대화형 플레이어',
+                summary_title: '회의 요약',
+                copy_gdoc_btn: 'Google Docs로 복사',
+                copy_gdoc_tooltip: '서식 지정된 요약을 복사하고 Google Docs 열기',
+                search_placeholder: '스크립트 키워드 및 발언자 검색...',
+                search_prev_tooltip: '이전 (Shift+Enter)',
+                search_next_tooltip: '다음 (Enter)',
+                search_clear_tooltip: '검색 지우기',
+                skip_label: '건너뛰기：',
+                speed_label: '재생 속도：',
+                sec_unit: '{s}초',
+                play_tooltip: '재생',
+                pause_tooltip: '일시 중지',
+                skip_back_tooltip: '{s}초 뒤로',
+                skip_forward_tooltip: '{s}초 앞으로',
+                gdoc_copied_toast: '📋 회의 요약이 복사되었습니다! Google Docs가 열리면 ⌘+V (Ctrl+V)를 눌러 붙여넣으세요。',
+                copy_failed_alert: '복사에 실패했습니다. 수동으로 복사해주세요.',
+                theme_toggle_tooltip: '라이트 / 다크 테마 전환',
+                shortcuts_btn: '단축키',
+                shortcuts_tooltip: '키보드 단축키 보기',
+                shortcuts_title: '⌨️ 키보드 단축키',
+                shortcut_space: '재생 / 일시정지',
+                shortcut_seek: '되감기 / 빨리감기',
+                shortcut_vol: '볼륨 올리기 / 내리기',
+                shortcut_mute: '음소거 전환',
+                shortcut_search: '검색창 포커스',
+                shortcut_esc: '닫기 / 지우기',
+                volume_tooltip: '볼륨 / 음소거 전환'
+            },
+            'zh-CN': {
+                header_sub: 'Gemini Transcribe 双引擎会议记录与多模态交互审阅系统',
+                summary_title: '会议摘要',
+                copy_gdoc_btn: '复制到 Google 文档',
+                copy_gdoc_tooltip: '复制排版内容并打开 Google 文档',
+                search_placeholder: '搜索逐字稿关键字与发言人...',
+                search_prev_tooltip: '上一个 (Shift+Enter)',
+                search_next_tooltip: '下一个 (Enter)',
+                search_clear_tooltip: '清除搜索',
+                skip_label: '快进/退：',
+                speed_label: '播放速度：',
+                sec_unit: '{s} 秒',
+                play_tooltip: '播放',
+                pause_tooltip: '暂停',
+                skip_back_tooltip: '快退 {s} 秒',
+                skip_forward_tooltip: '快进 {s} 秒',
+                gdoc_copied_toast: '📋 会议摘要已复制！已为您在新标签页打开 Google 文档，请直接按下 Ctrl+V 粘贴。',
+                copy_failed_alert: '复制失败，请手动选取左侧内容复制。',
+                theme_toggle_tooltip: '切换浅色 / 深色主题',
+                shortcuts_btn: '快捷键',
+                shortcuts_tooltip: '查看键盘快捷键',
+                shortcuts_title: '⌨️ 键盘快捷键',
+                shortcut_space: '播放 / 暂停',
+                shortcut_seek: '快退 / 快进',
+                shortcut_vol: '音量调高 / 低',
+                shortcut_mute: '静音切换',
+                shortcut_search: '快速搜索',
+                shortcut_esc: '关闭 / 清除',
+                volume_tooltip: '音量 / 静音切换'
+            }
+        };
+
+        let currentLang = localStorage.getItem('meeting_transcribe_lang') || 'zh-TW';
+
+        function t(key, params = {}) {
+            const langDict = I18N[currentLang] || I18N['zh-TW'];
+            let text = langDict[key] || I18N['zh-TW'][key] || key;
+            for (const [k, v] of Object.entries(params)) {
+                text = text.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
+            }
+            return text;
+        }
+
+        function changeLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('meeting_transcribe_lang', lang);
+            document.documentElement.lang = lang;
+
+            const langSelect = document.getElementById('lang-select');
+            if (langSelect && langSelect.value !== lang) {
+                langSelect.value = lang;
+            }
+
+            // Update text content with data-i18n
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                el.textContent = t(key);
+            });
+
+            // Update title tooltips with data-i18n-title
+            document.querySelectorAll('[data-i18n-title]').forEach(el => {
+                const key = el.getAttribute('data-i18n-title');
+                el.title = t(key);
+            });
+
+            // Update placeholder
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                const key = el.getAttribute('data-i18n-placeholder');
+                el.placeholder = t(key);
+            });
+
+            // Update dynamic units
+            updateSkipOptionsText();
+            updateSkipTooltips();
+        }
+
+        function updateSkipOptionsText() {
+            const select = document.getElementById('skip-step-select');
+            if (!select) return;
+            Array.from(select.options).forEach(opt => {
+                const s = opt.value;
+                opt.textContent = t('sec_unit', { s });
+            });
+        }
+
+        /* Light / Dark Theme Switching */
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme') || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('meeting_transcribe_theme', next);
+            updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('theme-icon');
+            if (icon) {
+                icon.textContent = theme === 'dark' ? '🌙' : '☀️';
+            }
+        }
+
+        // Initialize Theme Icon
+        const initialTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+        updateThemeIcon(initialTheme);
+
+        /* Keyboard Shortcuts Modal */
+        function toggleShortcutsModal(show) {
+            const modal = document.getElementById('shortcuts-modal');
+            if (modal) {
+                if (show) modal.classList.add('open');
+                else modal.classList.remove('open');
+            }
+        }
+
+        function closeShortcutsModal(e) {
+            if (e.target.id === 'shortcuts-modal') {
+                toggleShortcutsModal(false);
+            }
+        }
+
+        /* Toast helper */
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 5000);
+        }
+
+        /* Copy Left Panel Summary to Google Docs */
+        async function copyToGoogleDoc() {
+            const summaryEl = document.getElementById('summary-content');
+            if (!summaryEl) return;
+
+            const htmlContent = summaryEl.innerHTML;
+            const plainText = summaryEl.innerText;
+
+            try {
+                if (navigator.clipboard && window.ClipboardItem) {
+                    const blobHtml = new Blob([htmlContent], { type: 'text/html' });
+                    const blobText = new Blob([plainText], { type: 'text/plain' });
+                    await navigator.clipboard.write([
+                        new ClipboardItem({
+                            'text/html': blobHtml,
+                            'text/plain': blobText
+                        })
+                    ]);
+                } else {
+                    fallbackCopyHtml(htmlContent, plainText);
+                }
+
+                showToast(t('gdoc_copied_toast'));
+                setTimeout(() => {
+                    window.open('https://docs.new', '_blank');
+                }, 300);
+            } catch (err) {
+                console.error('Clipboard copy error:', err);
+                try {
+                    fallbackCopyHtml(htmlContent, plainText);
+                    showToast(t('gdoc_copied_toast'));
+                    setTimeout(() => {
+                        window.open('https://docs.new', '_blank');
+                    }, 300);
+                } catch (fallbackErr) {
+                    alert(t('copy_failed_alert'));
+                }
+            }
+        }
+
+        function fallbackCopyHtml(html, text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            const successful = document.execCommand('copy');
+            if (!successful) {
+                throw new Error('execCommand copy failed');
+            }
+            document.body.removeChild(ta);
+        }
+
+        const audio = document.getElementById('main-audio');
+        const playBtn = document.getElementById('play-toggle-btn');
+        const playIconSvg = document.getElementById('play-icon-svg');
+        const slider = document.getElementById('seek-slider');
+        const curTimeLabel = document.getElementById('current-time');
+        const totalDurationLabel = document.getElementById('total-duration');
+        const volumeSlider = document.getElementById('volume-slider');
+        const volumeIcon = document.getElementById('volume-icon');
+        const turns = Array.from(document.querySelectorAll('.transcript-turn'));
+        
+        let activeTurnElement = null;
+        let currentSkipStep = 10;
+        let previousVolume = 1.0;
+
+        const playSvgContent = '<polygon points="6,4 20,12 6,20"/>';
+        const pauseSvgContent = '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>';
+
+        function updatePlayIcon(isPlaying) {
+            if (isPlaying) {
+                playIconSvg.innerHTML = pauseSvgContent;
+                playBtn.title = t('pause_tooltip');
+            } else {
+                playIconSvg.innerHTML = playSvgContent;
+                playBtn.title = t('play_tooltip');
+            }
+        }
+
+        audio.addEventListener('play', () => updatePlayIcon(true));
+        audio.addEventListener('pause', () => updatePlayIcon(false));
+
+        function formatSec(sec) {
+            const s = Math.floor(sec % 60);
+            const m = Math.floor(sec / 60);
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        audio.addEventListener('loadedmetadata', () => {
+            slider.max = audio.duration;
+            totalDurationLabel.textContent = formatSec(audio.duration);
+        });
+
+        audio.addEventListener('timeupdate', () => {
+            const cur = audio.currentTime;
+            slider.value = cur;
+            curTimeLabel.textContent = formatSec(cur);
+
+            // Active Turn Karaoke Highlighting & Permanent Smooth Auto-scroll
+            let currentActive = null;
+            for (let i = 0; i < turns.length; i++) {
+                const s = parseFloat(turns[i].dataset.start);
+                const e = parseFloat(turns[i].dataset.end);
+                if (cur >= s && cur <= e) {
+                    currentActive = turns[i];
+                    break;
+                }
+            }
+
+            if (currentActive && currentActive !== activeTurnElement) {
+                if (activeTurnElement) activeTurnElement.classList.remove('active');
+                currentActive.classList.add('active');
+                currentActive.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                activeTurnElement = currentActive;
+            }
+        });
+
+        function togglePlay() {
+            if (audio.paused) {
+                audio.play();
+            } else {
+                audio.pause();
+            }
+        }
+
+        function seekAudio(sec) {
+            audio.currentTime = sec;
+            if (audio.paused) {
+                audio.play();
+            }
+        }
+
+        function onSeekChange(val) {
+            audio.currentTime = val;
+        }
+
+        function updateSkipTooltips() {
+            const backBtn = document.getElementById('skip-back-btn');
+            const fwdBtn = document.getElementById('skip-forward-btn');
+            if (backBtn) backBtn.title = t('skip_back_tooltip', { s: currentSkipStep });
+            if (fwdBtn) fwdBtn.title = t('skip_forward_tooltip', { s: currentSkipStep });
+        }
+
+        function setSkipStep(val) {
+            currentSkipStep = parseInt(val, 10) || 10;
+            updateSkipTooltips();
+        }
+
+        function skipAudio(direction) {
+            const delta = direction * currentSkipStep;
+            audio.currentTime = Math.max(0, Math.min(audio.duration || 0, audio.currentTime + delta));
+        }
+
+        function setPlaybackSpeed(spd) {
+            audio.playbackRate = parseFloat(spd);
+        }
+
+        /* Volume & Mute Controls */
+        function setVolume(val) {
+            audio.volume = parseFloat(val);
+            if (audio.volume === 0) {
+                audio.muted = true;
+                volumeIcon.textContent = '🔇';
+            } else {
+                audio.muted = false;
+                volumeIcon.textContent = audio.volume < 0.5 ? '🔉' : '🔊';
+            }
+            volumeSlider.value = audio.volume;
+        }
+
+        function toggleMute() {
+            if (audio.muted || audio.volume === 0) {
+                audio.muted = false;
+                audio.volume = previousVolume > 0 ? previousVolume : 0.8;
+                volumeSlider.value = audio.volume;
+                volumeIcon.textContent = audio.volume < 0.5 ? '🔉' : '🔊';
+            } else {
+                previousVolume = audio.volume;
+                audio.muted = true;
+                audio.volume = 0;
+                volumeSlider.value = 0;
+                volumeIcon.textContent = '🔇';
+            }
+        }
+
+        /* Search with Keyword Highlighting & Jump Navigation */
+        let allMatchElements = [];
+        let currentMatchIndex = -1;
+
+        // Cache original HTML content for search restoring
+        turns.forEach(turn => {
+            const textEl = turn.querySelector('.turn-text');
+            const spkEl = turn.querySelector('.speaker-tag');
+            turn.dataset.origText = textEl.innerHTML;
+            turn.dataset.origSpk = spkEl.innerHTML;
+        });
+
+        function onSearchInput() {
+            const query = document.getElementById('search-input').value.trim();
+            const countBadge = document.getElementById('search-count');
+            const prevBtn = document.getElementById('search-prev-btn');
+            const nextBtn = document.getElementById('search-next-btn');
+            const clearBtn = document.getElementById('search-clear-btn');
+
+            allMatchElements = [];
+            currentMatchIndex = -1;
+
+            // Reset all turns to original HTML
+            turns.forEach(turn => {
+                turn.querySelector('.turn-text').innerHTML = turn.dataset.origText;
+                turn.querySelector('.speaker-tag').innerHTML = turn.dataset.origSpk;
+                turn.style.display = 'block';
+            });
+
+            if (!query) {
+                countBadge.style.display = 'none';
+                prevBtn.disabled = true;
+                nextBtn.disabled = true;
+                clearBtn.style.display = 'none';
+                return;
+            }
+
+            clearBtn.style.display = 'inline-block';
+            const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${escaped})`, 'gi');
+
+            turns.forEach(turn => {
+                const textEl = turn.querySelector('.turn-text');
+                const spkEl = turn.querySelector('.speaker-tag');
+                const origText = turn.dataset.origText;
+                const origSpk = turn.dataset.origSpk;
+
+                const textMatched = regex.test(origText);
+                const spkMatched = regex.test(origSpk);
+
+                if (textMatched || spkMatched) {
+                    if (textMatched) {
+                        textEl.innerHTML = origText.replace(regex, '<mark class="search-match">$1</mark>');
+                    }
+                    if (spkMatched) {
+                        spkEl.innerHTML = origSpk.replace(regex, '<mark class="search-match">$1</mark>');
+                    }
+                    turn.style.display = 'block';
+                } else {
+                    turn.style.display = 'block';
+                }
+            });
+
+            allMatchElements = Array.from(document.querySelectorAll('mark.search-match'));
+
+            if (allMatchElements.length > 0) {
+                countBadge.style.display = 'inline-block';
+                prevBtn.disabled = false;
+                nextBtn.disabled = false;
+                currentMatchIndex = 0;
+                updateCurrentMatch(true);
+            } else {
+                countBadge.style.display = 'inline-block';
+                countBadge.textContent = '0 / 0';
+                prevBtn.disabled = true;
+                nextBtn.disabled = true;
+            }
+        }
+
+        function updateCurrentMatch(shouldScroll = true) {
+            allMatchElements.forEach((el, idx) => {
+                if (idx === currentMatchIndex) {
+                    el.classList.add('current');
+                    if (shouldScroll) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                } else {
+                    el.classList.remove('current');
+                }
+            });
+
+            const countBadge = document.getElementById('search-count');
+            countBadge.textContent = `${currentMatchIndex + 1} / ${allMatchElements.length}`;
+        }
+
+        function navigateSearch(delta) {
+            if (allMatchElements.length === 0) return;
+            currentMatchIndex = (currentMatchIndex + delta + allMatchElements.length) % allMatchElements.length;
+            updateCurrentMatch(true);
+        }
+
+        function clearSearch() {
+            const input = document.getElementById('search-input');
+            input.value = '';
+            onSearchInput();
+            input.focus();
+        }
+
+        /* Keyboard Event Listener */
+        document.addEventListener('keydown', (e) => {
+            const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+            const isEditing = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
+
+            // Global modal close on Escape
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('shortcuts-modal');
+                if (modal && modal.classList.contains('open')) {
+                    toggleShortcutsModal(false);
+                    return;
+                }
+            }
+
+            if (isEditing) {
+                if (document.activeElement.id === 'search-input') {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (e.shiftKey) {
+                            navigateSearch(-1);
+                        } else {
+                            navigateSearch(1);
+                        }
+                    } else if (e.key === 'Escape') {
+                        clearSearch();
+                        document.activeElement.blur();
+                    }
+                }
+                return;
+            }
+
+            // Global Shortcuts when not focusing inputs
+            if (e.code === 'Space') {
+                e.preventDefault();
+                togglePlay();
+            } else if (e.key === 'ArrowLeft' || e.key === 'j' || e.key === 'J') {
+                e.preventDefault();
+                skipAudio(-1);
+            } else if (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L') {
+                e.preventDefault();
+                skipAudio(1);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setVolume(Math.min(1, (audio.volume || 1) + 0.1));
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setVolume(Math.max(0, (audio.volume || 1) - 0.1));
+            } else if (e.key === 'm' || e.key === 'M') {
+                e.preventDefault();
+                toggleMute();
+            } else if (e.key === '/') {
+                e.preventDefault();
+                const searchInput = document.getElementById('search-input');
+                if (searchInput) searchInput.focus();
+            } else if (e.key === '?') {
+                e.preventDefault();
+                toggleShortcutsModal(true);
+            }
+        });
+
+        // Initialize language and UI state
+        changeLanguage(currentLang);
+    </script>
+</body>
+</html>

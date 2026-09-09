@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables & secrets
+.env
+*.env
+
+# macOS system files
+.DS_Store
+**/.DS_Store
+
+# Temporary & session files
+:memory:.ses
+*.ses
+
+# Local test directory (audio files, benchmark transcripts)
+test/
+
+# Audio and media files
+*.mp3
+*.wav
+*.m4a
+*.aac
+*.flac
+*.ogg
+
+# Generated outputs from ad-hoc runs (preserve repository clean state)
+*_會議記錄.md
+*_player.html
+*_glossary.md
+
+# IDE / Editor
+.vscode/
+.idea/
