@@ -54,8 +54,10 @@ def generate_meeting_minutes_and_transcript(
     compress: bool = True,
     summary_language: str = None,
     open_browser: bool = False,
-    only_transcript: bool = False
+    only_transcript: bool = False,
+    language: str | None = "zh"
 ) -> Path:
+
     """
     End-to-End Meeting Transcription & Intelligence Pipeline:
     - Primary Engine: Cloud Gemini 3.5 Transcribe with ephemeral Files API auto-cleanup.
@@ -121,8 +123,10 @@ def generate_meeting_minutes_and_transcript(
             num_speakers=num_speakers,
             embedding_type=embedding_type,
             whisper_backend=whisper_backend,
-            initial_prompt=glossary_keywords
+            initial_prompt=glossary_keywords,
+            language=language
         )
+
     else:
         print(f"--- [Stage 1/2] Cloud Multimodal Transcription ({transcribe_model}) ---")
         raw_transcript_text, asr_time = transcribe_with_gemini_cloud(
@@ -323,6 +327,13 @@ def main():
         action="store_true",
         help="Run only Stage 1 transcription and output verbatim transcript without Stage 2 summarization (ideal for Agent-native processing)"
     )
+    parser.add_argument(
+        "--language",
+        type=str,
+        default="zh",
+        help="Spoken audio language code for offline Whisper ASR (e.g. 'zh', 'en', 'ja', 'auto') [default: zh]"
+    )
+
 
     args = parser.parse_args()
 
@@ -347,8 +358,10 @@ def main():
             compress=not args.no_compress,
             summary_language=args.summary_language,
             open_browser=args.open,
-            only_transcript=args.only_transcript
+            only_transcript=args.only_transcript,
+            language=args.language
         )
+
     except Exception as e:
         print(f"\n[❌ Error] Execution failed: {e}", file=sys.stderr)
         import traceback

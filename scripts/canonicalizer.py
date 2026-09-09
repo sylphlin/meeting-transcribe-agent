@@ -56,18 +56,8 @@ def parse_speaker_mapping_from_markdown(markdown_text: str) -> Dict[str, str]:
         if not descriptors:
             continue
 
-        # Construct canonical display name
-        if len(descriptors) == 1:
-            canonical_name = descriptors[0]
-        else:
-            primary = descriptors[0]
-            secondary = descriptors[1]
-            if secondary in primary:
-                canonical_name = primary
-            elif primary in secondary:
-                canonical_name = secondary
-            else:
-                canonical_name = f"{primary} ({secondary})"
+        # Construct canonical display name using primary descriptor (Name / Role)
+        canonical_name = descriptors[0]
 
         for s_id in spk_matches:
             mapping[f"spk_{s_id}"] = canonical_name
@@ -78,30 +68,27 @@ def parse_speaker_mapping_from_markdown(markdown_text: str) -> Dict[str, str]:
 def consolidate_verbatim_transcript(transcript_text: str, speaker_mapping: Dict[str, str] = None) -> str:
     """
     Normalizes speaker names in transcript and merges consecutive turns from the same speaker.
-    Handles turn format: `[MM:SS - MM:SS] **Speaker**: Content`
-    Uses acoustic timestamp intervals to detect continuity rather than language-specific words.
     """
-    turn_pattern = re.compile(r'^\s*\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*(?:\*\*([^*]+)\*\*[:：])?\s*(.*)$')
-    lines = transcript_text.splitlines()
+    mapping = speaker_mapping or {}
+    turn_regex = re.compile(r'^\s*\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*(?:\*\*([^*]+)\*\*[:：])?\s*(.*)', re.DOTALL)
 
     parsed_turns: List[dict] = []
     other_lines: List[Tuple[int, str]] = []
 
-    mapping = speaker_mapping or {}
-
-    for line in lines:
-        line_str = line.strip()
-        if not line_str:
+    for line_str in transcript_text.splitlines():
+        line_strip = line_str.strip()
+        if not line_strip:
             continue
-        m = turn_pattern.match(line_str)
-        if m:
-            start_str, end_str, speaker_raw, content = m.groups()
-            speaker_clean = (speaker_raw or "").strip()
 
-            # Canonicalize speaker if matching spk_X
-            for spk_key, canonical_val in mapping.items():
-                if spk_key.lower() in speaker_clean.lower():
-                    speaker_clean = re.sub(re.escape(spk_key), canonical_val, speaker_clean, flags=re.IGNORECASE)
+        match = turn_regex.match(line_strip)
+        if match:
+            start_str, end_str, speaker_str, content = match.groups()
+            speaker_clean = (speaker_str or "").strip()
+
+            # Canonicalize speaker if matching spk_X using word boundary and length-descending order
+            for spk_key in sorted(mapping.keys(), key=len, reverse=True):
+                canonical_val = mapping[spk_key]
+                speaker_clean = re.sub(r'\b' + re.escape(spk_key) + r'\b', canonical_val, speaker_clean, flags=re.IGNORECASE)
 
             parsed_turns.append({
                 "start": start_str,
@@ -110,7 +97,10 @@ def consolidate_verbatim_transcript(transcript_text: str, speaker_mapping: Dict[
                 "content": content.strip()
             })
         else:
-            other_lines.append((len(parsed_turns), line_str))
+            if line_strip.startswith("#") or line_strip.startswith("---") or not parsed_turns:
+                other_lines.append((len(parsed_turns), line_str))
+            else:
+                parsed_turns[-1]["content"] += "\n\n" + line_strip
 
     if not parsed_turns:
         return transcript_text

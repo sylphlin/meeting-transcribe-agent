@@ -124,7 +124,8 @@ def transcribe_with_local_whisper_and_diarization(
     num_speakers: int = -1,
     embedding_type: str = "eres2net",
     whisper_backend: str = "auto",
-    initial_prompt: str = ""
+    initial_prompt: str = "",
+    language: str | None = None
 ) -> Tuple[str, float]:
     """Transcribe audio with Local Whisper + Sherpa-ONNX Diarization + Word-level Alignment."""
     t_start = time.time()
@@ -165,7 +166,7 @@ def transcribe_with_local_whisper_and_diarization(
 
             print("[*] [Offline Acoustic] Running speaker clustering and overlap detection...")
             diar_res = diarizer.process(samples)
-            for seg in diar_res:
+            for seg in diar_res.sort_by_start_time():
                 diar_segments.append(seg)
             print(f"[*] [Offline Acoustic] Diarization complete: identified {len(diar_segments)} speaker segments.")
 
@@ -216,22 +217,28 @@ def transcribe_with_local_whisper_and_diarization(
             "task": "transcribe",
             "word_timestamps": True,
         }
+        if language and language.lower() != "auto":
+            transcribe_kwargs["language"] = language
         if final_prompt:
             transcribe_kwargs["initial_prompt"] = final_prompt
         res = mlx_whisper.transcribe(str(audio_path), **transcribe_kwargs)
         for s in res.get("segments", []):
-            whisper_segs.append({
-                "start": float(s["start"]),
-                "end": float(s["end"]),
-                "text": s["text"].strip()
-            })
-            for w in s.get("words", []):
-                words_list.append({
-                    "start": float(w["start"]),
-                    "end": float(w["end"]),
-                    "word": w["word"],
-                    "probability": float(w.get("probability", 1.0))
+            text = s["text"].strip()
+            if text and text not in [".", "..", "...", ",", "，", "。"]:
+                whisper_segs.append({
+                    "start": float(s["start"]),
+                    "end": float(s["end"]),
+                    "text": text
                 })
+            for w in s.get("words", []):
+                word_clean = w["word"].strip()
+                if word_clean and word_clean not in [".", "..", "...", ",", "，", "。"]:
+                    words_list.append({
+                        "start": float(w["start"]),
+                        "end": float(w["end"]),
+                        "word": w["word"],
+                        "probability": float(w.get("probability", 1.0))
+                    })
     else:
         from faster_whisper import WhisperModel
         print(f"[*] [Local ASR] Loading Whisper model `{model_size}` (int8/CPU, word_timestamps=True)...")
@@ -242,28 +249,37 @@ def transcribe_with_local_whisper_and_diarization(
             "vad_parameters": dict(min_silence_duration_ms=500),
             "word_timestamps": True,
         }
+        if language and language.lower() != "auto":
+            whisper_kwargs["language"] = language
         if final_prompt:
             whisper_kwargs["initial_prompt"] = final_prompt
         segments, info = model.transcribe(str(audio_path), **whisper_kwargs)
         for s in segments:
-            whisper_segs.append({
-                "start": s.start,
-                "end": s.end,
-                "text": s.text.strip()
-            })
+            text = s.text.strip()
+            if text and text not in [".", "..", "...", ",", "，", "。"]:
+                whisper_segs.append({
+                    "start": s.start,
+                    "end": s.end,
+                    "text": text
+                })
             if s.words:
                 for w in s.words:
-                    words_list.append({
-                        "start": w.start,
-                        "end": w.end,
-                        "word": w.word,
-                        "probability": w.probability
-                    })
+                    word_clean = w.word.strip()
+                    if word_clean and word_clean not in [".", "..", "...", ",", "，", "。"]:
+                        words_list.append({
+                            "start": w.start,
+                            "end": w.end,
+                            "word": w.word,
+                            "probability": w.probability
+                        })
+
 
     # Step 3: Word-level Temporal Voting Alignment & Overlap Tagging
     if diar_segments and words_list:
         print("[*] Aligning word-level timestamps with speaker diarization clusters and merging overlaps...")
+        valid_words = []
         for w in words_list:
+
             w_s, w_e = w["start"], w["end"]
             best_spk = None
             max_overlap = 0.0
@@ -282,6 +298,10 @@ def transcribe_with_local_whisper_and_diarization(
                         closest_dist = dist
                         best_spk = str(d.speaker)
 
+            # Drop acoustic silence hallucinations
+            if best_spk is None:
+                continue
+
             # Check overlap tagging
             is_overlap = False
             for ov in overlap_intervals:
@@ -289,7 +309,8 @@ def transcribe_with_local_whisper_and_diarization(
                     is_overlap = True
                     break
 
-            w["speaker"] = (best_spk or "0") + ("_overlap" if is_overlap else "")
+            w["speaker"] = best_spk + ("_overlap" if is_overlap else "")
+            valid_words.append(w)
 
         # Group words into speaker turns
         aligned_turns = []
@@ -298,7 +319,8 @@ def transcribe_with_local_whisper_and_diarization(
         turn_start = None
         turn_end = None
 
-        for w in words_list:
+        for w in valid_words:
+
             spk = w["speaker"]
             if cur_spk is None:
                 cur_spk = spk
