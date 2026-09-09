@@ -30,21 +30,18 @@
 ## 🚀 雙引擎架構 (Dual-Engine Architecture)
 
 ### 1. 全雲端極速模式（預設核心）
-* **雙模型旗艦組合**：採用 **Google Gemini 3.5 Transcribe**（語音多模態辨識與語者切分）搭配 **Gemini 3.8 Flash**（結構化記錄重構）。
-* **Stage 1 智慧音訊探測**：
-  * 自動檢測原始檔案大小與碼率。
-  * 小檔（$\le 10\text{MB}$）或低碼率（$\le 48\text{kbps}$）**自動略過 FFmpeg 轉碼秒傳**，大檔自動以 48k mono AAC 預壓縮至串流最佳區間。
-* **Stage 2 雙軌非同步並行 (Dual-Track Concurrency)**：
-  * **軌道 A（決策摘要）** 與 **軌道 B（萬字逐字稿繁體化）** 同步並行生成，徹底解決長篇文本循序輸出的延遲。
-  * 啟用 `thinking_budget=0`，消除推理首字等待延遲，使會議記錄生成時間**直接砍半**。
-* **零殘留隱私保護**：
-  * 音訊經由 Google Files API 傳輸，轉譯完成後觸發 `client.files.delete` **自動銷毀雲端暫存**，不留雲端存儲隱患。
+* **雙模型架構**：採用 **Google Gemini 3.5 Transcribe**（多模態語音辨識與聲學切分）搭配 **Gemini 3.8 Flash**（結構化會議重構與摘要）。
+* **智慧音訊預處理 (Smart Ingestion)**：自動探測音訊位元率與檔案體積。原始低碼率檔案免轉碼直傳，高碼率音訊則自適應壓縮至最佳串流品質，避免無謂的編碼與頻寬消耗。
+* **雙軌非同步並行 (Dual-Track Concurrency)**：
+  * 將「核心決策摘要」與「長篇逐字稿修復」拆分為兩個獨立軌道並行生成，徹底解決長篇文本循序輸出的阻塞問題。
+  * 關閉思考預熱延遲（Zero Thinking Budget），實現即時的首字串流響應。
+* **零殘留隱私保護**：音訊經由 Google Files API 傳輸，轉譯完成後自動呼叫清理機制銷毀雲端暫存，不留資料隱患。
 
 ### 2. 本地離線隱私模式（備援方案）
-* **無網環境支援**：專為企業機房 IP 限制、隔離網閘 (Air-gapped) 或極機敏內容設計。
-* **雙架構加速**：支援 Apple Silicon GPU 原生加速（`mlx-whisper`）或跨平台 CPU/CUDA（`faster-whisper`）。
-* **聲學特徵向量聚類**：整合新世代 **Sherpa-ONNX (3D-Speaker / PyAnnote)** 本地聲學聲紋特徵抽取。
-* **雙指針滑動窗口 (Sliding Window)**：單詞級聲紋對齊演算法提速 **106 倍**（$O(N)$ 線性時間複雜度），毫秒級對齊說話者。
+* **隔離網閘支援**：專為企業機房限制、Air-gapped 隔離網路或高度機敏語音設計，全流程本機執行。
+* **跨平台硬體加速**：支援 Apple Silicon GPU 原生加速（`mlx-whisper`）或跨平台 CPU/CUDA（`faster-whisper`）。
+* **聲學特徵向量聚類**：整合 **Sherpa-ONNX (3D-Speaker / PyAnnote)** 進行本機聲學特徵抽取與語者區分。
+* **雙指針滑動窗口對齊 (Sliding Window)**：採用線性掃描算法實現單詞時間戳記與聲紋區間的毫秒級精確匹配，確保語者標記連續穩定。
 
 ---
 
@@ -74,25 +71,26 @@
 ## 🏗️ 核心處理流水線 (Pipeline Architecture)
 
 ```text
-音訊輸入 (.mp3 / .m4a / .wav) + 可選會議大綱 (.txt / .md)
+輸入：會議錄音檔 (.mp3 / .m4a / .wav 等) ＋ 可選參考文件（會議通知 / 議程大綱）
   │
-  ├─▶ 階段 0：智慧音訊探測 (Smart Ingestion & Probing)
-  │     └─ 檢測檔案大小與碼率 (<=10MB 或 <=48k 免轉碼直傳；大檔 48k 智慧預壓縮)
+  ├─▶ 階段 0：智慧音訊預處理 (Smart Audio Ingestion)
+  │     └─ 探測音訊位元率與大小：低碼率免轉碼直傳，高碼率音訊進行自適應預壓縮
   │
-  ├─▶ 階段 1：雙軌專有名詞探勘 (Dual-Track Glossary Mining)
-  │     └─ 百萬上下文輕量預掃描 + 議程解析 ──▶ 提煉權威術語與人員官銜對照表
+  ├─▶ 階段 1：跨來源術語探勘 (Cross-Source Terminology Mining)
+  │     └─ 結合外部議程文件解析與音訊首輪語義預掃描，提煉與會名單、官銜與技術術語對照表
   │
-  ├─▶ 階段 2：語音辨識與聲學切分 (Speech Recognition & Diarization)
-  │     ├─【雲端預設】Gemini 3.5 Transcribe：極速多模態辨識 + 零暫存自動銷毀 + 階梯式自適應輪詢
-  │     └─【本地離線】Whisper + Sherpa-ONNX：雙指針滑動窗口 106x 加速聲學對齊
+  ├─▶ 階段 2：語音轉譯與語者切分 (Speech Recognition & Diarization)
+  │     ├─【雲端模式】Gemini 3.5 Transcribe 多模態辨識與自動切分（具備雲端暫存自動銷毀機制）
+  │     └─【本地模式】Whisper 語音辨識 ＋ Sherpa-ONNX 聲學特徵向量聚類與滑動窗口對齊
   │
   ├─▶ 階段 3：雙軌非同步並行會議重構 (Dual-Track Concurrent Restructuring)
-  │     ├─ 軌道 A：Gemini 3.8 Flash 提煉第 1~5 節摘要、議題決策、待辦清單與角色對照表 (~3-5 秒)
-  │     ├─ 軌道 B：Gemini 3.8 Flash 專責第 6 節逐字稿角色對齊、錯字校正與脈絡級繁體化 (~18-20 秒)
-  │     └─ 聲學身分收斂平滑 (spk_X 角色替換 + 2.0 秒內連貫語句合併)
+  │     ├─ 軌道 A（決策摘要）：提煉執行摘要、重大決策表、討論議題分析與待辦事項清單
+  │     ├─ 軌道 B（逐字稿精修）：基於上下文語義校正同音錯字，並將辨識內容轉為標準繁體中文
+  │     └─ 發言人收斂與平滑：正規化角色名稱，並將同一發言人的連續停頓語句自動平滑合併
   │
-  └─▶ 階段 4：現代化獨立互動播放器 (Modern Web Guidance UI)
-        └─ 輕量 JSON 注入器，零依賴產出完全獨立的單一 HTML 審閱播放器
+  └─▶ 階段 4：成果發布與播放器生成 (Artifact Generation & Delivery)
+        ├─ 輸出標準 Markdown 格式的完整結構化會議記錄
+        └─ 注入數據至獨立 HTML 模板，生成零外部依賴的雙欄互動播放器
 ```
 
 ### 產出成果檔案：
