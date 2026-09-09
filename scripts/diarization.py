@@ -53,7 +53,7 @@ def preprocess_audio_for_diarization(audio_path: Path) -> Path:
 def enhance_speech_audio(wav_path: Path) -> Path:
     """Denoise and speech-enhance WAV audio with highpass, lowpass, and EBU R128 loudness normalization."""
     enhanced_wav = wav_path.parent / f"temp_enhanced_{wav_path.stem}.wav"
-    print(f"[*] 執行音訊前處理增強 (高低通濾波 80Hz~7.5kHz + 動態響度正規化)...")
+    print(f"[*] Preprocessing audio enhancement (bandpass 80Hz~7.5kHz + dynamic loudness normalization)...")
     cmd = [
         "ffmpeg", "-y", "-i", str(wav_path),
         "-af", "highpass=f=80,lowpass=f=7500,loudnorm=I=-16:TP=-1.5:LRA=11",
@@ -64,7 +64,7 @@ def enhance_speech_audio(wav_path: Path) -> Path:
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         return enhanced_wav
     except Exception as e:
-        print(f"[!] 音訊增強警告 ({e})，使用原始 WAV。")
+        print(f"[!] Audio enhancement warning ({e}), falling back to raw WAV.")
         return wav_path
 
 
@@ -92,7 +92,7 @@ def ensure_sherpa_models(embedding_type: str = "eres2net") -> Tuple[str, str]:
     seg_dir = cache_dir / "sherpa-onnx-pyannote-segmentation-3-0"
     seg_model = seg_dir / "model.onnx"
     if not seg_model.exists():
-        print("[*] 下載 Pyannote 語者切分模型...")
+        print("[*] Downloading Pyannote speaker segmentation model...")
         url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
         tar_path = cache_dir / "sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
         download_file_safe(url, tar_path)
@@ -109,8 +109,9 @@ def ensure_sherpa_models(embedding_type: str = "eres2net") -> Tuple[str, str]:
         url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx"
 
     if not model_file.exists():
-        print(f"[*] 下載聲紋特徵模型 `{embedding_type}`...")
+        print(f"[*] Downloading speaker embedding model `{embedding_type}`...")
         download_file_safe(url, model_file)
+
 
     return str(seg_model), str(model_file)
 
@@ -140,7 +141,7 @@ def transcribe_with_local_whisper_and_diarization(
         try:
             import sherpa_onnx
             seg_model, emb_model = ensure_sherpa_models(embedding_type=embedding_type)
-            print(f"[*] [本地聲學] 載入 Sherpa-ONNX 離線聲紋分離引擎 (特徵模型: {embedding_type}, 閥值: {clustering_threshold})...")
+            print(f"[*] [Offline Acoustic] Loading Sherpa-ONNX diarization engine (embedding: {embedding_type}, threshold: {clustering_threshold})...")
             
             config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
                 segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
@@ -162,11 +163,11 @@ def transcribe_with_local_whisper_and_diarization(
                 import numpy as np
                 samples = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
 
-            print("[*] [本地聲學] 執行聲紋分群與交疊語音偵測...")
+            print("[*] [Offline Acoustic] Running speaker clustering and overlap detection...")
             diar_res = diarizer.process(samples)
             for seg in diar_res:
                 diar_segments.append(seg)
-            print(f"[*] [本地聲學] 分離完成！辨識出 {len(diar_segments)} 個聲學語者片段。")
+            print(f"[*] [Offline Acoustic] Diarization complete: identified {len(diar_segments)} speaker segments.")
 
             # Check overlap intervals
             for i in range(len(diar_segments)):
@@ -182,10 +183,10 @@ def transcribe_with_local_whisper_and_diarization(
                                 "speakers": sorted([str(d1.speaker), str(d2.speaker)])
                             })
             if overlap_intervals:
-                print(f"[*] [本地聲學] 偵測到 {len(overlap_intervals)} 處重疊/交疊發言區間。")
+                print(f"[*] [Offline Acoustic] Detected {len(overlap_intervals)} overlapping speech intervals.")
 
         except Exception as e:
-            print(f"[!] 聲學聲紋分離跳過或失敗 ({e})，使用純文字轉譯。")
+            print(f"[!] Speaker diarization skipped or failed ({e}), proceeding with verbatim transcription.")
         finally:
             if enhanced_wav != audio_path and enhanced_wav.exists():
                 enhanced_wav.unlink()
@@ -204,20 +205,20 @@ def transcribe_with_local_whisper_and_diarization(
 
     words_list = []
     whisper_segs = []
-    final_prompt = initial_prompt or "以下為會議錄音之逐字稿，包含台灣繁體中文對話與專業術語。"
+    final_prompt = initial_prompt or ""
 
     if use_mlx:
         import mlx_whisper
         mlx_repo = f"mlx-community/whisper-{model_size}-mlx"
-        print(f"[*] [本地 ASR] 啟用 Apple Silicon Metal GPU 加速 (`mlx-whisper` {model_size})...")
-        res = mlx_whisper.transcribe(
-            str(audio_path),
-            path_or_hf_repo=mlx_repo,
-            language="zh",
-            task="transcribe",
-            word_timestamps=True,
-            initial_prompt=final_prompt
-        )
+        print(f"[*] [Local ASR] Enabling Apple Silicon Metal GPU acceleration (`mlx-whisper` {model_size})...")
+        transcribe_kwargs = {
+            "path_or_hf_repo": mlx_repo,
+            "task": "transcribe",
+            "word_timestamps": True,
+        }
+        if final_prompt:
+            transcribe_kwargs["initial_prompt"] = final_prompt
+        res = mlx_whisper.transcribe(str(audio_path), **transcribe_kwargs)
         for s in res.get("segments", []):
             whisper_segs.append({
                 "start": float(s["start"]),
@@ -233,16 +234,17 @@ def transcribe_with_local_whisper_and_diarization(
                 })
     else:
         from faster_whisper import WhisperModel
-        print(f"[*] [本地 ASR] 載入 Whisper 模型 `{model_size}` (int8/CPU, word_timestamps=True)...")
+        print(f"[*] [Local ASR] Loading Whisper model `{model_size}` (int8/CPU, word_timestamps=True)...")
         model = WhisperModel(model_size, device="cpu", compute_type="int8")
-        segments, info = model.transcribe(
-            str(audio_path),
-            beam_size=5,
-            vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500),
-            word_timestamps=True,
-            initial_prompt=final_prompt
-        )
+        whisper_kwargs = {
+            "beam_size": 5,
+            "vad_filter": True,
+            "vad_parameters": dict(min_silence_duration_ms=500),
+            "word_timestamps": True,
+        }
+        if final_prompt:
+            whisper_kwargs["initial_prompt"] = final_prompt
+        segments, info = model.transcribe(str(audio_path), **whisper_kwargs)
         for s in segments:
             whisper_segs.append({
                 "start": s.start,
@@ -260,7 +262,7 @@ def transcribe_with_local_whisper_and_diarization(
 
     # Step 3: Word-level Temporal Voting Alignment & Overlap Tagging
     if diar_segments and words_list:
-        print("[*] 執行「單詞級 (Word-level)」細粒度時間戳記聲紋投票對齊與重疊語音融合...")
+        print("[*] Aligning word-level timestamps with speaker diarization clusters and merging overlaps...")
         for w in words_list:
             w_s, w_e = w["start"], w["end"]
             best_spk = None
@@ -313,7 +315,7 @@ def transcribe_with_local_whisper_and_diarization(
                 if sentence:
                     if "_overlap" in cur_spk:
                         clean_spk = cur_spk.replace("_overlap", "")
-                        aligned_turns.append(f"[{s_fmt} - {e_fmt}] **spk_{clean_spk} (同時發言/重疊)**: {sentence}")
+                        aligned_turns.append(f"[{s_fmt} - {e_fmt}] **spk_{clean_spk} (Overlap)**: {sentence}")
                     else:
                         aligned_turns.append(f"[{s_fmt} - {e_fmt}] **spk_{cur_spk}**: {sentence}")
                 
@@ -329,7 +331,7 @@ def transcribe_with_local_whisper_and_diarization(
             if sentence:
                 if "_overlap" in cur_spk:
                     clean_spk = cur_spk.replace("_overlap", "")
-                    aligned_turns.append(f"[{s_fmt} - {e_fmt}] **spk_{clean_spk} (同時發言/重疊)**: {sentence}")
+                    aligned_turns.append(f"[{s_fmt} - {e_fmt}] **spk_{clean_spk} (Overlap)**: {sentence}")
                 else:
                     aligned_turns.append(f"[{s_fmt} - {e_fmt}] **spk_{cur_spk}**: {sentence}")
 
@@ -350,5 +352,7 @@ def transcribe_with_local_whisper_and_diarization(
         raw_text = "\n".join(lines)
 
     asr_time = time.time() - t_start
-    print(f"[*] 本地處理完成！耗時: {asr_time:.1f}s，取得 {len(raw_text)} 字元。")
+    print(f"[*] Local ASR complete in {asr_time:.1f}s ({len(raw_text)} characters).")
     return raw_text, asr_time
+
+

@@ -11,37 +11,57 @@ from scripts.audio_utils import safe_ascii_upload_path
 
 
 def extract_keywords_from_glossary(glossary_text: str, max_keywords: int = 40) -> str:
-    """Extract top entity keywords from glossary text to formulate a prompt for Whisper."""
+    """
+    Extract top entity keywords from glossary text to formulate an ASR prompt.
+    Parses bullet terms and table data rows structurally without hardcoded language dictionaries.
+    """
     if not glossary_text:
         return ""
-    
+
     extracted = []
+    in_table = False
+    table_separator_seen = False
+
     for line in glossary_text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+        line_strip = line.strip()
+        if not line_strip or line_strip.startswith("#"):
+            in_table = False
+            table_separator_seen = False
             continue
-        
-        # Match bold items like **黃偉哲** or **動保處**
-        bolds = re.findall(r"\*\*([^*]+)\*\*", line)
-        for b in bolds:
-            b_clean = re.sub(r"[\(（].*?[\)）]", "", b).strip()
-            if 2 <= len(b_clean) <= 12 and not any(x in b_clean for x in ["長官", "姓名", "機關", "專有名詞", "議題", "備註"]):
-                if b_clean not in extracted:
-                    extracted.append(b_clean)
-        
-        # Match table rows: | 名稱 | ...
-        if line.startswith("|") and line.endswith("|"):
-            parts = [p.strip() for p in line[1:-1].split("|")]
-            for p in parts:
-                p_clean = re.sub(r"[\(（].*?[\)）]", "", p).replace("*", "").strip()
-                if 2 <= len(p_clean) <= 10 and not any(x in p_clean for x in [":---", "---", "名稱", "職稱", "角色", "備註", "代號"]):
-                    if p_clean not in extracted:
-                        extracted.append(p_clean)
+
+        # Structural bullet item: - **Entity**: Description or * **Entity**
+        bullet_match = re.match(r'^\s*[-*]\s+\*\*([^*]+)\*\*', line_strip)
+        if bullet_match:
+            term = re.sub(r'[\(（].*?[\)）]', '', bullet_match.group(1)).strip()
+            if 2 <= len(term) <= 30 and term not in extracted:
+                extracted.append(term)
+            continue
+
+        # Structural markdown table
+        if line_strip.startswith("|") and line_strip.endswith("|"):
+            cells = [c.strip() for c in line_strip[1:-1].split("|")]
+            # Check if this line is the markdown separator row (|:---|:---|)
+            if all(re.match(r'^:?-+:?$', c) for c in cells if c):
+                table_separator_seen = True
+                in_table = True
+                continue
+
+            # If inside table data (after separator row), extract first valid entity cell
+            if table_separator_seen and in_table:
+                for c in cells:
+                    clean = re.sub(r'[\(（].*?[\)）]', '', c).replace("*", "").replace("`", "").strip()
+                    if 2 <= len(clean) <= 30 and clean not in extracted and not re.match(r'^:?-+:?$', clean):
+                        extracted.append(clean)
+                        break
+        else:
+            in_table = False
+            table_separator_seen = False
 
     top_terms = extracted[:max_keywords]
     if not top_terms:
         return ""
-    return "，".join(top_terms) + "。"
+    return ", ".join(top_terms) + "."
+
 
 
 def extract_global_consistency_glossary(
@@ -64,13 +84,13 @@ def extract_global_consistency_glossary(
     target_cache = glossary_file if glossary_file.exists() else alt_glossary
     
     if not force and target_cache.exists():
-        print(f"[*] ⚡ 發現已快取的專有名詞對照表: {target_cache.name}，直接載入！")
+        print(f"[*] ⚡ Found cached consistency glossary: {target_cache.name}, loading directly.")
         cached_content = target_cache.read_text(encoding="utf-8")
         keywords = extract_keywords_from_glossary(cached_content)
         return cached_content, keywords
 
     print(f"\n========================================================")
-    print(f"📚 [詞彙對齊] 啟動雙軌專有名詞探勘 (Global Consistency Glossary)")
+    print(f"📚 [Glossary] Launching dual-track consistency glossary mining...")
     print(f"========================================================")
     t0 = time.time()
 

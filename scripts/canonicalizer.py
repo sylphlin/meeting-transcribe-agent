@@ -12,70 +12,65 @@ from typing import Dict, List, Tuple
 
 def parse_speaker_mapping_from_markdown(markdown_text: str) -> Dict[str, str]:
     """
-    Parses the speaker mapping table from the generated meeting minutes.
-    Supports multilingual table formats across English, Chinese, and Japanese:
-    | Speaker ID | Role / Title | Name | Organization / Notes |
-    | `spk_1, spk_3` | Chair / Host | John Doe | Executive Team |
-    | spk_8 | VP of Engineering | Alice | Tech Dept |
-    | spk_5 | Facilitator | — | — |
+    Parses speaker identity mappings structurally from any markdown table containing `spk_\\d+`.
+    Language-agnostic: requires no hardcoded triggers or language-specific keywords.
     """
     mapping = {}
-    lines = markdown_text.splitlines()
-    in_table = False
-
-    table_triggers = [
-        "speaker mapping", "attendees", "speakers", "participants", "speaker list",
-        "與會首長及人員", "發言人對照表", "發言人對應表", "與會人員", "出席人員",
-        "與會者", "角色對照", "出席者", "話者一覧", "登壇者"
-    ]
-    skip_header_tokens = [
-        "speaker", "id", "代號", "說話者", "發言人", "name", "姓名", "role", "職稱", ":---"
-    ]
-
-    table_row_pattern = re.compile(r'^\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|(.*)$')
     spk_pattern = re.compile(r'spk_(\d+)', re.IGNORECASE)
+    table_row_pattern = re.compile(r'^\s*\|(.+)\|\s*$')
+    placeholder_tokens = {"-", "—", "--", "---", ":---", "none", "n/a", "null", "nil", ""}
 
-    for line in lines:
+    for line in markdown_text.splitlines():
         line_strip = line.strip()
-        line_lower = line_strip.lower()
-
-        if any(trig in line_lower for trig in table_triggers):
-            in_table = True
+        m = table_row_pattern.match(line_strip)
+        if not m:
             continue
 
-        if in_table:
-            if line_strip.startswith("---") or (line_strip.startswith("#") and not line_strip.startswith("###")):
+        cells = [c.strip() for c in m.group(1).split("|")]
+        if len(cells) < 2:
+            continue
+
+        # Check if any cell contains spk_X references
+        spk_cell_idx = -1
+        spk_matches = []
+        for idx, cell in enumerate(cells):
+            matches = spk_pattern.findall(cell)
+            if matches:
+                spk_cell_idx = idx
+                spk_matches = matches
                 break
 
-            m = table_row_pattern.match(line_strip)
-            if m:
-                col1 = m.group(1).strip()
-                col2 = m.group(2).strip()
-                col3 = m.group(3).strip()
+        if spk_cell_idx == -1:
+            continue
 
-                # Skip table header row
-                col1_lower = col1.lower()
-                if any(token in col1_lower for token in skip_header_tokens):
-                    continue
+        # Extract non-empty descriptive fields from other cells in this row
+        descriptors = []
+        for idx, cell in enumerate(cells):
+            if idx == spk_cell_idx:
+                continue
+            clean_val = re.sub(r'[*`_]', '', cell).strip()
+            clean_lower = clean_val.lower()
+            if clean_lower not in placeholder_tokens and not re.match(r'^:?-+:?$', clean_val):
+                descriptors.append(clean_val)
 
-                spk_matches = spk_pattern.findall(col1)
-                if not spk_matches:
-                    continue
+        if not descriptors:
+            continue
 
-                # Construct canonical display name
-                title = col2.replace("*", "").replace("`", "").strip()
-                name = col3.replace("*", "").replace("`", "").strip()
-                if name in ["—", "-", "", "無", "None", "N/A"]:
-                    canonical_name = title
-                elif name in title:
-                    canonical_name = title
-                elif not title:
-                    canonical_name = name
-                else:
-                    canonical_name = f"{title}（{name}）"
+        # Construct canonical display name
+        if len(descriptors) == 1:
+            canonical_name = descriptors[0]
+        else:
+            primary = descriptors[0]
+            secondary = descriptors[1]
+            if secondary in primary:
+                canonical_name = primary
+            elif primary in secondary:
+                canonical_name = secondary
+            else:
+                canonical_name = f"{primary} ({secondary})"
 
-                for s_id in spk_matches:
-                    mapping[f"spk_{s_id}"] = canonical_name
+        for s_id in spk_matches:
+            mapping[f"spk_{s_id}"] = canonical_name
 
     return mapping
 
@@ -84,29 +79,30 @@ def consolidate_verbatim_transcript(transcript_text: str, speaker_mapping: Dict[
     """
     Normalizes speaker names in transcript and merges consecutive turns from the same speaker.
     Handles turn format: `[MM:SS - MM:SS] **Speaker**: Content`
+    Uses acoustic timestamp intervals to detect continuity rather than language-specific words.
     """
-    turn_pattern = re.compile(r'^\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*\*\*([^*]+)\*\*[:：]\s*(.*)$')
+    turn_pattern = re.compile(r'^\s*\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*(?:\*\*([^*]+)\*\*[:：])?\s*(.*)$')
     lines = transcript_text.splitlines()
-    
+
     parsed_turns: List[dict] = []
-    other_lines: List[Tuple[int, str]] = []  # Keep headings / non-turn lines with relative index
+    other_lines: List[Tuple[int, str]] = []
 
     mapping = speaker_mapping or {}
 
-    for idx, line in enumerate(lines):
+    for line in lines:
         line_str = line.strip()
         if not line_str:
             continue
         m = turn_pattern.match(line_str)
         if m:
             start_str, end_str, speaker_raw, content = m.groups()
-            
+            speaker_clean = (speaker_raw or "").strip()
+
             # Canonicalize speaker if matching spk_X
-            speaker_clean = speaker_raw.strip()
             for spk_key, canonical_val in mapping.items():
-                if spk_key in speaker_clean:
-                    speaker_clean = speaker_clean.replace(spk_key, canonical_val)
-            
+                if spk_key.lower() in speaker_clean.lower():
+                    speaker_clean = re.sub(re.escape(spk_key), canonical_val, speaker_clean, flags=re.IGNORECASE)
+
             parsed_turns.append({
                 "start": start_str,
                 "end": end_str,
@@ -119,7 +115,6 @@ def consolidate_verbatim_transcript(transcript_text: str, speaker_mapping: Dict[
     if not parsed_turns:
         return transcript_text
 
-    # Merge consecutive turns from the same canonical speaker if time gap <= 2.0 seconds
     def to_sec(ts: str) -> float:
         parts = [float(p) for p in ts.split(":")]
         if len(parts) == 3:
@@ -131,29 +126,25 @@ def consolidate_verbatim_transcript(transcript_text: str, speaker_mapping: Dict[
         if not merged_turns:
             merged_turns.append(turn)
             continue
-        
+
         last = merged_turns[-1]
         last_end_sec = to_sec(last["end"])
         cur_start_sec = to_sec(turn["start"])
         gap = cur_start_sec - last_end_sec
 
-        # Check if same speaker and small gap (not overlapping speech)
-        is_same_spk = (last["speaker"] == turn["speaker"])
-        overlap_markers = ["同時", "重疊", "simultaneous", "overlap", "同時発言", "重複"]
-        is_overlap = any(
-            m in last["speaker"].lower() or m in turn["speaker"].lower()
-            for m in overlap_markers
-        )
+        # Merge consecutive turns from the same speaker if the gap is small (<= 2.0s) and non-overlapping
+        is_same_spk = bool(last["speaker"] and last["speaker"] == turn["speaker"])
+        is_temporal_overlap = (cur_start_sec < last_end_sec)
 
-        if is_same_spk and not is_overlap and 0.0 <= gap <= 2.0:
-            # Merge text seamlessly
-            sep = "" if last["content"] and last["content"][-1] in "，。！？；、：…" else " "
+        if is_same_spk and not is_temporal_overlap and 0.0 <= gap <= 2.0:
+            last_text = last["content"]
+            needs_space = bool(last_text and last_text[-1].isalnum() and turn["content"] and turn["content"][0].isalnum())
+            sep = " " if needs_space else ""
             last["content"] += sep + turn["content"]
             last["end"] = turn["end"]
         else:
             merged_turns.append(turn)
 
-    # Reconstruct transcript markdown
     out_lines = []
     other_idx = 0
     total_others = len(other_lines)
@@ -163,8 +154,9 @@ def consolidate_verbatim_transcript(transcript_text: str, speaker_mapping: Dict[
             out_lines.append(other_lines[other_idx][1])
             out_lines.append("")
             other_idx += 1
-        
-        out_lines.append(f"[{t['start']} - {t['end']}] **{t['speaker']}**: {t['content']}")
+
+        spk_tag = f"**{t['speaker']}**: " if t['speaker'] else ""
+        out_lines.append(f"[{t['start']} - {t['end']}] {spk_tag}{t['content']}")
         out_lines.append("")
 
     while other_idx < total_others:
@@ -175,51 +167,55 @@ def consolidate_verbatim_transcript(transcript_text: str, speaker_mapping: Dict[
     return "\n".join(out_lines).strip()
 
 
+def find_transcript_boundary(markdown_content: str) -> Tuple[str, str, str]:
+    """
+    Structurally identifies the boundary between the summary portion and the verbatim transcript.
+    Finds the first timestamped turn line, then looks backwards for the nearest markdown header (#).
+    Returns (summary_part, section_header, transcript_part).
+    """
+    timestamp_turn_regex = re.compile(r'^\s*\[\d+:\d+(?::\d+)?\s*-\s*\d+:\d+(?::\d+)?\]', re.MULTILINE)
+    match = timestamp_turn_regex.search(markdown_content)
+
+    if not match:
+        return markdown_content, "", ""
+
+    first_turn_pos = match.start()
+    before_turn = markdown_content[:first_turn_pos]
+
+    # Find the nearest header before the first turn
+    header_matches = list(re.finditer(r'^\s*(#+\s+[^\n]+)', before_turn, re.MULTILINE))
+
+    if header_matches:
+        last_header = header_matches[-1]
+        header_start = last_header.start()
+        header_line = last_header.group(1).strip()
+        summary_part = markdown_content[:header_start].rstrip()
+        transcript_body = markdown_content[last_header.end():].lstrip()
+        return summary_part, header_line, transcript_body
+    else:
+        summary_part = markdown_content[:first_turn_pos].rstrip()
+        transcript_body = markdown_content[first_turn_pos:].lstrip()
+        return summary_part, "", transcript_body
+
+
 def consolidate_meeting_minutes(markdown_content: str) -> str:
     """
     Full pipeline canonicalization:
-    1. Extracts speaker mapping table.
-    2. Consolidates transcript section.
-    3. Returns cleaned, unified Markdown document.
+    1. Extracts speaker mapping table structurally.
+    2. Identifies summary and transcript boundaries.
+    3. Normalizes speaker IDs and merges sequential turns.
+    4. Reconstructs unified markdown document.
     """
     mapping = parse_speaker_mapping_from_markdown(markdown_content)
-    
-    # Split into summary vs transcript (multilingual support)
-    split_keys = [
-        "## 6. 🎙️ full verbatim transcript",
-        "## 6. full verbatim transcript",
-        "## 6. 🎙️ 完整時間戳記逐字稿",
-        "## 6. 🎙️ 完整逐字稿",
-        "### 6. 完整時間戳記逐字稿",
-        "🎙️ 完整時間戳記逐字稿",
-        "full verbatim transcript",
-        "verbatim transcript",
-        "完整時間戳記逐字稿",
-        "文字起こし",
-        "transcript"
-    ]
-    md_lower = markdown_content.lower()
-    found_idx = -1
-    for k in split_keys:
-        idx = md_lower.find(k)
-        if idx != -1:
-            found_idx = idx
-            break
+    summary_part, header_line, transcript_body = find_transcript_boundary(markdown_content)
 
-    if found_idx == -1:
+    if not transcript_body:
         return markdown_content
 
-    line_start = markdown_content.rfind("\n", 0, found_idx)
-    line_start = 0 if line_start == -1 else line_start + 1
-    
-    summary_part = markdown_content[:line_start].rstrip()
-    header_and_transcript = markdown_content[line_start:]
-    
-    # Extract header line of Section 6
-    lines = header_and_transcript.splitlines()
-    sec6_header = lines[0]
-    raw_transcript = "\n".join(lines[1:])
+    clean_transcript = consolidate_verbatim_transcript(transcript_body, mapping)
+    header_block = f"{header_line}\n\n" if header_line else ""
 
-    clean_transcript = consolidate_verbatim_transcript(raw_transcript, mapping)
+    if summary_part:
+        return f"{summary_part}\n\n{header_block}{clean_transcript}\n"
+    return f"{header_block}{clean_transcript}\n"
 
-    return f"{summary_part}\n\n{sec6_header}\n\n{clean_transcript}\n"

@@ -198,54 +198,24 @@ def generate_interactive_html(
         template_path = Path(__file__).parent.parent / "assets" / "player_template.html"
 
     if not template_path.exists():
-        raise FileNotFoundError(f"找不到播放器模板: {template_path}")
+        raise FileNotFoundError(f"Player HTML template not found: {template_path}")
 
     template_str = template_path.read_text(encoding="utf-8")
     rel_audio_path = os.path.relpath(audio_file_path, output_html_path.parent)
 
-    # Split Markdown into Minutes Summary vs Verbatim Transcript (multilingual support)
-    split_keys = [
-        "## 6. 🎙️ full verbatim transcript",
-        "## 6. full verbatim transcript",
-        "## 6. 🎙️ 完整時間戳記逐字稿",
-        "## 6. 🎙️ 完整逐字稿",
-        "### 6. 完整時間戳記逐字稿",
-        "🎙️ 完整時間戳記逐字稿",
-        "full verbatim transcript",
-        "verbatim transcript",
-        "完整時間戳記逐字稿",
-        "文字起こし",
-        "transcript"
-    ]
-    md_lower = markdown_content.lower()
-    found_idx = -1
-    for k in split_keys:
-        idx = md_lower.find(k)
-        if idx != -1:
-            found_idx = idx
-            break
-
-    if found_idx != -1:
-        line_start = markdown_content.rfind("\n", 0, found_idx)
-        line_start = 0 if line_start == -1 else line_start + 1
-        prefix = markdown_content[line_start:found_idx].strip()
-        match_start = line_start if prefix.startswith("#") else found_idx
-        summary_part = markdown_content[:match_start].rstrip()
-        transcript_part = markdown_content[match_start:]
-    else:
-        summary_part = markdown_content
-        transcript_part = ""
+    # Structurally split Markdown into Minutes Summary vs Verbatim Transcript
+    from scripts.canonicalizer import find_transcript_boundary
+    summary_part, header_line, transcript_body = find_transcript_boundary(markdown_content)
 
     # Parse Transcript lines into interactive HTML Turn Cards
-    turn_pattern = re.compile(r'\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*(?:\*\*([^*]+)\*\*[:：])?\s*(.*)')
+    turn_pattern = re.compile(r'^\s*\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*(?:\*\*([^*]+)\*\*[:：])?\s*(.*)')
     turns_html = []
+    speaker_class_map = {}
+    palette_classes = ["spk-mayor", "spk-emcee", "spk-chief", "spk-default"]
 
-    for line in transcript_part.splitlines():
+    for line in transcript_body.splitlines():
         line = line.strip()
         if not line:
-            continue
-        line_lower = line.lower()
-        if any(k in line_lower for k in ["full verbatim transcript", "verbatim transcript", "完整時間戳記逐字稿", "完整逐字稿", "文字起こし"]):
             continue
         m = turn_pattern.match(line)
         if m:
@@ -254,25 +224,21 @@ def generate_interactive_html(
             e_sec = parse_timestamp_to_seconds(end_str)
             speaker_str = (speaker_str or "").strip()
 
-            # Determine speaker badge color style (universal across corporate, tech, government, academia)
             badge_html = ""
             if speaker_str:
                 spk_lower = speaker_str.lower()
-                badge_class = "spk-default"
-                if any(k in spk_lower for k in ["chair", "host", "ceo", "cto", "president", "director", "主席", "市長", "院長", "總經理", "執行長"]):
-                    badge_class = "spk-mayor"
-                elif any(k in spk_lower for k in ["facilitator", "moderator", "emcee", "mc", "secretary", "司儀", "議事", "主持人", "秘書"]):
-                    badge_class = "spk-emcee"
-                elif any(k in spk_lower for k in ["overlap", "simultaneous", "重疊", "同時", "同時発言"]):
+                if any(tok in spk_lower for tok in ["overlap", "simultaneous"]):
                     badge_class = "spk-overlap"
-                elif any(k in spk_lower for k in ["lead", "head", "manager", "vp", "chief", "局長", "處長", "專委", "委員", "主管"]):
-                    badge_class = "spk-chief"
+                else:
+                    if speaker_str not in speaker_class_map:
+                        speaker_class_map[speaker_str] = palette_classes[len(speaker_class_map) % len(palette_classes)]
+                    badge_class = speaker_class_map[speaker_str]
                 badge_html = f'<span class="speaker-tag {badge_class}">{html.escape(speaker_str)}</span>'
 
             turn_card = f"""
             <div class="transcript-turn" data-start="{s_sec}" data-end="{e_sec}">
                 <div class="turn-header">
-                    <button class="ts-badge" onclick="seekAudio({s_sec})" data-i18n-title="seek_badge_tooltip" title="點擊跳轉至此處播放">
+                    <button class="ts-badge" onclick="seekAudio({s_sec})" data-i18n-title="seek_badge_tooltip" title="Click to seek playback">
                         <svg class="play-icon" viewBox="0 0 24 24" width="12" height="12"><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
                         <span>{start_str} - {end_str}</span>
                     </button>
@@ -297,15 +263,16 @@ def generate_interactive_html(
     rendered_html = rendered_html.replace("{{TRANSCRIPT_TURNS}}", parsed_transcript_html)
 
     output_html_path.write_text(rendered_html, encoding="utf-8")
-    print(f"[*] 🌐 互動式會議記錄播放器已生成: {output_html_path}")
+    print(f"[*] 🌐 Interactive meeting player HTML generated: {output_html_path}")
 
     if auto_open:
         try:
             import webbrowser
             webbrowser.open(output_html_path.resolve().as_uri())
-            print(f"[*] 🚀 已在預設瀏覽器中開啟播放器: {output_html_path.name}")
+            print(f"[*] 🚀 Opened interactive player in default browser: {output_html_path.name}")
         except Exception as e:
-            print(f"[!] 自動開啟瀏覽器失敗: {e}")
+            print(f"[!] Failed to open browser automatically: {e}")
+
     return output_html_path
 
 

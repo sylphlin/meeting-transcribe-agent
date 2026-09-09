@@ -139,12 +139,12 @@ def generate_meeting_minutes_and_transcript(
         eng_label = f"Local Whisper ({whisper_backend}/{whisper_model})" if engine.lower() == "whisper" else transcribe_model
         out_path = Path(output_file) if output_file else audio_path.parent / f"{audio_path.stem}_transcript.md"
         content = (
-            f"# 會議逐字稿：{audio_path.stem}\n\n"
-            f"- **音訊檔案**：`{audio_path.name}`\n"
-            f"- **錄音時長**：{dur_str}\n"
-            f"- **轉錄引擎**：{eng_label}\n"
-            f"- **產生時間**：{time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-            f"## 🎙️ 完整時間戳記逐字稿 (Verbatim Transcript)\n\n"
+            f"# Meeting Transcript: {audio_path.stem}\n\n"
+            f"- **Audio File**: `{audio_path.name}`\n"
+            f"- **Duration**: {dur_str}\n"
+            f"- **Transcription Engine**: {eng_label}\n"
+            f"- **Generated At**: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            f"## 🎙️ Verbatim Transcript\n\n"
             f"{raw_transcript_text.strip()}\n"
         )
         out_path.write_text(content, encoding="utf-8")
@@ -184,12 +184,12 @@ def generate_meeting_minutes_and_transcript(
         dur_str = format_offset(duration_sec)
         eng_label = f"Local Whisper ({whisper_backend}/{whisper_model})" if engine.lower() == "whisper" else transcribe_model
         final_markdown = (
-            f"# 會議逐字稿紀錄：{audio_path.stem}\n\n"
-            f"- **音訊檔案**：`{audio_path.name}`\n"
-            f"- **錄音時長**：{dur_str}\n"
-            f"- **轉錄引擎**：{eng_label}\n"
-            f"- **產生時間**：{time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-            f"## 🎙️ 會議逐字記錄 (Verbatim Transcript)\n\n"
+            f"# Meeting Minutes & Transcript: {audio_path.stem}\n\n"
+            f"- **Audio File**: `{audio_path.name}`\n"
+            f"- **Duration**: {dur_str}\n"
+            f"- **Transcription Engine**: {eng_label}\n"
+            f"- **Generated At**: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            f"## 🎙️ Verbatim Transcript\n\n"
             f"{raw_transcript_text.strip()}\n"
         )
         final_markdown = consolidate_meeting_minutes(final_markdown)
@@ -200,9 +200,7 @@ def generate_meeting_minutes_and_transcript(
     if output_file:
         out_path = Path(output_file)
     else:
-        is_en = summary_language and any(lang in summary_language.lower() for lang in ["en", "english"])
-        suffix = "_minutes.md" if is_en else "_會議記錄.md"
-        out_path = audio_path.parent / f"{audio_path.stem}{suffix}"
+        out_path = audio_path.parent / f"{audio_path.stem}_minutes.md"
 
     out_path.write_text(final_markdown, encoding="utf-8")
     print(f"\n========================================================")
@@ -232,7 +230,8 @@ def main():
         description="Meeting Transcribe Agent - Universal Cloud-Scale Intelligence & Offline Whisper Backup Suite"
     )
     parser.add_argument("audio_file", help="Path to audio file (supports mp3, m4a, wav, mp4, aac, flac, etc.)")
-    parser.add_argument("-o", "--output", help="Path to output Markdown file (default: <filename>_minutes.md / _會議記錄.md)")
+    parser.add_argument("-o", "--output", help="Path to output Markdown file (default: <filename>_minutes.md)")
+
     parser.add_argument(
         "--engine",
         choices=["gemini", "whisper"],

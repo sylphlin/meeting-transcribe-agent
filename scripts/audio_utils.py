@@ -44,7 +44,7 @@ def compress_audio_for_upload(audio_path: Path, bitrate: str = "64k") -> Path:
     """
     safe_hash = hashlib.md5(audio_path.name.encode("utf-8")).hexdigest()[:12]
     out_path = audio_path.parent / f"upload_temp_{safe_hash}_{bitrate}.m4a"
-    print(f"[*] 壓縮音檔供快速上傳 ({bitrate})...")
+    print(f"[*] Compressing audio for fast upload ({bitrate})...")
     cmd = [
         "ffmpeg", "-y", "-i", str(audio_path),
         "-vn", "-ac", "1", "-ar", "16000",
@@ -54,7 +54,7 @@ def compress_audio_for_upload(audio_path: Path, bitrate: str = "64k") -> Path:
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     orig_mb = audio_path.stat().st_size / (1024 * 1024)
     new_mb = out_path.stat().st_size / (1024 * 1024)
-    print(f"[*] 壓縮完成：{orig_mb:.1f} MB -> {new_mb:.1f} MB (節省 {(1 - new_mb/orig_mb)*100:.1f}%)")
+    print(f"[*] Compression complete: {orig_mb:.1f} MB -> {new_mb:.1f} MB (saved {(1 - new_mb/orig_mb)*100:.1f}%)")
     return out_path
 
 
