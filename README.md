@@ -14,7 +14,7 @@
 ## 雙引擎架構 (Dual-Engine Architecture)
 
 - **預設核心（全雲端模式 `--engine gemini`）**：
-  - 核心採用 **Google Gemini 3.5 Transcribe** 搭配 **Gemini 3.7 Flash**。
+  - 核心採用 **Google Gemini 3.5 Transcribe** 搭配 **Gemini 3.8 Flash**。
   - **極速轉譯與雙軌並行 (Dual-Track Concurrency)**：
     - Stage 1 智慧音訊偵測：檔案 $\le 10\text{MB}$ 或原始碼率 $\le 48\text{kbps}$ 自動免轉碼直傳，大檔以 48k 壓至串流最佳區間。
     - Stage 2 雙軌並行化：核心決策摘要（軌道 A）與萬字逐字稿智慧繁體化（軌道 B）由 `ThreadPoolExecutor` 同步發送，配合 `thinking_budget=0` 消除延遲，總生成時間砍半！
@@ -68,8 +68,8 @@ Meeting Transcribe Agent 採用高精度並行流水線，將多模態大模型�
   │     └─【本地】Whisper + Sherpa-ONNX：雙指針滑動窗口 106x 加速聲學對齊與重疊偵測
   │
   ├─▶ 階段 3：雙軌非同步並行會議重構 (Dual-Track Concurrent Restructuring)
-  │     ├─ 軌道 A：Gemini 3.7 Flash 提煉第 1~5 節摘要、議題決策、待辦清單與角色對照表 (~3-5 秒)
-  │     ├─ 軌道 B：Gemini 3.7 Flash 專責第 6 節逐字稿角色對齊、錯字校正與脈絡級繁體化 (~18-20 秒)
+  │     ├─ 軌道 A：Gemini 3.8 Flash 提煉第 1~5 節摘要、議題決策、待辦清單與角色對照表 (~3-5 秒)
+  │     ├─ 軌道 B：Gemini 3.8 Flash 專責第 6 節逐字稿角色對齊、錯字校正與脈絡級繁體化 (~18-20 秒)
   │     └─ 本地身分收斂平滑 (spk_X 角色替換 + 2.0 秒內連貫語句合併)
   │
   └─▶ 階段 4：現代化獨立互動播放器 (Modern Web Guidance UI)
@@ -174,7 +174,7 @@ python3 meeting_transcribe.py "會議錄音.mp3" --outline "agenda.txt" --summar
 | `--embedding-type` | Sherpa-ONNX 聲紋特徵抽取模型 (`eres2net`, `pyannote`, `cam++`) | `eres2net` |
 | `--api-key` | 手動指定 Gemini API Key (預設讀取 `GEMINI_API_KEY`) | `None` |
 | `--transcribe-model` | 雲端轉譯語音辨識模型 | `gemini-3.5-transcribe` |
-| `--summary-model` | 結構化會議記錄與摘要生成模型 | `gemini-3.7-flash` |
+| `--summary-model` | 結構化會議記錄與摘要生成模型 | `gemini-3.8-flash` |
 | `--outline` | 外部會議通知、大綱或議程檔案路徑 (.txt / .md) | `None` |
 | `--force-glossary` | 強制重新提取全域術語對照表 (覆蓋快取) | `False` |
 | `--no-glossary` | 跳過全域術語對照表提取 | `False` |

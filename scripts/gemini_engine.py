@@ -190,7 +190,7 @@ def generate_minutes_with_gemini(
     audio_path: Path,
     raw_transcript_text: str,
     global_glossary: str,
-    summary_model: str = "gemini-3.7-flash",
+    summary_model: str = "gemini-3.8-flash",
     prompt_template_path: Path = None,
     summary_language: str = None
 ) -> tuple[str, float]:

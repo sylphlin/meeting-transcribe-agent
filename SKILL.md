@@ -1,6 +1,6 @@
 ---
 name: meeting-transcribe-agent
-description: Universal meeting intelligence and interactive verbatim transcription suite adhering to Agent Skills Specification. Features Google Gemini 3.5 Transcribe (cloud primary with ephemeral Files API auto-cleanup) and local Apple Silicon MLX/Whisper + Sherpa-ONNX diarization (offline backup) with Gemini 3.7 Flash minutes structuring, canonical speaker consolidation, and standalone zero-dependency interactive HTML playback player.
+description: Universal meeting intelligence and interactive verbatim transcription suite adhering to Agent Skills Specification. Features Google Gemini 3.5 Transcribe (cloud primary with ephemeral Files API auto-cleanup) and local Apple Silicon MLX/Whisper + Sherpa-ONNX diarization (offline backup) with Gemini 3.8 Flash minutes structuring, canonical speaker consolidation, and standalone zero-dependency interactive HTML playback player.
 metadata:
   version: "2.3.0"
   author: "sylphlin"
@@ -13,7 +13,7 @@ metadata:
 
 Universal meeting intelligence and interactive transcription suite adhering to the open [Agent Skills Specification](https://agentskills.io/specification).
 
-Combines **Google Gemini 3.5 Transcribe** (Cloud Primary) with **Local Apple Silicon MLX / Faster-Whisper + Sherpa-ONNX Diarization** (Offline Backup) and **Gemini 3.7 Flash** for executive minutes structuring, speaker role arbitration, and technical glossary consistency. Delivers executive-grade meeting records, domain-agnostic participant role arbitration, and an interactive, zero-dependency HTML playback player.
+Combines **Google Gemini 3.5 Transcribe** (Cloud Primary) with **Local Apple Silicon MLX / Faster-Whisper + Sherpa-ONNX Diarization** (Offline Backup) and **Gemini 3.8 Flash** for executive minutes structuring, speaker role arbitration, and technical glossary consistency. Delivers executive-grade meeting records, domain-agnostic participant role arbitration, and an interactive, zero-dependency HTML playback player.
 
 ---
 
@@ -132,7 +132,7 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 | `--embedding-type` | Sherpa-ONNX embedding architecture (`eres2net`, `pyannote`, `cam++`) | `eres2net` |
 | `--api-key` | Gemini API key (reads `GEMINI_API_KEY` from environment or `~/.gemini/.env`) | `None` |
 | `--transcribe-model` | Gemini cloud speech transcription model | `gemini-3.5-transcribe` |
-| `--summary-model` | Gemini executive summary and minutes model | `gemini-3.7-flash` |
+| `--summary-model` | Gemini executive summary and minutes model | `gemini-3.8-flash` |
 | `--outline` | Path to external meeting notice, outline, or agenda document | `None` |
 | `--force-glossary` | Force re-extraction of global consistency glossary (bypassing cache) | `False` |
 | `--no-glossary` | Skip global consistency glossary extraction | `False` |

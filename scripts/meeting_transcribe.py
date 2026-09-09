@@ -46,7 +46,7 @@ def generate_meeting_minutes_and_transcript(
     embedding_type: str = "eres2net",
     api_key: str = None,
     transcribe_model: str = "gemini-3.5-transcribe",
-    summary_model: str = "gemini-3.7-flash",
+    summary_model: str = "gemini-3.8-flash",
     outline: str = None,
     force_glossary: bool = False,
     no_glossary: bool = False,
@@ -63,7 +63,7 @@ def generate_meeting_minutes_and_transcript(
     - Fallback Engine: Offline Whisper (MLX Metal GPU / faster-whisper) + Sherpa-ONNX Diarization.
     1. Dual-Track Glossary Mining (Lightweight Audio Pre-scan + External Outline).
     2. Speech Recognition & Acoustic Diarization.
-    3. Executive Minutes Structuring & Speaker Role Arbitration (Gemini 3.7 Flash).
+    3. Executive Minutes Structuring & Speaker Role Arbitration (Gemini 3.8 Flash).
     4. Canonical Speaker Identity Consolidation & Sequential Turn Merging.
     5. Interactive Zero-Dependency HTML Playback Player Generation.
     """
@@ -285,8 +285,8 @@ def main():
     )
     parser.add_argument(
         "--summary-model",
-        default="gemini-3.7-flash",
-        help="Gemini executive summary and minutes model [default: gemini-3.7-flash]"
+        default="gemini-3.8-flash",
+        help="Gemini executive summary and minutes model [default: gemini-3.8-flash]"
     )
     parser.add_argument(
         "--outline",

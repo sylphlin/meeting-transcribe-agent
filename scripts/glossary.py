@@ -68,7 +68,7 @@ def extract_global_consistency_glossary(
     client: genai.Client,
     audio_path: Path,
     outline_path: str | None = None,
-    model: str = "gemini-3.7-flash",
+    model: str = "gemini-3.8-flash",
     force: bool = False,
     prompt_template_path: Path = None,
     compress_fn = None
