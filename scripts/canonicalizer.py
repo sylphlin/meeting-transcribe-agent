@@ -1,7 +1,7 @@
 """
 scripts/canonicalizer.py - Canonical Speaker ID Consolidation & Over-Clustering Unification.
 
-Solves the multi-speaker fragment problem where the same person (e.g. the Mayor)
+Solves the multi-speaker fragment problem where the same person (e.g. Host, Chair, or Key Speaker)
 is split into multiple acoustic clusters (e.g. spk_2, spk_3, spk_7, spk_28) due to
 acoustic cluster drift over long meetings.
 """
@@ -12,11 +12,11 @@ from typing import Dict, List, Tuple
 
 def parse_speaker_mapping_from_markdown(markdown_text: str) -> Dict[str, str]:
     """
-    Parses speaker identity mappings structurally from any markdown table containing `spk_\\d+`.
+    Parses speaker identity mappings structurally from any markdown table containing `spk_\\d+` or `Speaker X`.
     Language-agnostic: requires no hardcoded triggers or language-specific keywords.
     """
     mapping = {}
-    spk_pattern = re.compile(r'spk_(\d+)', re.IGNORECASE)
+    spk_pattern = re.compile(r'\b(?:spk[_\s-]*|speaker\s*)(\d+|[a-zA-Z])\b', re.IGNORECASE)
     table_row_pattern = re.compile(r'^\s*\|(.+)\|\s*$')
     placeholder_tokens = {"-", "—", "--", "---", ":---", "none", "n/a", "null", "nil", ""}
 
@@ -30,7 +30,7 @@ def parse_speaker_mapping_from_markdown(markdown_text: str) -> Dict[str, str]:
         if len(cells) < 2:
             continue
 
-        # Check if any cell contains spk_X references
+        # Check if any cell contains spk_X / Speaker X references
         spk_cell_idx = -1
         spk_matches = []
         for idx, cell in enumerate(cells):
@@ -60,7 +60,15 @@ def parse_speaker_mapping_from_markdown(markdown_text: str) -> Dict[str, str]:
         canonical_name = descriptors[0]
 
         for s_id in spk_matches:
+            s_lower = s_id.lower()
             mapping[f"spk_{s_id}"] = canonical_name
+            mapping[f"spk_{s_lower}"] = canonical_name
+            mapping[f"spk-{s_id}"] = canonical_name
+            mapping[f"spk-{s_lower}"] = canonical_name
+            mapping[f"speaker {s_id}"] = canonical_name
+            mapping[f"speaker {s_lower}"] = canonical_name
+            mapping[f"speaker_{s_id}"] = canonical_name
+            mapping[f"speaker_{s_lower}"] = canonical_name
 
     return mapping
 

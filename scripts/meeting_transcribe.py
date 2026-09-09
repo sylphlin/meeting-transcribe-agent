@@ -54,7 +54,7 @@ def generate_meeting_minutes_and_transcript(
     compress: bool = True,
     summary_language: str = None,
     only_transcript: bool = False,
-    language: str | None = "zh"
+    language: str | None = "auto"
 ) -> Path:
 
     """
@@ -322,8 +322,8 @@ def main():
     parser.add_argument(
         "--language",
         type=str,
-        default="zh",
-        help="Spoken audio language code for offline Whisper ASR (e.g. 'zh', 'en', 'ja', 'auto') [default: zh]"
+        default="auto",
+        help="Spoken audio language code for offline Whisper ASR (e.g. 'auto', 'en', 'zh', 'ja') [default: auto]"
     )
 
 

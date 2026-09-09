@@ -140,5 +140,5 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 | `--no-compress` | Do not compress audio before uploading to Gemini API | `False` |
 | `--summary-language` | Target summary language (`auto` mirrors user dialogue; or `en`, `zh-TW`, `ja`, etc.) | `None` (auto) |
 | `--only-transcript` | Run only Stage 1 transcription and output verbatim transcript without Stage 2 | `False` |
-| `--language` | Spoken audio language code for offline Whisper ASR (`zh`, `en`, `ja`, `auto`) | `zh` |
+| `--language` | Spoken audio language code for offline Whisper ASR (`auto`, `en`, `zh`, `ja`) | `auto` |
 

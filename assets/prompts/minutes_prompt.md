@@ -28,10 +28,10 @@ Your output must strictly follow this 6-section structure with headings in the t
 - **Estimated Date / Time**: Inferred from context or agenda.
 - **Chairperson / Host**: Identified meeting leader.
 - **Speaker Mapping Table**:
-  Cross-reference dialogue context (self-introductions, direct address like "Eric, can you speak to...", "Thanks Christopher", reporting hierarchies) and acoustic clues to map every `spk_X` identifier to a real person and role:
+  Cross-reference dialogue context (self-introductions, direct address like "Eric, can you speak to...", "Thanks Christopher", reporting hierarchies) and acoustic clues to map every `spk_X` or `Speaker X` identifier to a real person and role:
   | Speaker ID | Role / Title | Name | Organization / Team |
   | :--- | :--- | :--- | :--- |
-  | `spk_1, spk_3` | [Role/Title, e.g., Host / Chair / VP of Engineering] | [Real Name or Inferred Name] | [Department / Org] |
+  | `spk_1, spk_3` (or `Speaker 1`) | [Role/Title, e.g., Host / Chair / VP / Lead] | [Real Name or Inferred Name] | [Department / Org] |
 
 ## 2. 🎯 Executive Summary
 - A high-level, 200–300 word executive overview synthesizing the core strategic purpose, major discussion themes, pivotal agreements, and overarching outcomes.
@@ -51,7 +51,7 @@ Your output must strictly follow this 6-section structure with headings in the t
 - Structured Markdown table assigning clear ownership and timelines:
   | # | Action Item / Task | Owner / Assignee | Due Date / Timeline | Status / Notes |
   | :--- | :--- | :--- | :--- | :--- |
-  | 1 | [Clear, actionable task description] | [Name / Role] | [Timeline, e.g., Next Sprint, Near-term] | [Notes / Context] |
+  | 1 | [Clear, actionable task description] | [Name / Role] | [Timeline, e.g., Immediate, Next Week, Month-end, Q3] | [Notes / Context] |
 
 ## 6. 🎙️ Full Verbatim Transcript
 - Format every dialogue turn as: `[MM:SS - MM:SS] **Role / Name**: Utterance`

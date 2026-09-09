@@ -28,11 +28,15 @@ def get_audio_duration(audio_path: Path) -> float:
 
 
 def format_offset(seconds: float) -> str:
-    """Format seconds into MM:SS."""
+    """Format seconds into MM:SS or HH:MM:SS for long meetings."""
     if seconds is None:
         return "00:00"
-    m = int(seconds // 60)
-    s = int(seconds % 60)
+    total_sec = int(round(seconds))
+    h = total_sec // 3600
+    m = (total_sec % 3600) // 60
+    s = total_sec % 60
+    if h > 0:
+        return f"{h:02d}:{m:02d}:{s:02d}"
     return f"{m:02d}:{s:02d}"
 
 

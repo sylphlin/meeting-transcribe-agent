@@ -19,6 +19,23 @@ from scripts.audio_utils import get_audio_duration, format_offset, compress_audi
 
 def join_cjk_text(tokens: List[str]) -> str:
     """Intelligently concatenate tokens respecting CJK punctuation without extra spaces."""
+    def is_cjk_char(c: str) -> bool:
+        if not c:
+            return False
+        cp = ord(c)
+        return (
+            (0x4E00 <= cp <= 0x9FFF) or   # CJK Unified Ideographs (Chinese / Kanji)
+            (0x3400 <= cp <= 0x4DBF) or   # CJK Extension A
+            (0x3040 <= cp <= 0x309F) or   # Japanese Hiragana
+            (0x30A0 <= cp <= 0x30FF) or   # Japanese Katakana
+            (0x31F0 <= cp <= 0x31FF) or   # Katakana Extensions
+            (0xAC00 <= cp <= 0xD7AF) or   # Korean Hangul Syllables
+            (0x1100 <= cp <= 0x11FF) or   # Korean Hangul Jamo
+            (0x3130 <= cp <= 0x318F) or   # Korean Compatibility Jamo
+            (0x3000 <= cp <= 0x303F) or   # CJK Symbols & Punctuation
+            (0xFF00 <= cp <= 0xFFEF)      # Fullwidth / Halfwidth Forms
+        )
+
     result = ""
     for token in tokens:
         token = token.strip()
@@ -29,8 +46,7 @@ def join_cjk_text(tokens: List[str]) -> str:
             continue
         last_char = result[-1]
         first_char = token[0]
-        is_cjk = lambda c: '\u4e00' <= c <= '\u9fff' or '\u3000' <= c <= '\u303f' or '\uff00' <= c <= '\uffef'
-        if is_cjk(last_char) or is_cjk(first_char):
+        if is_cjk_char(last_char) or is_cjk_char(first_char):
             result += token
         else:
             result += " " + token
