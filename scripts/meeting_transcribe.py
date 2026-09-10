@@ -19,12 +19,17 @@ from scripts.audio_utils import (
     compress_audio_for_upload,
     get_audio_duration,
     format_offset,
+    is_youtube_url,
+    extract_youtube_id,
+    is_video_file,
+    extract_audio_from_video,
 )
 from scripts.diarization import transcribe_with_local_whisper_and_diarization
 from scripts.gemini_engine import (
     get_gemini_client,
     transcribe_with_gemini_cloud,
     generate_minutes_with_gemini,
+    process_video_meeting_end_to_end,
 )
 from scripts.glossary import (
     extract_global_consistency_glossary,
@@ -35,7 +40,7 @@ from scripts.html_generator import generate_interactive_html
 
 
 def generate_meeting_minutes_and_transcript(
-    audio_file: str,
+    input_source: str,
     output_file: str = None,
     engine: str = "gemini",
     whisper_backend: str = "auto",
@@ -54,25 +59,100 @@ def generate_meeting_minutes_and_transcript(
     compress: bool = True,
     summary_language: str = None,
     only_transcript: bool = False,
-    language: str | None = "auto"
+    language: str | None = "auto",
+    agentic: bool = False,
+    extract_audio: bool = False,
 ) -> Path:
 
     """
     End-to-End Meeting Transcription & Intelligence Pipeline:
-    - Primary Engine: Cloud Gemini 3.5 Transcribe with ephemeral Files API auto-cleanup.
-    - Fallback Engine: Offline Whisper (MLX Metal GPU / faster-whisper) + Sherpa-ONNX Diarization.
-    1. Dual-Track Glossary Mining (Lightweight Audio Pre-scan + External Outline).
-    2. Speech Recognition & Acoustic Diarization.
-    3. Executive Minutes Structuring & Speaker Role Arbitration (Gemini 3.8 Flash).
-    4. Canonical Speaker Identity Consolidation & Sequential Turn Merging.
-    5. Interactive Zero-Dependency HTML Playback Player Generation.
+    - Pipeline 1 (Multimodal Video): Directly analyzes YouTube or local video via Gemini Vision with optional Agentic navigation.
+    - Pipeline 2 (Pure Audio): Gemini 3.5 Transcribe with ephemeral Files API auto-cleanup or Offline Whisper + Diarization.
     """
-    audio_path = Path(audio_file).resolve()
-    if not audio_path.exists():
-        raise FileNotFoundError(f"Audio file not found: {audio_path}")
+    source_str = str(input_source).strip()
+    is_yt = is_youtube_url(source_str)
+    is_vid = is_video_file(source_str) if not is_yt else False
+
+    # Dispatch to Multimodal Video Pipeline if YouTube or Video (and not forced audio extraction)
+    if (is_yt or is_vid) and not extract_audio:
+        print(f"\n========================================================")
+        print(f"🎥  Meeting Transcribe Agent: Multimodal Video Pipeline")
+        print(f"📺  Source: {source_str}")
+        print(f"🤖  Mode: {'Agentic Video Understanding' if agentic else 'High-Speed Static Multimodal'}")
+        print(f"⚙️  Vision Model: {summary_model}")
+        print(f"========================================================\n")
+
+        t_total_start = time.time()
+        client = get_gemini_client(api_key=api_key)
+
+        if is_vid:
+            video_p = Path(source_str).resolve()
+            if not video_p.exists():
+                raise FileNotFoundError(f"Video file not found: {video_p}")
+            extracted_audio_for_player = extract_audio_from_video(video_p)
+            play_media = extracted_audio_for_player
+            default_out_stem = video_p.stem
+            out_parent = video_p.parent
+        else:
+            yt_id = extract_youtube_id(source_str) or "youtube_meeting"
+            play_media = source_str
+            default_out_stem = f"yt_{yt_id}"
+            out_parent = Path.cwd()
+
+        final_markdown, video_time = process_video_meeting_end_to_end(
+            client=client,
+            video_source=source_str,
+            summary_model=summary_model,
+            use_agentic=agentic,
+            summary_language=summary_language,
+            outline_path=Path(outline) if outline else None,
+        )
+
+        total_time = time.time() - t_total_start
+
+        if output_file:
+            out_path = Path(output_file).resolve()
+        else:
+            out_path = out_parent / f"{default_out_stem}_minutes.md"
+
+        out_path.write_text(final_markdown, encoding="utf-8")
+        print(f"\n========================================================")
+        print(f"✅ Multimodal video meeting minutes successfully generated!")
+        print(f"📄 Output file: {out_path.resolve()}")
+        print(f"⏱️  Processing Time: {video_time:.1f}s | Total Time: {total_time:.1f}s")
+        print(f"========================================================\n")
+
+        if not no_player:
+            if out_path.stem.endswith("_minutes"):
+                player_path = out_path.parent / f"{out_path.stem[:-8]}_player.html"
+            else:
+                player_path = out_path.parent / f"{out_path.stem}_player.html"
+            try:
+                generate_interactive_html(
+                    media_source=play_media,
+                    markdown_content=final_markdown,
+                    output_html_path=player_path
+                )
+            except Exception as e:
+                print(f"[!] Warning: Interactive HTML player generation failed ({e}).")
+
+        return out_path
+
+    # Otherwise, execute Pure Audio Pipeline
+    if is_vid and extract_audio:
+        video_p = Path(source_str).resolve()
+        if not video_p.exists():
+            raise FileNotFoundError(f"Video file not found: {video_p}")
+        audio_path = extract_audio_from_video(video_p)
+    elif is_yt and extract_audio:
+        raise ValueError("Cannot extract local audio from YouTube URL directly. Please use default YouTube Multimodal mode.")
+    else:
+        audio_path = Path(source_str).resolve()
+        if not audio_path.exists():
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
     print(f"\n========================================================")
-    print(f"🎙️  Meeting Transcribe Agent: {audio_path.name}")
+    print(f"🎙️  Meeting Transcribe Agent: Pure Audio Pipeline: {audio_path.name}")
     print(f"⚙️  Primary Engine: {engine.upper()} | Summary Model: {summary_model}")
     if engine.lower() == "whisper":
         print(f"   [Offline Setup] Backend: {whisper_backend} | Model: {whisper_model} | Diarization: {enable_diarization}")
@@ -234,14 +314,24 @@ def main():
     parser = argparse.ArgumentParser(
         description="Meeting Transcribe Agent - Universal Cloud-Scale Intelligence & Offline Whisper Backup Suite"
     )
-    parser.add_argument("audio_file", help="Path to audio file (supports mp3, m4a, wav, mp4, aac, flac, etc.)")
+    parser.add_argument("input_source", help="Path to audio/video file (mp3, m4a, wav, mp4, mov, mkv, etc.) or YouTube URL")
     parser.add_argument("-o", "--output", help="Path to output Markdown file (default: <filename>_minutes.md)")
 
+    parser.add_argument(
+        "--agentic",
+        action="store_true",
+        help="Enable Agentic Video Understanding (dynamic frame navigation & tool-use) for video and YouTube inputs"
+    )
+    parser.add_argument(
+        "--extract-audio",
+        action="store_true",
+        help="Force extracting audio track from video files and routing to the pure audio pipeline"
+    )
     parser.add_argument(
         "--engine",
         choices=["gemini", "whisper"],
         default="gemini",
-        help="Transcription engine: 'gemini' (default, cloud Gemini 3.5 Transcribe) or 'whisper' (local offline backup)"
+        help="Transcription engine for audio: 'gemini' (default, cloud Gemini 3.5 Transcribe) or 'whisper' (local offline backup)"
     )
     parser.add_argument(
         "--whisper-backend",
@@ -286,7 +376,7 @@ def main():
     parser.add_argument(
         "--summary-model",
         default="gemini-3.8-flash",
-        help="Gemini executive summary and minutes model [default: gemini-3.8-flash]"
+        help="Gemini executive summary and vision model [default: gemini-3.8-flash]"
     )
     parser.add_argument(
         "--outline",
@@ -335,7 +425,7 @@ def main():
 
     try:
         generate_meeting_minutes_and_transcript(
-            audio_file=args.audio_file,
+            input_source=args.input_source,
             output_file=args.output,
             engine=args.engine,
             whisper_backend=args.whisper_backend,
@@ -354,7 +444,9 @@ def main():
             compress=not args.no_compress,
             summary_language=args.summary_language,
             only_transcript=args.only_transcript,
-            language=args.language
+            language=args.language,
+            agentic=args.agentic,
+            extract_audio=args.extract_audio,
         )
 
     except Exception as e:

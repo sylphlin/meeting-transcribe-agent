@@ -16,6 +16,9 @@ from scripts.audio_utils import (
     compress_audio_for_upload,
     safe_ascii_upload_path,
     should_compress_audio,
+    is_youtube_url,
+    is_video_file,
+    optimize_video_for_upload,
 )
 
 
@@ -342,3 +345,165 @@ Output strictly and exclusively Section 6:
         final_text = _call_gemini_track(single_prompt, "Fallback Single-Prompt")
         duration = time.time() - t0
         return final_text, duration
+
+
+def process_video_meeting_end_to_end(
+    client: genai.Client,
+    video_source: str | Path,
+    summary_model: str = "gemini-3.8-flash",
+    use_agentic: bool = False,
+    summary_language: str = None,
+    outline_path: Path = None,
+) -> tuple[str, float]:
+    """
+    Process a video meeting end-to-end via Gemini Multimodal Vision (YouTube URL or local video file).
+    Produces complete 6 sections (Metadata & Speaker Table, Executive Summary, Topics, Decisions, Action Items, Full Verbatim Transcript)
+    in a single request with optional Agentic Video Understanding.
+    """
+    t0 = time.time()
+    source_str = str(video_source).strip()
+    is_yt = is_youtube_url(source_str)
+
+    # Outline context injection
+    outline_injection = ""
+    if outline_path and Path(outline_path).exists():
+        try:
+            outline_content = Path(outline_path).read_text(encoding="utf-8").strip()
+            if outline_content:
+                outline_injection = f"\n---\n# Official Meeting Outline & Agenda Reference\n{outline_content}\n---\n"
+        except Exception as e:
+            print(f"[!] Warning: Could not read outline file {outline_path}: {e}")
+
+    # Language instruction
+    lang_name = summary_language if summary_language else "Traditional Chinese (繁體中文)"
+    lang_instruction = f"All outputs must be written in fluent, native, impeccably styled {lang_name}."
+
+    prompt = f"""# Role & Objective
+You are an elite, highly professional executive meeting secretary and transcription specialist.
+Analyze this recorded meeting video (utilizing visual slides, on-screen speaker nameplates, lower-third titles, presentation decks, and spoken dialogue audio) and produce a complete, impeccably formatted, executive-ready meeting record.
+
+{lang_instruction}
+
+{outline_injection}
+
+# Output Structure
+Output strictly the following 6 sections in Markdown:
+
+## 1. 📌 Meeting Metadata & Attendees
+- **Meeting Title**: (Extracted from video slides or title)
+- **Source**: {source_str}
+- **Estimated Date / Time**: (Extracted from slides or dialogue)
+- **Chairperson / Host**:
+- **Speaker Mapping Table**:
+  | Role / Title | Name | Organization / Department | Remarks / Key Presentation Topic |
+  | :--- | :--- | :--- | :--- |
+
+## 2. 🎯 Executive Summary
+- A high-level, 300–400 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
+
+## 3. 💡 Key Discussion Topics & Agenda Items
+- Structured breakdown for each topic discussed: Context & Motivation, Key Arguments & Data, Discussion Flow, Outcome.
+
+## 4. ⚖️ Key Decisions & Resolutions
+- Bulleted list of formal decisions, policy directives, approved motions, or consensus reached.
+
+## 5. 📋 Action Items & Next Steps
+- Structured Markdown table assigning clear ownership and timelines:
+  | # | Action Item / Task | Owner / Assignee | Due Date / Timeline | Status / Notes |
+  | :--- | :--- | :--- | :--- | :--- |
+
+## 6. 🎙️ Full Verbatim Transcript
+- Chronologically transcribe every dialogue turn in fluent {lang_name}.
+- Map every speaker to their identified Role / Name based on video nameplates/titles.
+- Include precise timestamps [MM:SS - MM:SS] for each dialogue turn.
+Format:
+[MM:SS - MM:SS] **【Role / Name】**：Spoken utterance
+"""
+
+    uploaded_file = None
+    try:
+        if is_yt:
+            print(f"[*] Connecting to YouTube video via Gemini Cloud backbone: {source_str}")
+            if use_agentic:
+                print("[*] Mode: 🤖 Agentic Video Understanding (Dynamic frame navigation & tool-use)")
+                part = types.Part(
+                    file_data=types.FileData(file_uri=source_str, mime_type="video/mp4"),
+                    media_processing=types.MediaProcessing.AGENTIC
+                )
+            else:
+                print("[*] Mode: 📺 High-Speed Static Multimodal Video")
+                part = types.Part.from_uri(file_uri=source_str, mime_type="video/mp4")
+        else:
+            video_path = Path(source_str).resolve()
+            if not video_path.is_file():
+                raise FileNotFoundError(f"Local video file not found: {video_path}")
+
+            # Check and optimize video size if needed
+            upload_target = optimize_video_for_upload(video_path, max_size_mb=250.0)
+
+            print(f"[*] Uploading local video to Google Files API: {upload_target.name}...")
+            with safe_ascii_upload_path(upload_target) as safe_path:
+                uploaded_file = client.files.upload(file=safe_path)
+
+            print(f"[*] File uploaded (URI: {uploaded_file.uri}). Polling for ACTIVE state...")
+            while uploaded_file.state.name == "PROCESSING":
+                time.sleep(3)
+                uploaded_file = client.files.get(name=uploaded_file.name)
+
+            if uploaded_file.state.name != "ACTIVE":
+                raise RuntimeError(f"Video file processing failed with state: {uploaded_file.state.name}")
+
+            mime_type = uploaded_file.mime_type or "video/mp4"
+            if use_agentic:
+                print("[*] Mode: 🤖 Agentic Video Understanding (Dynamic frame navigation & tool-use)")
+                part = types.Part(
+                    file_data=types.FileData(file_uri=uploaded_file.uri, mime_type=mime_type),
+                    media_processing=types.MediaProcessing.AGENTIC
+                )
+            else:
+                print("[*] Mode: 📺 High-Speed Static Multimodal Video")
+                part = types.Part(
+                    file_data=types.FileData(file_uri=uploaded_file.uri, mime_type=mime_type)
+                )
+
+        print(f"[*] Dispatching single-request video analysis to {summary_model}...")
+        resp = client.models.generate_content(
+            model=summary_model,
+            contents=[part, prompt]
+        )
+        duration = time.time() - t0
+
+        # Extract text content
+        output_text = ""
+        if hasattr(resp, "text") and resp.text:
+            output_text = resp.text
+        elif hasattr(resp, "candidates") and resp.candidates:
+            for cand in resp.candidates:
+                if hasattr(cand, "content") and cand.content:
+                    for p in cand.content.parts:
+                        if getattr(p, "text", None):
+                            output_text += p.text
+
+        # Print token usage accounting
+        if hasattr(resp, "usage_metadata") and resp.usage_metadata:
+            u = resp.usage_metadata
+            print(f"[*] Token Usage: Prompt={getattr(u, 'prompt_token_count', 0)}, "
+                  f"Output={getattr(u, 'candidates_token_count', 0)}, "
+                  f"Total={getattr(u, 'total_token_count', 0)}")
+            if getattr(u, 'thoughts_token_count', None):
+                print(f"    (Internal Thought Tokens: {u.thoughts_token_count})")
+            if getattr(u, 'tool_use_prompt_token_count', None):
+                print(f"    (Tool Navigation Tokens: {u.tool_use_prompt_token_count})")
+
+        print(f"[✓] Video analysis completed in {duration:.1f}s (Output: {len(output_text)} chars)")
+        return output_text, duration
+
+    finally:
+        if uploaded_file is not None:
+            try:
+                print(f"[*] Cleaning up ephemeral Files API video ({uploaded_file.name})...")
+                client.files.delete(name=uploaded_file.name)
+                print(f"[✓] Files API storage cleaned up successfully.")
+            except Exception as e:
+                print(f"[!] Warning: Failed to delete uploaded video file: {e}")
+

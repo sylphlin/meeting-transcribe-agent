@@ -8,8 +8,106 @@ import os
 import shutil
 import hashlib
 import subprocess
+import re
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 from contextlib import contextmanager
+
+VIDEO_EXTENSIONS = {'.mp4', '.mov', '.mkv', '.avi', '.webm', '.flv', '.wmv', '.m4v'}
+AUDIO_EXTENSIONS = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.opus', '.wma'}
+
+
+def is_youtube_url(url_str: str) -> bool:
+    """Check if the input string is a valid YouTube URL."""
+    if not isinstance(url_str, str):
+        return False
+    url_str = url_str.strip()
+    return bool(re.search(r'(?:youtube\.com\/(?:watch|live|shorts|embed)|youtu\.be\/)', url_str, re.IGNORECASE))
+
+
+def extract_youtube_id(url_str: str) -> str | None:
+    """Extract 11-character YouTube video ID from various YouTube URL formats."""
+    if not is_youtube_url(url_str):
+        return None
+    url_str = url_str.strip()
+    match = re.search(r'(?:v=|\/embed\/|\/shorts\/|\/live\/|youtu\.be\/)([a-zA-Z0-9_-]{11})', url_str)
+    if match:
+        return match.group(1)
+    try:
+        parsed = urlparse(url_str)
+        qs = parse_qs(parsed.query)
+        if 'v' in qs and qs['v']:
+            return qs['v'][0]
+    except Exception:
+        pass
+    return None
+
+
+def is_video_file(path: Path | str) -> bool:
+    """Check if the given path is a recognized video file."""
+    try:
+        p = Path(path)
+        return p.suffix.lower() in VIDEO_EXTENSIONS
+    except Exception:
+        return False
+
+
+def extract_audio_from_video(video_path: Path, output_path: Path = None, bitrate: str = "64k") -> Path:
+    """
+    Extract a high-efficiency 16kHz mono audio track from a video file via ffmpeg.
+    Useful for local playback and fallback audio pipelines.
+    """
+    video_path = Path(video_path).resolve()
+    if not video_path.is_file():
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+    
+    if output_path is None:
+        output_path = video_path.parent / f"{video_path.stem}.m4a"
+    else:
+        output_path = Path(output_path).resolve()
+
+    print(f"[*] Extracting audio from video: {video_path.name} -> {output_path.name}...")
+    cmd = [
+        "ffmpeg", "-y", "-i", str(video_path),
+        "-vn", "-ac", "1", "-ar", "16000",
+        "-c:a", "aac", "-b:a", bitrate,
+        str(output_path)
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    size_mb = output_path.stat().st_size / (1024 * 1024)
+    print(f"[✓] Extracted audio: {output_path.name} ({size_mb:.1f} MB)")
+    return output_path
+
+
+def optimize_video_for_upload(video_path: Path, output_path: Path = None, max_size_mb: float = 250.0) -> Path:
+    """
+    If a video file is larger than max_size_mb, downscale/compress it to 720p H.264
+    for fast upload to Gemini Files API while preserving crisp presentation text and nameplates.
+    """
+    video_path = Path(video_path).resolve()
+    orig_mb = video_path.stat().st_size / (1024 * 1024)
+    if orig_mb <= max_size_mb:
+        return video_path
+
+    if output_path is None:
+        safe_hash = hashlib.md5(video_path.name.encode("utf-8")).hexdigest()[:8]
+        output_path = video_path.parent / f"optimized_{safe_hash}.mp4"
+    else:
+        output_path = Path(output_path).resolve()
+
+    print(f"[*] Video size is {orig_mb:.1f} MB (> {max_size_mb} MB). Optimizing to 720p for fast cloud upload...")
+    cmd = [
+        "ffmpeg", "-y", "-i", str(video_path),
+        "-vf", "scale=-2:720",
+        "-c:v", "libx264", "-crf", "28", "-preset", "faster",
+        "-c:a", "aac", "-b:a", "64k", "-ac", "1", "-ar", "16000",
+        str(output_path)
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    new_mb = output_path.stat().st_size / (1024 * 1024)
+    print(f"[✓] Optimized video: {orig_mb:.1f} MB -> {new_mb:.1f} MB (saved {(1 - new_mb/orig_mb)*100:.1f}%)")
+    return output_path
+
 
 
 def get_audio_duration(audio_path: Path) -> float:

@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def generate_interactive_html(
-    audio_file_path: Path,
+    media_source: Path | str,
     markdown_content: str,
     output_html_path: Path,
     template_path: Path = None,
@@ -20,6 +20,7 @@ def generate_interactive_html(
     """
     Renders standalone interactive meeting player HTML from markdown content
     and an external template by injecting a structured JSON payload.
+    Supports local audio files, local video audio tracks, and YouTube URLs.
     """
     if template_path is None:
         template_path = Path(__file__).parent.parent / "assets" / "player_template.html"
@@ -27,15 +28,37 @@ def generate_interactive_html(
     if not template_path.exists():
         raise FileNotFoundError(f"Player HTML template not found: {template_path}")
 
-    template_str = template_path.read_text(encoding="utf-8")
-    rel_audio_path = os.path.relpath(audio_file_path, output_html_path.parent)
+    from scripts.audio_utils import is_youtube_url, extract_youtube_id
 
-    title_safe = html.escape(audio_file_path.stem)
-    payload = {
-        "title": audio_file_path.stem,
-        "audioSrc": rel_audio_path,
-        "markdown": markdown_content
-    }
+    source_str = str(media_source).strip()
+    template_str = template_path.read_text(encoding="utf-8")
+
+    if is_youtube_url(source_str):
+        yt_id = extract_youtube_id(source_str)
+        title_name = f"YouTube Meeting ({yt_id})"
+        payload = {
+            "title": title_name,
+            "mediaType": "youtube",
+            "youtubeId": yt_id,
+            "youtubeUrl": source_str,
+            "audioSrc": "",
+            "markdown": markdown_content
+        }
+        title_safe = html.escape(title_name)
+        rel_audio_path = ""
+    else:
+        media_path = Path(source_str).resolve()
+        rel_audio_path = os.path.relpath(media_path, output_html_path.parent)
+        title_safe = html.escape(media_path.stem)
+        payload = {
+            "title": media_path.stem,
+            "mediaType": "audio",
+            "youtubeId": None,
+            "youtubeUrl": None,
+            "audioSrc": rel_audio_path,
+            "markdown": markdown_content
+        }
+
     payload_json = json.dumps(payload, ensure_ascii=False)
 
     rendered_html = template_str.replace("{{TITLE}}", title_safe)

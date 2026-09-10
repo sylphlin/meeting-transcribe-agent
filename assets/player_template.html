@@ -1003,6 +1003,67 @@
             font-size: 0.78rem;
             box-shadow: 0 1px 1px rgba(0,0,0,0.1);
         }
+
+        /* Floating Picture-in-Picture YouTube Dock */
+        .yt-dock {
+            position: fixed;
+            bottom: 95px;
+            right: 24px;
+            width: 340px;
+            background: var(--surface);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.35);
+            z-index: 1000;
+            overflow: hidden;
+            transition: width 0.25s ease, height 0.25s ease, box-shadow 0.25s ease;
+        }
+        .yt-dock-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 7px 12px;
+            background: var(--surface-hover);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            color: var(--text-main);
+        }
+        .yt-dock-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .yt-dock-btn:hover {
+            color: var(--text-main);
+            background: var(--surface);
+        }
+        .yt-player-wrapper {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+            height: 0;
+            background: #000;
+        }
+        .yt-player-wrapper iframe, .yt-player-wrapper div#yt-player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .yt-dock.minimized .yt-player-wrapper {
+            display: none;
+        }
+        .yt-dock.minimized {
+            width: 180px;
+        }
     </style>
 </head>
 <body>
@@ -1074,6 +1135,19 @@
             </div>
         </section>
     </main>
+
+    <!-- Floating Picture-in-Picture YouTube Dock -->
+    <div id="yt-dock" class="yt-dock" style="display: none;">
+        <div class="yt-dock-header" onclick="toggleYtDock()">
+            <span id="yt-dock-title">📺 視訊同步播放</span>
+            <div>
+                <button class="yt-dock-btn" id="yt-dock-toggle-btn" title="最小化/展開">─</button>
+            </div>
+        </div>
+        <div class="yt-player-wrapper">
+            <div id="yt-player"></div>
+        </div>
+    </div>
 
     <!-- Floating Toast Notification -->
     <div id="toast" class="toast-notification"></div>
@@ -1836,6 +1910,18 @@ if(__exports != exports)module.exports = exports;return module.exports}));
         const playSvgContent = '<polygon points="6,4 20,12 6,20"/>';
         const pauseSvgContent = '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>';
 
+        let ytPlayer = null;
+        let isYouTube = !!(window.MEETING_DATA && window.MEETING_DATA.youtubeId);
+        let ytTimer = null;
+
+        function toggleYtDock() {
+            const dock = document.getElementById('yt-dock');
+            if (!dock) return;
+            dock.classList.toggle('minimized');
+            const btn = document.getElementById('yt-dock-toggle-btn');
+            if (btn) btn.textContent = dock.classList.contains('minimized') ? '□' : '─';
+        }
+
         function updatePlayIcon(isPlaying) {
             if (isPlaying) {
                 playIconSvg.innerHTML = pauseSvgContent;
@@ -1846,32 +1932,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
             }
         }
 
-        audio.addEventListener('play', () => updatePlayIcon(true));
-        audio.addEventListener('pause', () => updatePlayIcon(false));
-
-        function formatSec(sec) {
-            if (!sec || isNaN(sec)) return "00:00";
-            const totalSec = Math.floor(sec);
-            const h = Math.floor(totalSec / 3600);
-            const m = Math.floor((totalSec % 3600) / 60);
-            const s = totalSec % 60;
-            if (h > 0) {
-                return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-            }
-            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-        }
-
-        audio.addEventListener('loadedmetadata', () => {
-            slider.max = audio.duration;
-            totalDurationLabel.textContent = formatSec(audio.duration);
-        });
-
-        audio.addEventListener('timeupdate', () => {
-            const cur = audio.currentTime;
-            slider.value = cur;
-            curTimeLabel.textContent = formatSec(cur);
-
-            // Active Turn Karaoke Highlighting & Permanent Smooth Auto-scroll
+        function highlightActiveTurn(cur) {
             let currentActive = null;
             for (let i = 0; i < turns.length; i++) {
                 const s = parseFloat(turns[i].dataset.start);
@@ -1888,25 +1949,122 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                 currentActive.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 activeTurnElement = currentActive;
             }
-        });
+        }
+
+        if (isYouTube) {
+            const ytDock = document.getElementById('yt-dock');
+            if (ytDock) ytDock.style.display = 'block';
+
+            // Load YouTube IFrame API asynchronously
+            const tag = document.createElement('script');
+            tag.src = "https://www.youtube.com/iframe_api";
+            const firstScriptTag = document.getElementsByTagName('script')[0];
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+            window.onYouTubeIframeAPIReady = function() {
+                ytPlayer = new YT.Player('yt-player', {
+                    videoId: window.MEETING_DATA.youtubeId,
+                    playerVars: {
+                        'playsinline': 1,
+                        'rel': 0,
+                        'modestbranding': 1
+                    },
+                    events: {
+                        'onReady': onPlayerReady,
+                        'onStateChange': onPlayerStateChange
+                    }
+                });
+            };
+
+            function onPlayerReady(event) {
+                const dur = ytPlayer.getDuration() || 0;
+                slider.max = dur;
+                totalDurationLabel.textContent = formatSec(dur);
+
+                if (ytTimer) clearInterval(ytTimer);
+                ytTimer = setInterval(() => {
+                    if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
+                    const cur = ytPlayer.getCurrentTime();
+                    const dur = ytPlayer.getDuration();
+                    if (dur && (!slider.max || slider.max == 100)) {
+                        slider.max = dur;
+                        totalDurationLabel.textContent = formatSec(dur);
+                    }
+                    slider.value = cur;
+                    curTimeLabel.textContent = formatSec(cur);
+                    highlightActiveTurn(cur);
+                }, 250);
+            }
+
+            function onPlayerStateChange(event) {
+                if (event.data === YT.PlayerState.PLAYING) {
+                    updatePlayIcon(true);
+                } else {
+                    updatePlayIcon(false);
+                }
+            }
+        } else {
+            audio.addEventListener('play', () => updatePlayIcon(true));
+            audio.addEventListener('pause', () => updatePlayIcon(false));
+            audio.addEventListener('loadedmetadata', () => {
+                slider.max = audio.duration;
+                totalDurationLabel.textContent = formatSec(audio.duration);
+            });
+            audio.addEventListener('timeupdate', () => {
+                const cur = audio.currentTime;
+                slider.value = cur;
+                curTimeLabel.textContent = formatSec(cur);
+                highlightActiveTurn(cur);
+            });
+        }
+
+        function formatSec(sec) {
+            if (!sec || isNaN(sec)) return "00:00";
+            const totalSec = Math.floor(sec);
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            if (h > 0) {
+                return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            }
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
 
         function togglePlay() {
-            if (audio.paused) {
-                audio.play();
+            if (isYouTube && ytPlayer && typeof ytPlayer.getPlayerState === 'function') {
+                const state = ytPlayer.getPlayerState();
+                if (state === YT.PlayerState.PLAYING) {
+                    ytPlayer.pauseVideo();
+                } else {
+                    ytPlayer.playVideo();
+                }
             } else {
-                audio.pause();
+                if (audio.paused) {
+                    audio.play();
+                } else {
+                    audio.pause();
+                }
             }
         }
 
         function seekAudio(sec) {
-            audio.currentTime = sec;
-            if (audio.paused) {
-                audio.play();
+            if (isYouTube && ytPlayer && typeof ytPlayer.seekTo === 'function') {
+                ytPlayer.seekTo(sec, true);
+                ytPlayer.playVideo();
+            } else {
+                audio.currentTime = sec;
+                if (audio.paused) {
+                    audio.play();
+                }
             }
         }
 
         function onSeekChange(val) {
-            audio.currentTime = val;
+            if (isYouTube && ytPlayer && typeof ytPlayer.seekTo === 'function') {
+                ytPlayer.seekTo(parseFloat(val), true);
+            } else {
+                audio.currentTime = val;
+            }
         }
 
         function updateSkipTooltips() {
@@ -1923,27 +2081,53 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 
         function skipAudio(direction) {
             const delta = direction * currentSkipStep;
-            audio.currentTime = Math.max(0, Math.min(audio.duration || 0, audio.currentTime + delta));
+            if (isYouTube && ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
+                const cur = ytPlayer.getCurrentTime() || 0;
+                seekAudio(Math.max(0, cur + delta));
+            } else {
+                audio.currentTime = Math.max(0, Math.min(audio.duration || 0, audio.currentTime + delta));
+            }
         }
 
         function setPlaybackSpeed(spd) {
-            audio.playbackRate = parseFloat(spd);
+            const rate = parseFloat(spd);
+            if (isYouTube && ytPlayer && typeof ytPlayer.setPlaybackRate === 'function') {
+                ytPlayer.setPlaybackRate(rate);
+            }
+            audio.playbackRate = rate;
         }
 
         /* Volume & Mute Controls */
         function setVolume(val) {
-            audio.volume = parseFloat(val);
-            if (audio.volume === 0) {
+            const v = parseFloat(val);
+            if (isYouTube && ytPlayer && typeof ytPlayer.setVolume === 'function') {
+                ytPlayer.setVolume(v * 100);
+                if (v === 0) ytPlayer.mute();
+                else ytPlayer.unMute();
+            }
+            audio.volume = v;
+            if (v === 0) {
                 audio.muted = true;
                 volumeIcon.textContent = '🔇';
             } else {
                 audio.muted = false;
-                volumeIcon.textContent = audio.volume < 0.5 ? '🔉' : '🔊';
+                volumeIcon.textContent = v < 0.5 ? '🔉' : '🔊';
             }
-            volumeSlider.value = audio.volume;
+            volumeSlider.value = v;
         }
 
         function toggleMute() {
+            if (isYouTube && ytPlayer && typeof ytPlayer.isMuted === 'function') {
+                if (ytPlayer.isMuted()) {
+                    ytPlayer.unMute();
+                    setVolume(previousVolume > 0 ? previousVolume : 0.8);
+                } else {
+                    previousVolume = (ytPlayer.getVolume() || 80) / 100;
+                    ytPlayer.mute();
+                    setVolume(0);
+                }
+                return;
+            }
             if (audio.muted || audio.volume === 0) {
                 audio.muted = false;
                 audio.volume = previousVolume > 0 ? previousVolume : 0.8;
