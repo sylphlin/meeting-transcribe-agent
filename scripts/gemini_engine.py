@@ -318,9 +318,9 @@ You are an elite verbatim meeting transcription editor. Your mission is to trans
 2. Faithfully preserve all spoken dialogue turns, words, numbers, and chronological order without dropping or truncating sentences.
 3. {verbatim_lang_instruction}
 4. **Mandatory Timestamp Syntax Contract**:
-   - Every single dialogue turn MUST strictly preserve and begin with its exact time interval `[MM:SS - MM:SS]`.
+   - Every single dialogue turn MUST strictly preserve and begin with its exact time interval `[MM:SS - MM:SS]` (or `[HH:MM:SS - HH:MM:SS]` for recordings >= 1 hour).
    - STRICTLY FORBIDDEN to omit timestamps or produce plain script format without bracketed times.
-   - Format: `[MM:SS - MM:SS] **Role / Name**: Spoken utterance`
+   - Format: `[MM:SS - MM:SS] (or [HH:MM:SS - HH:MM:SS]) **Role / Name**: Spoken utterance`
 
 ---
 # Output Format
@@ -420,10 +420,10 @@ def process_video_meeting_end_to_end(
 
 ## 6. Full Verbatim Transcript
 - Chronologically transcribe every dialogue turn.
-- Follow the **Contiguous Turn Consolidation** rule: each uninterrupted speech is a single turn spanning [Start MM:SS - End MM:SS].
+- Follow the **Contiguous Turn Consolidation** rule: each uninterrupted speech is a single turn spanning `[Start MM:SS - End MM:SS]` (or `[Start HH:MM:SS - End HH:MM:SS]` for meetings exceeding 1 hour).
 - Map every speaker to their identified Role / Name based on video nameplates/titles.
 Format:
-[MM:SS - MM:SS] **Role / Name**: Spoken utterance (use natural paragraph breaks for long continuous speech)"""
+[MM:SS - MM:SS] (or [HH:MM:SS - HH:MM:SS]) **Role / Name**: Spoken utterance (use natural paragraph breaks for long continuous speech)"""
 
     prompt = f"""# Role & Objective
 You are an elite, highly professional executive meeting secretary and transcription specialist.
@@ -437,7 +437,7 @@ Analyze this recorded meeting video (utilizing visual slides, on-screen speaker 
 # Critical Speaker Consolidation & Transcript Rules
 1. **Contiguous Turn Consolidation**:
    - When a participant gives an uninterrupted speech, presentation, report, or remarks, **MUST consolidate their continuous speech into a SINGLE dialogue turn**.
-   - The timestamp for that turn MUST span the entire continuous speech duration from start to finish: `[Start MM:SS - End MM:SS]`.
+   - The timestamp for that turn MUST span the entire continuous speech duration from start to finish: `[Start MM:SS - End MM:SS]` (or `[Start HH:MM:SS - End HH:MM:SS]` for recordings >= 1 hour).
    - **STRICTLY FORBIDDEN** to slice continuous speech by the same speaker into fragmented micro-turns or slide-by-slide snippets.
    - Within the same speaker's turn, organize lengthy content using natural paragraph breaks rather than repeating the speaker's nameplate.
 2. **Turn-Taking Transitions**:
@@ -447,11 +447,11 @@ Analyze this recorded meeting video (utilizing visual slides, on-screen speaker 
      - **【Role / Name】**: Key points, metrics, proposals, or directives presented by this speaker.
 4. **Acoustic Grounding & Strict Timestamp Contract (CRITICAL)**:
    - **Real-Time Acoustic Grounding & Anti-Recitation**: You are transcribing the real-time audio and visual stream of this specific recorded session. Do NOT recite or reproduce text from external knowledge bases, web pages, or pre-training memory. Every dialogue turn MUST strictly represent real-time utterances synchronized with the media player timeline.
-   - **Mandatory Timestamp Syntax Contract**: EVERY dialogue turn in Section 6 MUST begin with an exact bracketed time interval `[Start MM:SS - End MM:SS]` matching the recording clock.
+   - **Mandatory Timestamp Syntax Contract**: EVERY dialogue turn in Section 6 MUST begin with an exact bracketed time interval `[Start MM:SS - End MM:SS]` (or `[Start HH:MM:SS - End HH:MM:SS]` for recordings >= 1 hour) matching the recording clock.
    - **NEVER OMIT TIMESTAMPS**: Outputting dialogue in plain script format (`**Speaker**: text` without timestamps) is STRICTLY PROHIBITED.
    - Valid turn examples:
      `[01:15 - 01:45] **Alex Smith (Chair)**: Good morning everyone, let us begin the session.`
-     `[01:45 - 04:30] **Maria Garcia (Engineering)**: I will present the sprint review. First, our cloud migration is on schedule...`
+     `[01:15:30 - 01:25:40] **Maria Garcia (Engineering)**: In the second hour of our review, our cloud migration is on schedule...`
    - Invalid turn format:
      `**Alex Smith**: Good morning everyone...` (Missing timestamps will corrupt the player interface).
 

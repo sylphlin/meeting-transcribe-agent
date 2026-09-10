@@ -56,10 +56,10 @@ CRITICAL FORMATTING RULES:
   | 1 | [Clear, actionable task description] | [Name / Role] | [Timeline, e.g., Immediate, Next Week, Month-end, Q3] | [Notes / Context] |
 
 ## 6. Full Verbatim Transcript
-- Format every dialogue turn as: `[MM:SS - MM:SS] **Role / Name**: Utterance`
+- Format every dialogue turn as: `[MM:SS - MM:SS] **Role / Name**: Utterance` (use `[HH:MM:SS - HH:MM:SS]` for timestamps exceeding 1 hour)
 - **Role Validation Rules**:
   - Distinguish between meeting host/chair, presenters, and ad-hoc contributors based on context.
-  - When simultaneous speech occurs, label accordingly: `[MM:SS - MM:SS] **Speaker A / Speaker B (Simultaneous)**: ...`
+  - When simultaneous speech occurs, label accordingly: `[MM:SS - MM:SS] **Speaker A / Speaker B (Simultaneous)**: ...` (or `[HH:MM:SS - HH:MM:SS]`)
 - **Phonetic & Terminology Correction**:
   - Correct ASR homophones, transcription slips, and acronym spellings using the provided Global Consistency Glossary and semantic context.
   - Maintain 100% transcript completeness: never summarize, omit, or censor any verbatim dialogue.
