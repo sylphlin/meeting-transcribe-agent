@@ -98,7 +98,7 @@
 ### 常用情境與對話範例：
 
 1. **📺 YouTube 影片會議轉譯（極速視覺辨識名牌與簡報）**：
-   > 「請幫我轉譯這場 YouTube 上的市政會議 `https://www.youtube.com/watch?v=Xff98Q5bki8`，利用畫面上的首長名牌和簡報投影片產出完整會議記錄與互動播放器。」
+   > 「請幫我轉譯這場 YouTube 上的市政會議 `https://www.youtube.com/watch?v=VIDEO_ID`，利用畫面上的首長名牌和簡報投影片產出完整會議記錄與互動播放器。」
 
 2. **🤖 YouTube 長篇會議深層探索（啟用 Agentic Video Understanding）**：
    > 「這部 YouTube 研討會長達 3 小時 `https://www.youtube.com/watch?v=...`，請使用 Agentic Video 模式幫我做深度訊框導航，重點提煉各講者的架構圖和討論結論。」
@@ -316,10 +316,10 @@ meeting-transcribe-agent/
 ### 基本執行（YouTube 影片）
 ```bash
 # YouTube 影片直接轉譯與生成播放器（高鐵極速多模態模式）
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8"
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # 啟用 Agentic Video Understanding 動態訊框導航
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8" --agentic
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agentic
 ```
 
 ### 基本執行（音訊與本地檔案）

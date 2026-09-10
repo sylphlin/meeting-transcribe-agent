@@ -96,7 +96,7 @@
 ### 추천 프롬프트 예시:
 
 1. **📺 YouTube 영상 회의 전사 (명패 및 슬라이드 시각 인식)**:
-   > "YouTube의 이 시정 회의 `https://www.youtube.com/watch?v=Xff98Q5bki8`를 전사해줘. 화면 속 명패와 슬라이드를 참조하여 구조화된 회의록과 대화형 플레이어를 만들어줘."
+   > "YouTube의 이 시정 회의 `https://www.youtube.com/watch?v=VIDEO_ID`를 전사해줘. 화면 속 명패와 슬라이드를 참조하여 구조화된 회의록과 대화형 플레이어를 만들어줘."
 
 2. **🤖 YouTube 장시간 회의 심층 분석 (Agentic Video Understanding)**:
    > "3시간짜리 YouTube 세미나 `https://www.youtube.com/watch?v=...`야. Agentic Video 모드를 사용해서 주요 발표 슬라이드를 탐색하고 핵심 결론을 정리해줘."
@@ -260,10 +260,10 @@ $env:GEMINI_API_KEY="your-gemini-api-key"
 ### 기본 실행 (YouTube 영상)
 ```bash
 # YouTube 영상 직접 전사 및 플레이어 생성 (초고속 멀티모달 모드)
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8"
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # Agentic Video Understanding 동적 프레임 탐색 활성화
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8" --agentic
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agentic
 ```
 
 ### 기본 실행 (오디오 및 로컬 파일)

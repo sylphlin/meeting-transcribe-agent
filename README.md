@@ -96,7 +96,7 @@ This project is primarily designed as an **AI Agent Skill**. You do not need to 
 ### Recommended Prompts:
 
 1. **📺 YouTube Video Transcription (Visual Nameplate & Slide OCR)**:
-   > "Please transcribe this municipal meeting on YouTube `https://www.youtube.com/watch?v=Xff98Q5bki8`, using the visual desk nameplates and slides to generate structured minutes and an interactive player."
+   > "Please transcribe this municipal meeting on YouTube `https://www.youtube.com/watch?v=VIDEO_ID`, using the visual desk nameplates and slides to generate structured minutes and an interactive player."
 
 2. **🤖 YouTube Deep Dive (Agentic Video Understanding)**:
    > "This 3-hour YouTube symposium `https://www.youtube.com/watch?v=...` has complex slides. Please use Agentic Video mode to navigate key frames and summarize architecture diagrams and discussion outcomes."
@@ -187,7 +187,7 @@ flowchart TD
 The system categorizes processing into **Routing**, **Dual-Track Execution**, and **Delivery**:
 
 #### Step 1: Input Detection, Title Discovery & Smart Routing
-- **YouTube URLs** (`youtube.com/watch`, `youtu.be/`, Shorts, Live): Automatically queries YouTube's official oEmbed API to discover the official meeting title (e.g., `臺南市政府第 764 次市政會議`), and routes to the **🎥 Multimodal Video Pipeline**.
+- **YouTube URLs** (`youtube.com/watch`, `youtu.be/`, Shorts, Live): Automatically queries YouTube's official oEmbed API to discover the official meeting title (e.g., `City_Council_Meeting_2026`), and routes to the **🎥 Multimodal Video Pipeline**.
 - **Local Video Files** (`.mp4`, `.mov`, `.mkv`, `.webm`): Uses file stem or extracts title from visual slides/Section 1, routing directly to the **🎥 Multimodal Video Pipeline** (playable natively in HTML5).
 - **Pure Audio Files** (`.mp3`, `.m4a`, `.wav`, `.aac`, `.flac`) or commands with `--extract-audio`: Routed to the **🎙️ Pure Audio Pipeline**.
 
@@ -283,10 +283,10 @@ $env:GEMINI_API_KEY="your-gemini-api-key"
 ### Basic Execution (YouTube Video)
 ```bash
 # Direct YouTube processing (Fast multimodal mode)
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8"
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # Enable Agentic Video Understanding for dynamic frame navigation
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8" --agentic
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agentic
 ```
 
 ### Basic Execution (Audio & Local Files)

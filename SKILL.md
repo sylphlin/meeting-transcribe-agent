@@ -50,7 +50,7 @@ meeting-transcribe-agent/
 
 1. **Multimodal Video Pipeline (YouTube & Local Video)**:
    - **Direct YouTube URL Support**: Transcribes and analyzes public meetings, council sessions, webinars, and conferences directly from YouTube URLs (`https://www.youtube.com/watch?v=...`, `youtu.be/...`, shorts, live).
-   - **Intelligent Title & File Naming**: Automatically queries YouTube's official oEmbed API or extracts Section 1's official meeting title to name files cleanly (e.g., `臺南市政府第 764 次市政會議_minutes.md` and `_player.html`), eliminating raw video IDs.
+   - **Intelligent Title & File Naming**: Automatically queries YouTube's official oEmbed API or extracts Section 1's official meeting title to name files cleanly (e.g., `City_Council_Meeting_2026_minutes.md` and `_player.html`), eliminating raw video IDs.
    - **Visual Speaker & Slide Grounding**: Inspects lower-third title cards, nameplates, and presentation slides to accurately identify real participant names, governmental departments, and agenda slide numbers.
    - **Single-Request Efficiency**: Employs a single unified multimodal request delivering complete executive minutes, speaker mapping, and full verbatim transcript in ~40s (50% input token savings).
    - **Agentic Video Understanding (`--agentic`)**: Harnesses dynamic multi-turn frame navigation and tool-use (`types.MediaProcessing.AGENTIC`) for intricate multi-hour video deep dives.
@@ -119,10 +119,10 @@ For audio recordings (`.mp3`, `.m4a`, `.wav`, `.aac`, etc.), or when video files
 
 ```bash
 # YouTube Meeting (Fast Multimodal)
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8"
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # YouTube Meeting (Agentic Video Understanding)
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8" --agentic
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agentic
 
 # Audio Recording (Cloud Gemini)
 python3 meeting_transcribe.py "meeting_recording.mp3"

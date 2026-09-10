@@ -98,7 +98,7 @@
 ### 常用情境与对话范例：
 
 1. **📺 YouTube 视频会议转录（极速视觉识别名牌与演示幻灯片）**：
-   > “请帮我转录这场 YouTube 上的市政会议 `https://www.youtube.com/watch?v=Xff98Q5bki8`，利用画面上的领导名牌和幻灯片生成完整会议记录与交互播放器。”
+   > “请帮我转录这场 YouTube 上的市政会议 `https://www.youtube.com/watch?v=VIDEO_ID`，利用画面上的领导名牌和幻灯片生成完整会议记录与交互播放器。”
 
 2. **🤖 YouTube 长篇会议深度探索（启用 Agentic Video Understanding）**：
    > “这部 YouTube 研讨会长达 3 小时 `https://www.youtube.com/watch?v=...`，请使用 Agentic Video 模式帮我做深度视频帧导航，重点提炼各讲者的架构图和讨论结论。”
@@ -281,10 +281,10 @@ $env:GEMINI_API_KEY="your-gemini-api-key"
 ### 基本执行（YouTube 视频）
 ```bash
 # YouTube 视频直接转录与生成播放器（极速多模态模式）
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8"
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # 启用 Agentic Video Understanding 动态视频帧导航
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8" --agentic
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agentic
 ```
 
 ### 基本执行（音频与本地文件）

@@ -96,7 +96,7 @@
 ### よく使われるプロンプト例：
 
 1. **📺 YouTube 動画の会議書き起こし（名札・スライドの視覚認識）**：
-   > 「YouTube の市政会議 `https://www.youtube.com/watch?v=Xff98Q5bki8` を文字起こしして、画面のネームプレートやスライドを参考に構造化議事録とプレイヤーを作成してください。」
+   > 「YouTube の市政会議 `https://www.youtube.com/watch?v=VIDEO_ID` を文字起こしして、画面のネームプレートやスライドを参考に構造化議事録とプレイヤーを作成してください。」
 
 2. **🤖 YouTube 長編会議の深層探索（Agentic Video Understanding）**：
    > 「この 3 時間の YouTube カンファレンス `https://www.youtube.com/watch?v=...` について、Agentic Video モードを使って重要なスライドを探索し、各スピーカーの結論をまとめてください。」
@@ -260,10 +260,10 @@ $env:GEMINI_API_KEY="your-gemini-api-key"
 ### 基本的な実行（YouTube 動画）
 ```bash
 # YouTube 動画の直接文字起こし＆プレイヤー生成
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8"
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # Agentic Video Understanding による動的フレーム探索の有効化
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=Xff98Q5bki8" --agentic
+python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agentic
 ```
 
 ### 基本的な実行（音声およびローカルファイル）
