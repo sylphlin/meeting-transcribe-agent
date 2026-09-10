@@ -375,26 +375,32 @@ def process_video_meeting_end_to_end(
             print(f"[!] Warning: Could not read outline file {outline_path}: {e}")
 
     # Language instruction
-    lang_name = summary_language if summary_language else "Traditional Chinese (繁體中文)"
-    lang_instruction = f"All outputs must be written in fluent, native, impeccably styled {lang_name}."
+    lang_name = summary_language if summary_language else "Traditional Chinese (zh-TW)"
+    lang_instruction = (
+        f"- **Sections 1 to 5 (Metadata, Summary, Discussion Topics, Decisions, Action Items)**:\n"
+        f"  Must be written in fluent, native, professional {lang_name}.\n"
+        f"- **Section 6 (Full Verbatim Transcript)**:\n"
+        f"  MUST faithfully preserve the original spoken dialogue and language of each speaker (including multilingual code-switching and technical terms). Do NOT translate verbatim dialogue turns."
+    )
 
     prompt = f"""# Role & Objective
 You are an elite, highly professional executive meeting secretary and transcription specialist.
 Analyze this recorded meeting video (utilizing visual slides, on-screen speaker nameplates, lower-third titles, presentation decks, and spoken dialogue audio) and produce a complete, impeccably formatted, executive-ready meeting record.
 
+# Language & Localization Policy
 {lang_instruction}
 
 {outline_injection}
 
-# Critical Speaker Consolidation & Transcript Rules (依照人物彙整訊息核心規範)
-1. **Contiguous Turn Consolidation (連續發言人物彙整)**:
+# Critical Speaker Consolidation & Transcript Rules
+1. **Contiguous Turn Consolidation**:
    - When a participant gives an uninterrupted speech, presentation, report, or remarks, **MUST consolidate their continuous speech into a SINGLE dialogue turn**.
    - The timestamp for that turn MUST span the entire continuous speech duration from start to finish: `[Start MM:SS - End MM:SS]`.
    - **STRICTLY FORBIDDEN** to slice continuous speech by the same speaker into fragmented micro-turns or slide-by-slide snippets.
    - Within the same speaker's turn, organize lengthy content using natural paragraph breaks rather than repeating the speaker's nameplate.
-2. **Turn-Taking Transitions (僅於換人時切換輪次)**:
+2. **Turn-Taking Transitions**:
    - Only start a new dialogue turn when the floor changes to a different participant (e.g. host introduces the next speaker, attendee asks a question, discussion transitions to another speaker).
-3. **Perspectives by Speaker in Section 3 (各案由依人物彙整核心觀點)**:
+3. **Speaker Perspectives in Section 3**:
    - In Section 3, under "Discussion Flow & Speaker Perspectives", explicitly summarize key arguments and inputs organized per speaker:
      - **【Role / Name】**: Key points, metrics, proposals, or directives presented by this speaker.
 
@@ -425,11 +431,11 @@ Output strictly the following 6 sections in Markdown:
   | :--- | :--- | :--- | :--- | :--- |
 
 ## 6. 🎙️ Full Verbatim Transcript
-- Chronologically transcribe every dialogue turn in fluent {lang_name}.
+- Chronologically transcribe every dialogue turn.
 - Follow the **Contiguous Turn Consolidation** rule: each uninterrupted speech is a single turn spanning [Start MM:SS - End MM:SS].
 - Map every speaker to their identified Role / Name based on video nameplates/titles.
 Format:
-[MM:SS - MM:SS] **【Role / Name】**：Spoken utterance (use natural paragraph breaks for long continuous speech)
+[MM:SS - MM:SS] **【Role / Name】**: Spoken utterance (use natural paragraph breaks for long continuous speech)
 """
 
     uploaded_file = None
