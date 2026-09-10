@@ -598,6 +598,14 @@
             line-height: 1.68;
         }
 
+        .turn-text p {
+            margin: 0;
+        }
+
+        .turn-text p + p {
+            margin-top: 0.5rem;
+        }
+
         /* Summary Markdown Styling */
         .summary-content-body h2 {
             font-size: 1.15rem;
@@ -1479,6 +1487,9 @@ if(__exports != exports)module.exports = exports;return module.exports}));
             const streamEl = document.getElementById('transcript-stream');
             if (streamEl && transcriptLines.length > 0) {
                 const frag = document.createDocumentFragment();
+                let currentCard = null;
+                let currentTextEl = null;
+
                 transcriptLines.forEach(line => {
                     const lineTrim = line.trim();
                     if (!lineTrim) return;
@@ -1520,7 +1531,11 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 
                         const textEl = document.createElement('div');
                         textEl.className = 'turn-text';
-                        textEl.textContent = text;
+                        if (text) {
+                            const p = document.createElement('p');
+                            p.textContent = text;
+                            textEl.appendChild(p);
+                        }
 
                         card.appendChild(meta);
                         card.appendChild(textEl);
@@ -1529,11 +1544,23 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                         card.dataset.origSpk = escapeHtml(speaker);
 
                         frag.appendChild(card);
+                        currentCard = card;
+                        currentTextEl = textEl;
                     } else if (/^\s*#+\s+/.test(lineTrim)) {
                         const h = document.createElement('h3');
                         h.className = 'transcript-subtitle';
                         h.textContent = lineTrim.replace(/^\s*#+\s*/, '');
                         frag.appendChild(h);
+                        currentCard = null;
+                        currentTextEl = null;
+                    } else if (currentTextEl) {
+                        const p = document.createElement('p');
+                        p.textContent = lineTrim;
+                        currentTextEl.appendChild(p);
+                        if (currentCard) {
+                            const prev = currentCard.dataset.origText || '';
+                            currentCard.dataset.origText = prev + ' ' + escapeHtml(lineTrim);
+                        }
                     } else {
                         const p = document.createElement('p');
                         p.className = 'transcript-plain';
