@@ -136,7 +136,12 @@ if __name__ == "__main__":
         print(f"[!] Markdown file not found: {md_p}")
         exit(1)
 
-    from scripts.audio_utils import is_youtube_url, extract_youtube_id
+    try:
+        from scripts.audio_utils import is_youtube_url, extract_youtube_id
+    except ModuleNotFoundError:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from scripts.audio_utils import is_youtube_url, extract_youtube_id
     if not is_youtube_url(source_str):
         media_p = Path(source_str)
         if not media_p.exists():
