@@ -1,13 +1,23 @@
 # Meeting Transcribe Agent
 
-> **基於 Google Gemini 3.5 Transcribe 的高精度多語者會議轉譯與智慧會議記錄 Agent**
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Google GenAI SDK](https://img.shields.io/badge/Google%20GenAI%20SDK-v1.0+-4285F4.svg)](https://github.com/google-gemini/generative-ai-python)
 [![Gemini 3.5 Transcribe](https://img.shields.io/badge/Gemini%203.5-Transcribe-orange.svg)](https://ai.google.dev/)
 [![Gemini 3.8 Flash](https://img.shields.io/badge/Gemini%203.8-Flash-yellow.svg)](https://ai.google.dev/)
 
-**Meeting Transcribe Agent** 是一套專為企業、公務機關與專業工程團隊設計的會議智慧轉譯系統。只需向 AI Agent 提供會議錄音檔案，系統即可全自動完成「聲學語者識別」、「詞級時間戳記轉譯」、「前後文脈絡修飾與繁體化」、「核心決策結構化重構」，並輸出獨立的雙欄互動式音訊審閱播放器。
+## 📖 專案概述 (Overview)
+
+**Meeting Transcribe Agent** 是一套基於 **Google Gemini 3.5 Transcribe** 打造的高精度多語者會議轉譯與智慧會議記錄 Agent。
+
+### 為什麼採用「專用聲學 ASR ＋ 智慧語意 LLM」雙層架構？
+在真實的多人會議場景中，單一模型往往難以兼顧「精確物理錨定」與「高層次語意理解」的矛盾痛點：
+* **純通用大模型 (LLM) 的痛點**：若直接將音訊丟給通用多模態 LLM 轉譯，其時間戳記多為自回歸機率推估，長會議中極易產生**嚴重時間累積漂移、跳段漏句**，且無法依賴聲波頻譜進行嚴格的說話者分離。
+* **傳統純語音辨識 (ASR) 的痛點**：僅能輸出未經校對的原始簡體或生硬字詞，缺乏語意脈絡理解能力，無法自動校正同音專有名詞、無法將發言者映射至真實官銜姓名，更無法提煉執行決策。
+
+**我們的解決方案**：
+本系統採用明確分工的雙層架構：
+1. **底層聲學轉譯 (Gemini 3.5 Transcribe)**：專職毫秒級「詞級時間戳記 (Word Timestamps)」與物理聲學「語者分離 (Diarization)」，確保每一句話皆有真實聲波物理錨定，絕不跳漏。
+2. **上層語意重構 (Gemini 3.8 Flash)**：專職前後文脈絡理解、同音專有名詞校正、發言人身分收斂與在地繁體化，並結構化提煉出決策摘要與待辦追蹤，最後渲染為獨立的雙欄互動播放器。
 
 ---
 
