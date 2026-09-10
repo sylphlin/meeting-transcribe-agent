@@ -386,6 +386,18 @@ Analyze this recorded meeting video (utilizing visual slides, on-screen speaker 
 
 {outline_injection}
 
+# Critical Speaker Consolidation & Transcript Rules (依照人物彙整訊息核心規範)
+1. **Contiguous Turn Consolidation (連續發言人物彙整)**:
+   - When a participant gives an uninterrupted speech, presentation, report, or remarks, **MUST consolidate their continuous speech into a SINGLE dialogue turn**.
+   - The timestamp for that turn MUST span the entire continuous speech duration from start to finish: `[Start MM:SS - End MM:SS]`.
+   - **STRICTLY FORBIDDEN** to slice continuous speech by the same speaker into fragmented micro-turns or slide-by-slide snippets.
+   - Within the same speaker's turn, organize lengthy content using natural paragraph breaks rather than repeating the speaker's nameplate.
+2. **Turn-Taking Transitions (僅於換人時切換輪次)**:
+   - Only start a new dialogue turn when the floor changes to a different participant (e.g. host introduces the next speaker, attendee asks a question, discussion transitions to another speaker).
+3. **Perspectives by Speaker in Section 3 (各案由依人物彙整核心觀點)**:
+   - In Section 3, under "Discussion Flow & Speaker Perspectives", explicitly summarize key arguments and inputs organized per speaker:
+     - **【Role / Name】**: Key points, metrics, proposals, or directives presented by this speaker.
+
 # Output Structure
 Output strictly the following 6 sections in Markdown:
 
@@ -402,7 +414,7 @@ Output strictly the following 6 sections in Markdown:
 - A high-level, 300–400 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
 
 ## 3. 💡 Key Discussion Topics & Agenda Items
-- Structured breakdown for each topic discussed: Context & Motivation, Key Arguments & Data, Discussion Flow, Outcome.
+- Structured breakdown for each topic discussed: Context & Motivation, Key Arguments & Data, Discussion Flow & Speaker Perspectives (organized per speaker), Outcome.
 
 ## 4. ⚖️ Key Decisions & Resolutions
 - Bulleted list of formal decisions, policy directives, approved motions, or consensus reached.
@@ -414,10 +426,10 @@ Output strictly the following 6 sections in Markdown:
 
 ## 6. 🎙️ Full Verbatim Transcript
 - Chronologically transcribe every dialogue turn in fluent {lang_name}.
+- Follow the **Contiguous Turn Consolidation** rule: each uninterrupted speech is a single turn spanning [Start MM:SS - End MM:SS].
 - Map every speaker to their identified Role / Name based on video nameplates/titles.
-- Include precise timestamps [MM:SS - MM:SS] for each dialogue turn.
 Format:
-[MM:SS - MM:SS] **【Role / Name】**：Spoken utterance
+[MM:SS - MM:SS] **【Role / Name】**：Spoken utterance (use natural paragraph breaks for long continuous speech)
 """
 
     uploaded_file = None
