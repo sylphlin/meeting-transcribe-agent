@@ -127,12 +127,13 @@ flowchart TD
     classDef videoStyle fill:#2B6CB0,stroke:#2C5282,stroke-width:2px,color:#fff;
     classDef audioStyle fill:#2C7A7B,stroke:#234E52,stroke-width:2px,color:#fff;
     classDef outputStyle fill:#276749,stroke:#1C4532,stroke-width:2px,color:#fff;
+    classDef playerStyle fill:#6B46C1,stroke:#553C9A,stroke-width:2px,color:#fff;
 
-    subgraph Input["📥 Multi-Source Input"]
-        Y["YouTube URL (Watch / Shorts / Live)"]:::inputStyle
-        V["Local Video File (.mp4 / .mov / .mkv)"]:::inputStyle
-        A["Pure Audio File (.mp3 / .m4a / .wav / .aac)"]:::inputStyle
-        O["Meeting Agenda (Optional --outline)"]:::inputStyle
+    subgraph Input["📥 Multi-Source Ingestion & Smart Title"]
+        Y["YouTube URL (Watch / Shorts / Live)<br>• Auto-fetches Title via oEmbed API"]:::inputStyle
+        V["Local Video File (.mp4 / .mov / .mkv)<br>• Reads Native Video & Visual Nameplates"]:::inputStyle
+        A["Pure Audio File (.mp3 / .m4a / .wav / .aac)<br>• Bitrate Probing & Adaptive Compression"]:::inputStyle
+        O["Meeting Agenda Outline (Optional --outline)"]:::inputStyle
     end
 
     Router{"Smart Router"}:::routerStyle
@@ -141,24 +142,22 @@ flowchart TD
     V --> Router
     A --> Router
 
-    subgraph VideoTrack["🎥 Multimodal Video Pipeline"]
+    subgraph VideoTrack["🎥 Multimodal Video Pipeline (Gemini 3.8 Flash)"]
         VMode{"Mode Selection"}:::videoStyle
-        Static["⚡ Static Frame Mode (Default 1 FPS)<br>• Token: ~3x<br>• Speed: ~44s / 100% OCR"]:::videoStyle
-        Agentic["🤖 Agentic Video (--agentic)<br>• Token: ~2x<br>• Dynamic Frame Navigation"]:::videoStyle
-        GeminiFlash["Google Gemini 3.8 Flash<br>(Single-Request End-to-End Analysis)"]:::videoStyle
-        VisionOCR["Visual OCR Grounding:<br>• Desk Nameplates & Speaker Titles<br>• Broadcast Lower-Third Captions<br>• Presentation Slides (Slide OCR)"]:::videoStyle
+        Static["⚡ Static Multimodal Mode<br>• Speed: ~40s / 100% OCR<br>• Lower-Third Nameplates & Slides"]:::videoStyle
+        Agentic["🤖 Agentic Video (--agentic)<br>• Dynamic Frame Navigation<br>• Deep Reasoning for Long Videos"]:::videoStyle
+        GeminiFlash["Google Gemini 3.8 Flash<br>(End-to-End Multimodal Analysis)"]:::videoStyle
 
         VMode -- "Default" --> Static --> GeminiFlash
         VMode -- "Flag --agentic" --> Agentic --> GeminiFlash
-        GeminiFlash <--> VisionOCR
     end
 
     subgraph AudioTrack["🎙️ Pure Audio Dual-Layer Pipeline"]
-        Ingest["Smart Ingestion<br>(Bitrate Probing / FFmpeg Compression)"]:::audioStyle
-        ASREngine{"ASR Engine"}:::audioStyle
-        GTranscribe["【Cloud】Gemini 3.5 Transcribe<br>• Word-Level Timestamps<br>• Acoustic Diarization<br>• Token: ~1x (Most Economical)"]:::audioStyle
+        Ingest["Smart Ingestion<br>(16kHz Mono Adaptive Compression)"]:::audioStyle
+        ASREngine{"ASR Diarization Engine"}:::audioStyle
+        GTranscribe["【Cloud】Gemini 3.5 Transcribe<br>• Word-Level Timestamps<br>• Acoustic Diarization"]:::audioStyle
         OfflineWhisper["【Local】MLX / Faster-Whisper<br>+ Sherpa-ONNX Voiceprint Clustering"]:::audioStyle
-        Restructure["【Restructuring】Gemini 3.8 Flash<br>• Homophone & Terminology Correction<br>• Speaker Normalization & Fluency"]:::audioStyle
+        Restructure["【Restructuring】Gemini 3.8 Flash<br>• Universal Language Adaptation<br>• Strict Zero-Emoji Plain Text Headings"]:::audioStyle
 
         Ingest --> ASREngine
         ASREngine -- "Cloud (Default)" --> GTranscribe --> Restructure
@@ -169,29 +168,27 @@ flowchart TD
     Router -- "Video or YouTube" --> VMode
     Router -- "Audio (or --extract-audio)" --> Ingest
 
-    subgraph Delivery["📦 Artifact Delivery & Player"]
-        MD["📄 Structured Minutes.md<br>(Metadata / Summary / Decisions / Action Items / Transcript)"]:::outputStyle
-        HTML["🌐 Zero-Dependency Interactive Player.html"]:::outputStyle
-        YTDock["🎬 Floating YouTube Dock<br>(Click-to-Seek & Karaoke Scrolling)"]:::outputStyle
-        AudioPlayer["🎵 Native Audio Player<br>(Waveform Timestamp Seeking)"]:::outputStyle
-
-        MD --> HTML
-        HTML --> YTDock
-        HTML --> AudioPlayer
+    subgraph Delivery["📦 Deliverables & Dedicated Players"]
+        MD["📄 Clean Markdown Minutes<br>• Official Meeting Title Filename<br>• Plain Text Headings (No Emojis)<br>• Universal LLM-Adapted Language"]:::outputStyle
+        
+        VPlayer["🎬 Dedicated Video Player (video_player_template.html)<br>• 3-Pane Workspace (Video + Summary + Transcript)<br>• YouTube API & Local HTML5 Video<br>• Summary-First Copy (GDoc & MD)"]:::playerStyle
+        
+        APlayer["🎵 Dedicated Audio Player (audio_player_template.html)<br>• 2-Pane Workspace (Summary + Transcript)<br>• Fixed Bottom Controller & Waveform Seek<br>• 100% Offline (Direct file:// Opening)"]:::playerStyle
     end
 
     GeminiFlash --> MD
-    GeminiFlash -. Embed YouTube Video .-> YTDock
+    GeminiFlash --> VPlayer
     Restructure --> MD
-    Restructure -. Load Audio .-> AudioPlayer
+    Restructure --> APlayer
 ```
 
 ### 🔄 Pipeline Steps Explained
 
 The system categorizes processing into **Routing**, **Dual-Track Execution**, and **Delivery**:
 
-#### Step 1: Input Detection & Smart Routing
-- **YouTube URLs** (`youtube.com/watch`, `youtu.be/`, Shorts, Live streams) or **Local Video Files** (`.mp4`, `.mov`, `.mkv`, `.webm`): Routed to the **🎥 Multimodal Video Pipeline**.
+#### Step 1: Input Detection, Title Discovery & Smart Routing
+- **YouTube URLs** (`youtube.com/watch`, `youtu.be/`, Shorts, Live): Automatically queries YouTube's official oEmbed API to discover the official meeting title (e.g., `臺南市政府第 764 次市政會議`), and routes to the **🎥 Multimodal Video Pipeline**.
+- **Local Video Files** (`.mp4`, `.mov`, `.mkv`, `.webm`): Uses file stem or extracts title from visual slides/Section 1, routing directly to the **🎥 Multimodal Video Pipeline** (playable natively in HTML5).
 - **Pure Audio Files** (`.mp3`, `.m4a`, `.wav`, `.aac`, `.flac`) or commands with `--extract-audio`: Routed to the **🎙️ Pure Audio Pipeline**.
 
 ---
@@ -201,9 +198,9 @@ The system categorizes processing into **Routing**, **Dual-Track Execution**, an
    - **YouTube**: Streams URL directly into Gemini Multimodal API without downloading files or triggering YouTube 429 rate limits.
    - **Local Video**: Compresses files >250MB to 720p H.264 before uploading to Google Files API (purged automatically in `finally` blocks).
 2. **Single-Request End-to-End Analysis**:
-   - **Default (Static 1 FPS)**: Fast (~40-50s) synthesis aligning visual OCR (desk nameplates, slide text) with audio dialogue.
+   - **Default (Static Multimodal)**: Fast (~40-50s) synthesis aligning visual OCR (desk nameplates, slide text) with audio dialogue.
    - **Agentic Mode (`--agentic`)**: Dynamic multi-turn frame navigation for slide-dense or multi-hour videos.
-3. **One-Pass Output**: Emits 6 structured sections with canonical speaker names and timestamped verbatim turns in one call.
+3. **Universal Plain-Text Formatting**: Emits 6 structured sections with canonical speaker names, contiguous turn consolidation, and timestamped verbatim turns. Headings and labels are dynamically translated into the target language with **zero emojis/icons**.
 
 ---
 
@@ -213,21 +210,28 @@ The system categorizes processing into **Routing**, **Dual-Track Execution**, an
 3. **Acoustic Transcription (ASR & Diarization)**:
    - **Cloud Mode (Default)**: Calls `gemini-3.5-transcribe` for acoustic speaker separation and word-level timestamps.
    - **Local Mode (`--engine whisper`)**: Runs Whisper locally on Apple Silicon GPU or CPU with Sherpa-ONNX voiceprint clustering.
-4. **Semantic Restructuring**:
-   - `gemini-3.8-flash` corrects homophones, merges contiguous speaker turns, and synthesizes executive minutes.
+4. **Universal Restructuring**:
+   - `gemini-3.8-flash` corrects homophones, merges contiguous speaker turns, and synthesizes executive minutes in the target language with clean, professional plain text headings.
 
 ---
 
-#### Step 3: Artifact Delivery & Interactive Player
-1. **Structured Markdown Minutes**: Saved as `<filename>_會議記錄.md` (metadata, executive summaries, decision matrices, action items, verbatim transcript).
-2. **Zero-Dependency HTML Player**: Saved as `<filename>_player.html`:
-   - **YouTube Source**: Embeds floating resizable YouTube Picture-in-Picture dock with instant click-to-seek. (*Note: YouTube security policies require an HTTP/HTTPS referer; opening via `file://` triggers Error 153. Use `--serve` or `python3 -m http.server 8000` for video playback.*)
-   - **Audio Source**: Embeds native audio player with timeline scrubber, speed toggles, and karaoke text highlighting.
+#### Step 3: Artifact Delivery & Dedicated Interactive Players
+1. **Structured Markdown Minutes (`<Meeting Title>_minutes.md`)**:
+   - Clean, professional markdown without decorative emojis in headings.
+   - Dynamic language localization matching the meeting/user preference.
+2. **Dedicated Video Player (`<Meeting Title>_player.html`)**:
+   - **3-Pane Workspace**: Top-left video player (YouTube IFrame or local `<video controls>`), bottom-left independent scrolling summary, and right full-height synchronized transcript.
+   - **Summary-First Copy Workflow**: Top copy buttons default to copying the Executive Summary, with dropdowns for Full Record or Transcript.
+   - *(Note: YouTube security policies require an HTTP/HTTPS referer; use `--serve` or `python3 -m http.server 8000` when streaming YouTube videos).*
+3. **Dedicated Audio Player (`<Meeting Title>_player.html`)**:
+   - **2-Pane Workspace**: Left executive summary, right synchronized verbatim transcript.
+   - **Bottom Audio Controller**: Fixed floating player with keyboard shortcuts, volume slider, playback rate, and waveform seeking.
+   - **100% Offline Ready**: Fully functional when opened directly via local file protocol (`file:///...`) without any HTTP server.
 
 ### Generated Deliverables:
-1. **📄 `<filename>_會議記錄.md`**: Complete structured meeting minutes.
-2. **🌐 `<filename>_player.html`**: Zero-dependency interactive dual-column review player.
-3. **📚 `<filename>_glossary.md`**: Global authoritative terminology table (when mining is enabled).
+1. **📄 `<Meeting Title>_minutes.md`**: Clean, structured meeting minutes.
+2. **🌐 `<Meeting Title>_player.html`**: Dedicated standalone interactive review player.
+3. **📚 `<Meeting Title>_glossary.md`**: Global authoritative terminology table (when mining is enabled).
 
 ---
 

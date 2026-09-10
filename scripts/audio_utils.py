@@ -43,6 +43,53 @@ def extract_youtube_id(url_str: str) -> str | None:
     return None
 
 
+def fetch_youtube_title(url_str: str) -> str | None:
+    """
+    Fetch the YouTube video title via YouTube's official oEmbed API (zero credentials required).
+    Returns title string or None on failure/offline.
+    """
+    if not is_youtube_url(url_str):
+        return None
+    import urllib.request
+    import urllib.parse
+    import json
+    import ssl
+    try:
+        ctx = ssl._create_unverified_context()
+        encoded_url = urllib.parse.quote(url_str.strip())
+        oembed_url = f"https://www.youtube.com/oembed?url={encoded_url}&format=json"
+        req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            title = data.get("title")
+            if title:
+                return title.strip()
+    except Exception:
+        pass
+    return None
+
+
+def sanitize_filename(name: str, max_length: int = 120) -> str:
+    """
+    Sanitize a string to be safely used as a filename across macOS, Windows, and Linux.
+    Replaces illegal filename characters with clean separators and trims length.
+    """
+    if not name:
+        return ""
+    # Strip markdown formatting
+    cleaned = re.sub(r'[*_`#~]', '', name)
+    # Replace illegal filename characters: \ / : * ? " < > |
+    cleaned = re.sub(r'[\\/*?:"<>|]', '_', cleaned)
+    # Collapse multiple spaces/underscores
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    cleaned = re.sub(r'_+', '_', cleaned)
+    # Strip leading/trailing dots or spaces
+    cleaned = cleaned.strip('. _')
+    if len(cleaned) > max_length:
+        cleaned = cleaned[:max_length].strip()
+    return cleaned
+
+
 def is_video_file(path: Path | str) -> bool:
     """Check if the given path is a recognized video file."""
     try:

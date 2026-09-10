@@ -211,25 +211,51 @@ def generate_minutes_with_gemini(
 Strictly adhere to the spelling, names, titles, organizations, and technical terms in the glossary above.
 """ if global_glossary else ""
 
+    # Target summary language specification (universal, LLM-driven localization)
     if summary_language and summary_language.lower() != "auto":
-        summary_lang_instruction = (
-            f"Output Sections 1 to 5 strictly in the requested target language: '{summary_language}'. "
-            f"Ensure section headings and narrative analysis are written naturally and professionally in '{summary_language}'."
-        )
-        verbatim_lang_instruction = (
-            f"If the spoken audio is Chinese, render cleanly in Traditional Chinese (繁體中文). "
-            f"For other languages, strictly preserve original spoken words while fixing phonetic errors against the glossary."
-        )
+        target_lang = summary_language
     else:
-        summary_lang_instruction = (
-            "Output Sections 1 to 5 dynamically in the primary language of the user's prompt / conversation "
-            "(e.g., Traditional Chinese if the user prompts in Traditional Chinese; English if in English; Japanese if in Japanese). "
-            "Render section headings and executive synthesis naturally in that target language."
-        )
-        verbatim_lang_instruction = (
-            "If the dialogue is in Chinese (Mandarin/Taiwanese), faithfully render it in fluent Traditional Chinese (繁體中文), "
-            "strictly preserving the authentic spoken words, technical terms, and colloquial phrasing. For other languages, preserve original spoken words."
-        )
+        target_lang = "the primary language spoken in the meeting (e.g. Traditional Chinese for Taiwan meetings, English for English meetings, Japanese for Japanese meetings, etc.)"
+
+    summary_lang_instruction = (
+        f"- **Sections 1 to 5 (Metadata, Summary, Discussion Topics, Decisions, Action Items)**:\n"
+        f"  Must be written in fluent, native, professional {target_lang}.\n"
+        f"- **Universal Language Adaptation (CRITICAL)**:\n"
+        f"  1. Translate and adapt all section headings (1 to 6), metadata field labels, and table column headers naturally into {target_lang}.\n"
+        f"  2. **STRICTLY FORBIDDEN to include ANY emojis or icons** (e.g. no 📌, 🎯, 💡, ⚖️, 📋, 🎙️) in any section headings, sub-headings, or table headers. Use clean, plain text markdown headings only (e.g. `## 1. `, `## 2. `)."
+    )
+    verbatim_lang_instruction = (
+        "Faithfully preserve original spoken dialogue and language of each speaker without translation."
+    )
+    s1_s5_schema = f"""## 1. Meeting Metadata & Attendees
+- **Meeting Title**: Inferred or established title
+- **Audio Source**: `{audio_path.name}`
+- **Estimated Date / Time**: Inferred from context or agenda
+- **Chairperson / Host**: Identified meeting leader
+- **Speaker Mapping Table**:
+  Cross-reference dialogue context and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role:
+  | Speaker ID | Role / Title | Name | Organization / Team |
+  | :--- | :--- | :--- | :--- |
+  | `spk_0, spk_1` | [Role/Title] | [Name or Inferred Name] | [Department / Org] |
+
+## 2. Executive Summary
+- A high-level, 200–300 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
+
+## 3. Key Discussion Topics & Agenda Items
+- Structured breakdown for each topic discussed:
+  - **Context & Motivation**: Background and why this issue was raised.
+  - **Key Arguments & Data**: Evidence, metrics, or points presented by participants.
+  - **Discussion Flow & Speaker Perspectives**: Contributions from different leaders/members organized per speaker.
+  - **Outcome / Consensus**: Conclusion reached on this specific topic.
+
+## 4. Key Decisions & Resolutions
+- Bulleted list of formal decisions, policy directives, approved motions, or consensus reached.
+
+## 5. Action Items & Next Steps
+- Structured Markdown table assigning clear ownership and timelines:
+  | # | Action Item / Task | Owner / Assignee | Due Date / Timeline | Status / Notes |
+  | :--- | :--- | :--- | :--- | :--- |
+  | 1 | [Clear, actionable task description] | [Name / Role] | [Timeline] | [Notes] |"""
 
     def _call_gemini_track(prompt_content: str, label: str) -> str:
         gen_kwargs = {"model": summary_model, "contents": prompt_content}
@@ -265,44 +291,20 @@ You are an elite, highly professional executive meeting secretary. Your mission 
 {raw_transcript_text}
 
 ---
-# Language Policy
+# Language & Label Policy
 {summary_lang_instruction}
 
 ---
 # Output Structure (Sections 1 to 5 ONLY)
-Output strictly and exclusively Sections 1 to 5:
+Output strictly and exclusively Sections 1 to 5 (DO NOT include any emojis or icons in headings):
 
-## 1. 📌 Meeting Metadata & Attendees
-- **Meeting Title**: Inferred or established title.
-- **Audio Source**: `{audio_path.name}`
-- **Estimated Date / Time**: Inferred from context or agenda.
-- **Chairperson / Host**: Identified meeting leader.
-- **Speaker Mapping Table**:
-  Cross-reference dialogue context and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role:
-  | Speaker ID | Role / Title | Name | Organization / Team |
-  | :--- | :--- | :--- | :--- |
-  | `spk_0, spk_1` | [Role/Title, e.g., Host / Chair / VP] | [Name or Inferred Name] | [Department / Org] |
-
-## 2. 🎯 Executive Summary
-- A high-level, 200–300 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
-
-## 3. 💡 Key Discussion Topics & Agenda Items
-- Structured breakdown for each topic discussed: Context & Motivation, Key Arguments & Data, Discussion Flow, Outcome.
-
-## 4. ⚖️ Key Decisions & Resolutions
-- Bulleted list of formal decisions, policy directives, approved motions, or consensus reached.
-
-## 5. 📋 Action Items & Next Steps
-- Structured Markdown table assigning clear ownership and timelines:
-  | # | Action Item / Task | Owner / Assignee | Due Date / Timeline | Status / Notes |
-  | :--- | :--- | :--- | :--- | :--- |
-  | 1 | [Clear, actionable task description] | [Name / Role] | [Timeline] | [Notes] |
+{s1_s5_schema}
 
 IMPORTANT: Stop immediately after Section 5. Do NOT output Section 6.
 """
 
     prompt_b = f"""# Role & Objective
-You are an elite verbatim meeting transcription editor. Your mission is to transform the draft transcript into Section 6: Full Verbatim Transcript.
+You are an elite verbatim meeting transcription editor. Your mission is to transform the draft transcript into Section 6 (Full Verbatim Transcript), localized appropriately into {target_lang}.
 
 {glossary_injection}
 
@@ -320,8 +322,8 @@ You are an elite verbatim meeting transcription editor. Your mission is to trans
 
 ---
 # Output Format
-Output strictly and exclusively Section 6:
-## 6. 🎙️ Full Verbatim Transcript
+Output strictly and exclusively Section 6 (translate heading to {target_lang}, DO NOT include any emojis or icons):
+## 6. Full Verbatim Transcript
 
 [MM:SS - MM:SS] **Role / Name**: Utterance
 """
@@ -374,14 +376,52 @@ def process_video_meeting_end_to_end(
         except Exception as e:
             print(f"[!] Warning: Could not read outline file {outline_path}: {e}")
 
-    # Language instruction
-    lang_name = summary_language if summary_language else "Traditional Chinese (zh-TW)"
+    # Target summary language specification (universal, LLM-driven localization)
+    if summary_language and summary_language.lower() != "auto":
+        target_lang = summary_language
+    else:
+        target_lang = "the primary language spoken in the meeting (e.g. Traditional Chinese for Taiwan meetings, English for English meetings, Japanese for Japanese meetings, etc.)"
+
     lang_instruction = (
         f"- **Sections 1 to 5 (Metadata, Summary, Discussion Topics, Decisions, Action Items)**:\n"
-        f"  Must be written in fluent, native, professional {lang_name}.\n"
+        f"  Must be written in fluent, native, professional {target_lang}.\n"
+        f"- **Universal Language Adaptation (CRITICAL)**:\n"
+        f"  1. Translate and adapt all section headings (1 to 6), metadata field labels, and table column headers naturally into {target_lang}.\n"
+        f"  2. **STRICTLY FORBIDDEN to include ANY emojis or icons** (e.g. no 📌, 🎯, 💡, ⚖️, 📋, 🎙️) in any section headings, sub-headings, or table headers. Use clean, plain text markdown headings only (e.g. `## 1. `, `## 2. `).\n"
         f"- **Section 6 (Full Verbatim Transcript)**:\n"
-        f"  MUST faithfully preserve the original spoken dialogue and language of each speaker (including multilingual code-switching and technical terms). Do NOT translate verbatim dialogue turns."
+        f"  MUST faithfully preserve original spoken dialogue and language of each speaker without translation."
     )
+
+    video_schema = f"""## 1. Meeting Metadata & Attendees
+- **Meeting Title**: (Inferred from video slides, agenda, or title)
+- **Source**: {source_str}
+- **Estimated Date / Time**: (Inferred from slides or dialogue)
+- **Chairperson / Host**: (Identified meeting leader)
+- **Speaker Mapping Table**:
+  Cross-reference dialogue, nameplates, and video titles to map participants:
+  | Role / Title | Name | Organization / Department | Remarks / Key Presentation Topic |
+  | :--- | :--- | :--- | :--- |
+
+## 2. Executive Summary
+- A high-level, 300–400 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
+
+## 3. Key Discussion Topics & Agenda Items
+- Structured breakdown for each topic discussed: Context & Motivation, Key Arguments & Data, Discussion Flow & Speaker Perspectives (organized per speaker), Outcome.
+
+## 4. Key Decisions & Resolutions
+- Bulleted list of formal decisions, policy directives, approved motions, or consensus reached.
+
+## 5. Action Items & Next Steps
+- Structured Markdown table assigning clear ownership and timelines:
+  | # | Action Item / Task | Owner / Assignee | Due Date / Timeline | Status / Notes |
+  | :--- | :--- | :--- | :--- | :--- |
+
+## 6. Full Verbatim Transcript
+- Chronologically transcribe every dialogue turn.
+- Follow the **Contiguous Turn Consolidation** rule: each uninterrupted speech is a single turn spanning [Start MM:SS - End MM:SS].
+- Map every speaker to their identified Role / Name based on video nameplates/titles.
+Format:
+[MM:SS - MM:SS] **Role / Name**: Spoken utterance (use natural paragraph breaks for long continuous speech)"""
 
     prompt = f"""# Role & Objective
 You are an elite, highly professional executive meeting secretary and transcription specialist.
@@ -405,37 +445,9 @@ Analyze this recorded meeting video (utilizing visual slides, on-screen speaker 
      - **【Role / Name】**: Key points, metrics, proposals, or directives presented by this speaker.
 
 # Output Structure
-Output strictly the following 6 sections in Markdown:
+Output strictly the following 6 sections in Markdown (DO NOT include any emojis or icons in headings):
 
-## 1. 📌 Meeting Metadata & Attendees
-- **Meeting Title**: (Extracted from video slides or title)
-- **Source**: {source_str}
-- **Estimated Date / Time**: (Extracted from slides or dialogue)
-- **Chairperson / Host**:
-- **Speaker Mapping Table**:
-  | Role / Title | Name | Organization / Department | Remarks / Key Presentation Topic |
-  | :--- | :--- | :--- | :--- |
-
-## 2. 🎯 Executive Summary
-- A high-level, 300–400 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
-
-## 3. 💡 Key Discussion Topics & Agenda Items
-- Structured breakdown for each topic discussed: Context & Motivation, Key Arguments & Data, Discussion Flow & Speaker Perspectives (organized per speaker), Outcome.
-
-## 4. ⚖️ Key Decisions & Resolutions
-- Bulleted list of formal decisions, policy directives, approved motions, or consensus reached.
-
-## 5. 📋 Action Items & Next Steps
-- Structured Markdown table assigning clear ownership and timelines:
-  | # | Action Item / Task | Owner / Assignee | Due Date / Timeline | Status / Notes |
-  | :--- | :--- | :--- | :--- | :--- |
-
-## 6. 🎙️ Full Verbatim Transcript
-- Chronologically transcribe every dialogue turn.
-- Follow the **Contiguous Turn Consolidation** rule: each uninterrupted speech is a single turn spanning [Start MM:SS - End MM:SS].
-- Map every speaker to their identified Role / Name based on video nameplates/titles.
-Format:
-[MM:SS - MM:SS] **【Role / Name】**: Spoken utterance (use natural paragraph breaks for long continuous speech)
+{video_schema}
 """
 
     uploaded_file = None

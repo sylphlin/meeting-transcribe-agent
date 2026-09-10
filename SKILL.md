@@ -2,7 +2,7 @@
 name: meeting-transcribe-agent
 description: Universal meeting intelligence and interactive verbatim transcription suite adhering to Agent Skills Specification. Features native Multimodal Video Pipeline (YouTube URLs & local video files with visual slide/speaker OCR and optional Agentic Video Understanding), Google Gemini 3.5 Transcribe (cloud primary audio with ephemeral Files API auto-cleanup), and local Apple Silicon MLX/Whisper + Sherpa-ONNX diarization (offline backup) with Gemini 3.8 Flash minutes structuring, canonical speaker consolidation, and standalone zero-dependency interactive HTML playback player.
 metadata:
-  version: "2.4.0"
+  version: "2.5.0"
   author: "sylphlin"
   repository: "https://github.com/sylphlin/meeting-transcribe-agent"
   category: "audio-transcription"
@@ -14,8 +14,8 @@ metadata:
 Universal meeting intelligence and interactive transcription suite adhering to the open [Agent Skills Specification](https://agentskills.io/specification).
 
 Provides dual specialized pipelines tailored to input media:
-1. **Multimodal Video Pipeline (YouTube URLs & Local Video)**: End-to-end single-request analysis via **Gemini 3.8 Flash** with visual lower-third caption OCR, presentation slide extraction, and optional **Agentic Video Understanding** (`--agentic`). Automatically synchronizes with an embedded Picture-in-Picture YouTube player dock.
-2. **Pure Audio Pipeline (Audio Files & Podcasts)**: Combines **Google Gemini 3.5 Transcribe** (Cloud Primary with ephemeral Files API auto-cleanup) or **Local Apple Silicon MLX / Faster-Whisper + Sherpa-ONNX Diarization** (Offline Backup) with **Gemini 3.8 Flash** for executive minutes structuring, speaker role arbitration, and technical glossary consistency.
+1. **Multimodal Video Pipeline (YouTube URLs & Local Video)**: End-to-end single-request analysis via **Gemini 3.8 Flash** with visual lower-third caption OCR, presentation slide extraction, and optional **Agentic Video Understanding** (`--agentic`). Automatically synchronizes with an embedded 3-pane interactive video player (top-left video, bottom-left executive summary, right synchronized transcript).
+2. **Pure Audio Pipeline (Audio Files & Podcasts)**: Combines **Google Gemini 3.5 Transcribe** (Cloud Primary with ephemeral Files API auto-cleanup) or **Local Apple Silicon MLX / Faster-Whisper + Sherpa-ONNX Diarization** (Offline Backup) with **Gemini 3.8 Flash** for executive minutes structuring, speaker role arbitration, and technical glossary consistency. Outputs a zero-dependency 2-pane audio player functioning 100% offline via local `file://` protocol.
 
 ---
 
@@ -30,16 +30,17 @@ meeting-transcribe-agent/
 ├── scripts/                          # Modular core components
 │   ├── __init__.py
 │   ├── meeting_transcribe.py         # Master pipeline orchestrator (Video & Audio Dual-Track)
-│   ├── audio_utils.py                # Video detection, YouTube ID parsing, FFmpeg audio extraction & compression
-│   ├── gemini_engine.py              # Multimodal video end-to-end, Files API upload & auto-cleanup
+│   ├── audio_utils.py                # Video detection, YouTube title fetching, FFmpeg compression, filename sanitization
+│   ├── gemini_engine.py              # Multimodal video end-to-end, Files API upload & auto-cleanup, universal LLM localization
 │   ├── diarization.py                # Local Sherpa-ONNX acoustic diarization & Whisper/MLX transcription
 │   ├── glossary.py                   # Dual-track terminology mining (audio pre-scan + agenda outline)
 │   ├── canonicalizer.py              # Acoustic cluster drift convergence & sequential turn merging
-│   └── html_generator.py             # Markdown AST converter & interactive player renderer
+│   └── html_generator.py             # Multilingual title extractor & dedicated audio/video player renderer
 └── assets/                           # Static assets and templates
-    ├── player_template.html          # Standalone responsive HTML5/CSS/JS player template with YouTube Dock
+    ├── audio_player_template.html    # Standalone 2-pane audio player template with bottom controller (file:// offline ready)
+    ├── video_player_template.html    # Standalone 3-pane video player template (YouTube IFrame & local video)
     └── prompts/                      # Structured Markdown prompts
-        ├── minutes_prompt.md         # Stage 2 minutes structuring & speaker role arbitration
+        ├── minutes_prompt.md         # Stage 2 minutes structuring & universal language localization prompt
         └── audio_glossary_prompt.md  # Track 1 audio pre-scan entity mining
 ```
 
@@ -49,10 +50,10 @@ meeting-transcribe-agent/
 
 1. **Multimodal Video Pipeline (YouTube & Local Video)**:
    - **Direct YouTube URL Support**: Transcribes and analyzes public meetings, council sessions, webinars, and conferences directly from YouTube URLs (`https://www.youtube.com/watch?v=...`, `youtu.be/...`, shorts, live).
+   - **Intelligent Title & File Naming**: Automatically queries YouTube's official oEmbed API or extracts Section 1's official meeting title to name files cleanly (e.g., `臺南市政府第 764 次市政會議_minutes.md` and `_player.html`), eliminating raw video IDs.
    - **Visual Speaker & Slide Grounding**: Inspects lower-third title cards, nameplates, and presentation slides to accurately identify real participant names, governmental departments, and agenda slide numbers.
    - **Single-Request Efficiency**: Employs a single unified multimodal request delivering complete executive minutes, speaker mapping, and full verbatim transcript in ~40s (50% input token savings).
    - **Agentic Video Understanding (`--agentic`)**: Harnesses dynamic multi-turn frame navigation and tool-use (`types.MediaProcessing.AGENTIC`) for intricate multi-hour video deep dives.
-   - **Picture-in-Picture YouTube Dock**: The generated HTML player embeds an interactive YouTube IFrame player that synchronizes with the verbatim transcript karaoke timeline.
 
 2. **Dual-Engine Audio Architecture (Cloud Primary + Local Offline Backup)**:
    - **Primary Engine (`--engine gemini`)**: Multimodal cloud transcription via `gemini-3.5-transcribe` with native speaker diarization and zero-persistence Files API auto-cleanup. Lightning-fast (30~60s for 1 hour).
@@ -62,22 +63,16 @@ meeting-transcribe-agent/
    - **Track 1 (Acoustic Discovery)**: Gemini 1M lightweight pre-scan extracts an authoritative Markdown glossary of participant names, leadership titles, organizations/teams, technical terminology, and acronyms.
    - **Track 2 (Context Ingestion)**: Ingests external agenda/meeting notices (`--outline`) to prime speech recognition and eliminate homophone errors.
 
-4. **Canonical Speaker Identity Consolidation**:
-   - Automatically resolves acoustic cluster drift (e.g., consolidating fragmented clusters `spk_1, spk_3, spk_7` into a unified identity such as `VP of Engineering (Eric)`).
-   - Merges fragmented sequential turns from the same speaker with temporal gaps under 2.0 seconds while preserving dialogue continuity.
-
-5. **Dynamic Language Mirroring Policy**:
-   - **User Language Mirroring**: Meeting summary, analysis sections, and section headings automatically adapt to the primary language of the user's conversation / instructions (e.g., Traditional Chinese if conversing in Traditional Chinese; English if conversing in English; Japanese if conversing in Japanese).
-   - **Explicit Override**: Overridden whenever `--summary-language` is explicitly passed (e.g., `--summary-language en`).
+4. **Universal Multi-Language Adaptation & Clean Typography**:
+   - **Universal LLM Localization**: The LLM dynamically adapts all section headings, metadata field labels, and table column headers into the target user/meeting language (Traditional Chinese, English, Japanese, etc.) without hardcoded code branching.
+   - **Strictly No Emojis in Headings**: Under all circumstances, section titles and table headers are output in clean, professional plain text without emojis or decorative icons (no 📌, 🎯, 💡, ⚖️, 📋, 🎙️).
    - **Verbatim Fidelity**: The Full Verbatim Transcript strictly preserves the original spoken language and words of each participant, avoiding cross-lingual translation to maintain legal and evidentiary integrity.
 
-6. **Standalone Interactive HTML Player**:
-   - Dual-pane layout: Executive meeting summary on the left, synchronized verbatim transcript on the right.
-   - Fixed header search bar with keyword highlighting and instant navigation.
-   - One-click timestamp jumping for instant audio or YouTube playback.
-   - Smooth auto-scrolling with dynamic speaker glow highlighting the active utterance.
-   - Top-right 5-language UI switcher (Traditional Chinese, English, Japanese, Korean, Simplified Chinese) with persistent localStorage preference.
-   - Left panel "Copy to Google Docs" button with rich-text HTML clipboard export and automatic `docs.new` launching.
+5. **Dedicated Dual Interactive HTML Players**:
+   - **Dedicated Video Player (`video_player_template.html`)**: 3-pane layout featuring an embedded 16:9 video player on the top left (YouTube API or local `<video controls>`), an executive summary panel on the bottom left, and an interactive synchronized transcript on the right.
+   - **Dedicated Audio Player (`audio_player_template.html`)**: 2-pane layout (Executive Summary on the left, synchronized transcript on the right) with a fixed floating audio control bar at the bottom. Operates 100% offline via local `file://` protocol without requiring any local HTTP server.
+   - **Summary-First Copy Workflow**: Top copy buttons (`Google Docs` / `Markdown`) default to copying the Executive Summary (Sections 1–5), with dropdown menus for Full Record (Summary + Transcript) and Transcript only.
+   - **Multilingual UI Switcher**: Top-right 5-language UI switcher (Traditional Chinese, English, Japanese, Korean, Simplified Chinese) with persistent localStorage preference.
 
 ---
 

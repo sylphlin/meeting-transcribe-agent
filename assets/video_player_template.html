@@ -1,0 +1,1702 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <title>🎬 {{TITLE}} - 會議記錄與視訊播放器</title>
+    <script>
+        // Anti-FOUC immediate theme detection
+        (function() {
+            try {
+                const savedTheme = localStorage.getItem('meeting_transcribe_theme');
+                const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (e) {}
+        })();
+    </script>
+    <style>
+        :root {
+            color-scheme: light dark;
+            --bg-color: #0f172a;
+            --surface-color: #1e293b;
+            --surface-hover: #334155;
+            --border-color: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #38bdf8;
+            --primary-hover: #0ea5e9;
+            --accent-green: #34d399;
+            --accent-amber: #fbbf24;
+            --accent-purple: #c084fc;
+            --accent-red: #f87171;
+            --highlight-bg: rgba(56, 189, 248, 0.16);
+            --highlight-border: #38bdf8;
+            --turn-bg: rgba(15, 23, 42, 0.65);
+            --header-bg: rgba(30, 41, 59, 0.98);
+            --scrollbar-thumb: #475569;
+            --scrollbar-track: #1e293b;
+            --dropdown-bg: #1e293b;
+            --dropdown-hover: #334155;
+            --kbd-bg: #334155;
+            --kbd-text: #f8fafc;
+        }
+
+        [data-theme="light"] {
+            color-scheme: light;
+            --bg-color: #f8fafc;
+            --surface-color: #ffffff;
+            --surface-hover: #f1f5f9;
+            --border-color: #e2e8f0;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --primary: #0284c7;
+            --primary-hover: #0369a1;
+            --accent-green: #059669;
+            --accent-amber: #d97706;
+            --accent-purple: #7c3aed;
+            --accent-red: #dc2626;
+            --highlight-bg: rgba(2, 132, 199, 0.12);
+            --highlight-border: #0284c7;
+            --turn-bg: #ffffff;
+            --header-bg: rgba(255, 255, 255, 0.98);
+            --scrollbar-thumb: #cbd5e1;
+            --scrollbar-track: #f1f5f9;
+            --dropdown-bg: #ffffff;
+            --dropdown-hover: #f1f5f9;
+            --kbd-bg: #e2e8f0;
+            --kbd-text: #1e293b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+            scrollbar-width: thin;
+        }
+
+        ::-webkit-scrollbar {
+            width: 7px;
+            height: 7px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--scrollbar-track);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 4px;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.5;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        /* Slim Compact Top Navigation Header (Height: 46px) */
+        header.top-header {
+            height: 46px;
+            background: var(--header-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 16px;
+            flex-shrink: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+            z-index: 100;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .header-icon {
+            font-size: 1.15rem;
+            flex-shrink: 0;
+        }
+
+        .header-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-main);
+            letter-spacing: -0.01em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: calc(100vw - 480px);
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        /* Split Button Dropdown */
+        .dropdown-wrapper {
+            position: relative;
+            display: inline-flex;
+            align-items: stretch;
+            border-radius: 6px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+        }
+
+        .action-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            border-radius: 6px 0 0 6px;
+            border: 1px solid var(--border-color);
+            border-right: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .dropdown-arrow-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 7px;
+            font-size: 0.72rem;
+            border-radius: 0 6px 6px 0;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .primary-btn {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #1d4ed8;
+        }
+        .primary-btn:hover {
+            background: #1d4ed8;
+        }
+        .dropdown-wrapper:hover .primary-btn,
+        .dropdown-wrapper:hover .dropdown-arrow-btn.primary-arrow {
+            filter: brightness(1.08);
+        }
+        .primary-arrow {
+            background: #1d4ed8;
+            color: #ffffff;
+            border-color: #1e40af;
+        }
+
+        .secondary-btn {
+            background: var(--surface-color);
+            color: var(--text-main);
+            border-color: var(--border-color);
+        }
+        .secondary-btn:hover {
+            background: var(--surface-hover);
+            border-color: var(--primary);
+        }
+        .secondary-arrow {
+            background: var(--surface-color);
+            color: var(--text-muted);
+            border-color: var(--border-color);
+        }
+        .secondary-arrow:hover {
+            background: var(--surface-hover);
+            color: var(--text-main);
+        }
+
+        .dropdown-menu {
+            position: absolute;
+            top: calc(100% + 4px);
+            right: 0;
+            background: var(--dropdown-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+            padding: 6px;
+            min-width: 240px;
+            z-index: 200;
+            display: none;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .dropdown-menu.show {
+            display: flex;
+            animation: fadeInMenu 0.12s ease-out;
+        }
+
+        @keyframes fadeInMenu {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .dropdown-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.12s;
+            text-align: left;
+        }
+
+        .dropdown-item:hover {
+            background: var(--dropdown-hover);
+        }
+
+        .dropdown-item.active {
+            background: var(--highlight-bg);
+        }
+
+        .dropdown-item-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .dropdown-item-desc {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            margin-top: 1px;
+        }
+
+        .icon-btn {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: all 0.15s;
+        }
+
+        .icon-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .lang-select-box {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+
+        .lang-select {
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            outline: none;
+        }
+        .lang-select option {
+            background: var(--surface-color);
+            color: var(--text-main);
+        }
+
+        /* 3-Pane Video Layout Container */
+        main.video-layout-container {
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+            height: calc(100vh - 46px);
+            display: grid;
+            grid-template-columns: minmax(460px, 46%) 1fr;
+            gap: 12px;
+            padding: 10px 14px 12px 14px;
+            overflow: hidden;
+        }
+
+        @media (max-width: 1024px) {
+            main.video-layout-container {
+                grid-template-columns: 1fr;
+                overflow-y: auto;
+                height: auto;
+            }
+        }
+
+        /* Left Column (Video on top, Summary on bottom) */
+        .left-col {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 0;
+            gap: 10px;
+            overflow: hidden;
+        }
+
+        /* Left-Top: Video Box */
+        .video-box-panel {
+            background: #000000;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            overflow: hidden;
+            flex-shrink: 0;
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            max-height: 44vh;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.22);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .video-box-panel iframe,
+        .video-box-panel video,
+        .video-box-panel div#yt-player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border: none;
+            display: block;
+        }
+
+        /* YouTube file:// Notice Banner */
+        .yt-notice-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(245, 158, 11, 0.94);
+            color: #000000;
+            padding: 8px 12px;
+            font-size: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.2);
+        }
+
+        .yt-notice-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .yt-notice-btn {
+            background: #000000;
+            color: #ffffff;
+            border: none;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+        .yt-notice-btn:hover {
+            background: #333333;
+        }
+
+        /* Left-Bottom: Summary Box */
+        .summary-box-panel {
+            flex: 1;
+            min-height: 0;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        }
+
+        .panel-header {
+            padding: 8px 14px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--surface-color);
+            flex-shrink: 0;
+        }
+
+        .panel-header-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .panel-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .panel-quick-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            border-radius: 5px;
+            padding: 2px 7px;
+            font-size: 0.74rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .panel-quick-btn:hover {
+            color: var(--text-main);
+            border-color: var(--primary);
+            background: var(--surface-hover);
+        }
+
+        .summary-body {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 14px 18px;
+            font-size: 0.92rem;
+            line-height: 1.65;
+            color: var(--text-main);
+        }
+
+        /* Summary Markdown Styling */
+        .summary-body h1, .summary-body h2, .summary-body h3 {
+            color: var(--text-main);
+            margin-top: 1.1rem;
+            margin-bottom: 0.5rem;
+            font-weight: 700;
+        }
+        .summary-body h2 {
+            font-size: 1.08rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 4px;
+            color: var(--primary);
+        }
+        .summary-body h3 {
+            font-size: 0.96rem;
+        }
+        .summary-body p {
+            margin-bottom: 0.65rem;
+        }
+        .summary-body ul, .summary-body ol {
+            margin-bottom: 0.75rem;
+            padding-left: 1.3rem;
+        }
+        .summary-body li {
+            margin-bottom: 0.3rem;
+        }
+        .summary-body table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.8rem 0;
+            font-size: 0.84rem;
+        }
+        .summary-body th, .summary-body td {
+            border: 1px solid var(--border-color);
+            padding: 6px 10px;
+            text-align: left;
+        }
+        .summary-body th {
+            background: var(--surface-hover);
+            font-weight: 600;
+        }
+        .summary-body blockquote {
+            border-left: 3px solid var(--primary);
+            padding-left: 10px;
+            margin: 0.6rem 0;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        /* Right Column: Transcript Box (Full Height) */
+        .transcript-box-panel {
+            height: 100%;
+            min-height: 0;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        }
+
+        .transcript-toolbar {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--surface-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .search-bar {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 3px 8px;
+            gap: 6px;
+            transition: border-color 0.15s;
+        }
+        .search-bar:focus-within {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px var(--highlight-bg);
+        }
+
+        .search-icon {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .search-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-size: 0.84rem;
+            outline: none;
+            min-width: 0;
+        }
+        .search-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .search-count {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            background: var(--surface-hover);
+            padding: 1px 6px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
+        .search-nav-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.72rem;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .search-nav-btn:hover:not(:disabled) {
+            color: var(--text-main);
+            background: var(--surface-hover);
+        }
+        .search-nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .transcript-stream-wrap {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 10px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* Transcript Turn Card */
+        .transcript-turn {
+            background: var(--turn-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 14px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+        }
+        .transcript-turn:hover {
+            border-color: var(--primary);
+            background: var(--surface-hover);
+            transform: translateX(2px);
+        }
+        .transcript-turn.active {
+            border-color: var(--highlight-border);
+            background: var(--highlight-bg);
+            box-shadow: 0 0 0 1px var(--highlight-border);
+        }
+
+        .turn-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .ts-badge {
+            background: var(--surface-hover);
+            color: var(--primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 2px 7px;
+            font-size: 0.74rem;
+            font-family: monospace;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s;
+        }
+        .ts-badge:hover {
+            background: var(--primary);
+            color: #ffffff;
+            border-color: var(--primary);
+        }
+
+        .speaker-tag {
+            font-size: 0.76rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--text-main);
+        }
+
+        /* Speaker Colors */
+        .spk-c1 { background: rgba(56, 189, 248, 0.18); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+        .spk-c2 { background: rgba(52, 211, 153, 0.18); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
+        .spk-c3 { background: rgba(251, 191, 36, 0.18); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
+        .spk-c4 { background: rgba(192, 132, 252, 0.18); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.3); }
+        .spk-c5 { background: rgba(248, 113, 113, 0.18); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
+        .spk-c6 { background: rgba(232, 121, 249, 0.18); color: #e879f9; border: 1px solid rgba(232, 121, 249, 0.3); }
+
+        .turn-text {
+            color: var(--text-main);
+            font-size: 0.92rem;
+            line-height: 1.62;
+        }
+        .turn-text p {
+            margin: 0;
+        }
+        .turn-text p + p {
+            margin-top: 0.5rem;
+        }
+
+        .transcript-subtitle {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin: 10px 0 4px 0;
+            padding-bottom: 4px;
+            border-bottom: 1px dashed var(--border-color);
+        }
+
+        .transcript-plain {
+            font-size: 0.86rem;
+            color: var(--text-muted);
+            margin: 4px 0;
+        }
+
+        /* Search Highlight */
+        mark.search-match {
+            background-color: #fef08a;
+            color: #854d0e;
+            border-radius: 2px;
+            padding: 0 2px;
+        }
+        mark.search-match.current {
+            background-color: #f97316;
+            color: #ffffff;
+            font-weight: 700;
+            outline: 2px solid #ea580c;
+        }
+
+        /* Toast notification */
+        .toast-notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #1e293b;
+            color: #f8fafc;
+            border: 1px solid #334155;
+            padding: 9px 16px;
+            border-radius: 6px;
+            font-size: 0.84rem;
+            font-weight: 500;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+        }
+        .toast-notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        [data-theme="light"] .toast-notification {
+            background: #0f172a;
+            color: #f8fafc;
+            border-color: #334155;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Slim Compact Top Header (46px) -->
+    <header class="top-header">
+        <div class="header-left">
+            <span class="header-icon">🎬</span>
+            <span class="header-title" title="{{TITLE}}">{{TITLE}}</span>
+        </div>
+        <div class="header-actions">
+            <!-- Google Doc Dropdown (Default: Summary) -->
+            <div class="dropdown-wrapper" id="gdoc-dropdown-wrapper">
+                <button class="action-btn primary-btn" onclick="copyContent('summary', 'gdoc')" title="複製會議摘要並開啟 Google 文件">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                        <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                    </svg>
+                    <span id="gdoc-btn-label" data-i18n="copy_gdoc_summary_btn">Google 文件 (摘要)</span>
+                </button>
+                <button class="dropdown-arrow-btn primary-arrow" onclick="toggleDropdown('gdoc-menu', event)" title="更多複製選項">▾</button>
+                <div id="gdoc-menu" class="dropdown-menu">
+                    <div class="dropdown-item active" onclick="copyContent('summary', 'gdoc')">
+                        <span>📋</span>
+                        <div>
+                            <div class="dropdown-item-title" data-i18n="opt_summary_gdoc">複製會議摘要 (預設)</div>
+                            <div class="dropdown-item-desc" data-i18n="desc_summary_gdoc">第 1~5 節重點、決策與待辦事項</div>
+                        </div>
+                    </div>
+                    <div class="dropdown-item" onclick="copyContent('full', 'gdoc')">
+                        <span>📚</span>
+                        <div>
+                            <div class="dropdown-item-title" data-i18n="opt_full_gdoc">複製完整記錄</div>
+                            <div class="dropdown-item-desc" data-i18n="desc_full_gdoc">含摘要及第 6 節全場逐字稿</div>
+                        </div>
+                    </div>
+                    <div class="dropdown-item" onclick="copyContent('transcript', 'gdoc')">
+                        <span>🎙️</span>
+                        <div>
+                            <div class="dropdown-item-title" data-i18n="opt_transcript_gdoc">僅複製逐字稿</div>
+                            <div class="dropdown-item-desc" data-i18n="desc_transcript_gdoc">第 6 節全場逐字發言輪次</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Markdown Dropdown (Default: Summary) -->
+            <div class="dropdown-wrapper" id="md-dropdown-wrapper">
+                <button class="action-btn secondary-btn" onclick="copyContent('summary', 'markdown')" title="複製會議摘要 Markdown">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z"/>
+                    </svg>
+                    <span id="md-btn-label" data-i18n="copy_md_summary_btn">Markdown (摘要)</span>
+                </button>
+                <button class="dropdown-arrow-btn secondary-arrow" onclick="toggleDropdown('md-menu', event)" title="更多複製選項">▾</button>
+                <div id="md-menu" class="dropdown-menu">
+                    <div class="dropdown-item active" onclick="copyContent('summary', 'markdown')">
+                        <span>📋</span>
+                        <div>
+                            <div class="dropdown-item-title" data-i18n="opt_summary_md">複製會議摘要 Markdown (預設)</div>
+                            <div class="dropdown-item-desc" data-i18n="desc_summary_gdoc">第 1~5 節重點、決策與待辦事項</div>
+                        </div>
+                    </div>
+                    <div class="dropdown-item" onclick="copyContent('full', 'markdown')">
+                        <span>📚</span>
+                        <div>
+                            <div class="dropdown-item-title" data-i18n="opt_full_md">複製完整 Markdown</div>
+                            <div class="dropdown-item-desc" data-i18n="desc_full_gdoc">含摘要及第 6 節全場逐字稿</div>
+                        </div>
+                    </div>
+                    <div class="dropdown-item" onclick="copyContent('transcript', 'markdown')">
+                        <span>🎙️</span>
+                        <div>
+                            <div class="dropdown-item-title" data-i18n="opt_transcript_md">僅複製逐字稿 Markdown</div>
+                            <div class="dropdown-item-desc" data-i18n="desc_transcript_gdoc">第 6 節全場逐字發言輪次</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Theme Toggle Button -->
+            <button id="theme-toggle-btn" class="icon-btn" onclick="toggleTheme()" title="切換主題" aria-label="Toggle Theme">
+                <span id="theme-icon">🌙</span>
+            </button>
+
+            <!-- Language Switcher -->
+            <div class="lang-select-box">
+                <span>🌐</span>
+                <select id="lang-select" class="lang-select" onchange="changeLanguage(this.value)">
+                    <option value="zh-TW">繁中</option>
+                    <option value="en">EN</option>
+                    <option value="ja">日本語</option>
+                    <option value="ko">한국어</option>
+                    <option value="zh-CN">简中</option>
+                    <option value="es">ES</option>
+                    <option value="fr">FR</option>
+                    <option value="de">DE</option>
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <!-- 3-Pane Video Layout -->
+    <main class="video-layout-container">
+        <!-- Left Column: Video (Top) + Summary (Bottom) -->
+        <div class="left-col">
+            <!-- Left-Top: Video Box -->
+            <div class="video-box-panel" id="video-box">
+                <div id="video-container" style="width:100%; height:100%; position:relative;"></div>
+                
+                <!-- Notice overlay for YouTube file:// protocol -->
+                <div id="yt-notice" class="yt-notice-overlay" style="display: none;">
+                    <span data-i18n="yt_file_notice">⚠️ YouTube 官方限制本機檔案 (file://) 內嵌播放。</span>
+                    <div class="yt-notice-actions">
+                        <a id="yt-direct-open" href="#" target="_blank" class="yt-notice-btn" data-i18n="yt_open_tab">↗ 在 YouTube 觀看</a>
+                        <button onclick="copyHttpServerCommand()" class="yt-notice-btn" data-i18n="yt_copy_cmd">📋 伺服器指令</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Left-Bottom: Summary Box -->
+            <div class="summary-box-panel">
+                <div class="panel-header">
+                    <div class="panel-header-title">
+                        <span>📋</span>
+                        <span id="summary-title-text" data-i18n="summary_title">會議摘要</span>
+                    </div>
+                    <div class="panel-header-actions">
+                        <button class="panel-quick-btn" onclick="copyContent('summary', 'gdoc')" title="複製摘要至 Google 文件">
+                            <span>📄</span> GDoc
+                        </button>
+                        <button class="panel-quick-btn" onclick="copyContent('summary', 'markdown')" title="複製摘要 Markdown">
+                            <span>📋</span> MD
+                        </button>
+                    </div>
+                </div>
+                <div id="summary-content" class="summary-body">
+                    <!-- Summary rendered dynamically via marked.js -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Full-Height Verbatim Transcript -->
+        <div class="transcript-box-panel">
+            <div class="transcript-toolbar">
+                <div class="search-bar">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="search-input" class="search-input" placeholder="搜尋逐字稿關鍵字與發言人..." data-i18n-placeholder="search_placeholder" oninput="onSearchInput()">
+                    <span id="search-count" class="search-count" style="display: none;">0 / 0</span>
+                    <button id="search-prev-btn" class="search-nav-btn" onclick="navigateSearch(-1)" title="上一個 (Shift+Enter)" disabled>▲</button>
+                    <button id="search-next-btn" class="search-nav-btn" onclick="navigateSearch(1)" title="下一個 (Enter)" disabled>▼</button>
+                    <button id="search-clear-btn" class="search-nav-btn" onclick="clearSearch()" title="清除搜尋" style="display: none;">✕</button>
+                </div>
+                <button class="panel-quick-btn" onclick="copyContent('transcript', 'markdown')" title="僅複製逐字稿 Markdown">
+                    <span>📋</span> <span data-i18n="quick_copy_transcript">複製逐字稿</span>
+                </button>
+            </div>
+            <div id="transcript-container" class="transcript-stream-wrap">
+                <div id="transcript-stream">
+                    <!-- Turns rendered dynamically via client-side parser -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Floating Toast Notification -->
+    <div id="toast" class="toast-notification"></div>
+
+    <script>
+        /* Inlined marked.min.js (Zero-dependency standalone markdown renderer) */
+/**
+ * marked v15.0.12 - a markdown parser
+ * Copyright (c) 2011-2025, Christopher Jeffrey. (MIT Licensed)
+ * https://github.com/markedjs/marked
+ */
+(function(g,f){if(typeof exports=="object"&&typeof module<"u"){module.exports=f()}else if("function"==typeof define && define.amd){define("marked",f)}else {g["marked"]=f()}}(typeof globalThis < "u" ? globalThis : typeof self < "u" ? self : this,function(){var exports={};var __exports=exports;var module={exports};
+"use strict";var H=Object.defineProperty;var be=Object.getOwnPropertyDescriptor;var Te=Object.getOwnPropertyNames;var we=Object.prototype.hasOwnProperty;var ye=(l,e)=>{for(var t in e)H(l,t,{get:e[t],enumerable:!0})},Re=(l,e,t,n)=>{if(e&&typeof e=="object"||typeof e=="function")for(let s of Te(e))!we.call(l,s)&&s!==t&&H(l,s,{get:()=>e[s],enumerable:!(n=be(e,s))||n.enumerable});return l};var Se=l=>Re(H({},"__esModule",{value:!0}),l);var kt={};ye(kt,{Hooks:()=>L,Lexer:()=>x,Marked:()=>E,Parser:()=>b,Renderer:()=>$,TextRenderer:()=>_,Tokenizer:()=>S,defaults:()=>w,getDefaults:()=>z,lexer:()=>ht,marked:()=>k,options:()=>it,parse:()=>pt,parseInline:()=>ct,parser:()=>ut,setOptions:()=>ot,use:()=>lt,walkTokens:()=>at});module.exports=Se(kt);function z(){return{async:!1,breaks:!1,extensions:null,gfm:!0,hooks:null,pedantic:!1,renderer:null,silent:!1,tokenizer:null,walkTokens:null}}var w=z();function N(l){w=l}var I={exec:()=>null};function h(l,e=""){let t=typeof l=="string"?l:l.source,n={replace:(s,i)=>{let r=typeof i=="string"?i:i.source;return r=r.replace(m.caret,"$1"),t=t.replace(s,r),n},getRegex:()=>new RegExp(t,e)};return n}var m={codeRemoveIndent:/^(?: {1,4}| {0,3}\t)/gm,outputLinkReplace:/\\([\[\]])/g,indentCodeCompensation:/^(\s+)(?:```)/,beginningSpace:/^\s+/,endingHash:/#$/,startingSpaceChar:/^ /,endingSpaceChar:/ $/,nonSpaceChar:/[^ ]/,newLineCharGlobal:/\n/g,tabCharGlobal:/\t/g,multipleSpaceGlobal:/\s+/g,blankLine:/^[ \t]*$/,doubleBlankLine:/\n[ \t]*\n[ \t]*$/,blockquoteStart:/^ {0,3}>/,blockquoteSetextReplace:/\n {0,3}((?:=+|-+) *)(?=\n|$)/g,blockquoteSetextReplace2:/^ {0,3}>[ \t]?/gm,listReplaceTabs:/^\t+/,listReplaceNesting:/^ {1,4}(?=( {4})*[^ ])/g,listIsTask:/^\[[ xX]\] /,listReplaceTask:/^\[[ xX]\] +/,anyLine:/\n.*\n/,hrefBrackets:/^<(.*)>$/,tableDelimiter:/[:|]/,tableAlignChars:/^\||\| *$/g,tableRowBlankLine:/\n[ \t]*$/,tableAlignRight:/^ *-+: *$/,tableAlignCenter:/^ *:-+: *$/,tableAlignLeft:/^ *:-+ *$/,startATag:/^<a /i,endATag:/^<\/a>/i,startPreScriptTag:/^<(pre|code|kbd|script)(\s|>)/i,endPreScriptTag:/^<\/(pre|code|kbd|script)(\s|>)/i,startAngleBracket:/^</,endAngleBracket:/>$/,pedanticHrefTitle:/^([^'"]*[^\s])\s+(['"])(.*)\2/,unicodeAlphaNumeric:/[\p{L}\p{N}]/u,escapeTest:/[&<>"']/,escapeReplace:/[&<>"']/g,escapeTestNoEncode:/[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/,escapeReplaceNoEncode:/[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/g,unescapeTest:/&(#(?:\d+)|(?:#x[0-9A-Fa-f]+)|(?:\w+));?/ig,caret:/(^|[^\[])\^/g,percentDecode:/%25/g,findPipe:/\|/g,splitPipe:/ \|/,slashPipe:/\\\|/g,carriageReturn:/\r\n|\r/g,spaceLine:/^ +$/gm,notSpaceStart:/^\S*/,endingNewline:/\n$/,listItemRegex:l=>new RegExp(`^( {0,3}${l})((?:[	 ][^\\n]*)?(?:\\n|$))`),nextBulletRegex:l=>new RegExp(`^ {0,${Math.min(3,l-1)}}(?:[*+-]|\\d{1,9}[.)])((?:[ 	][^\\n]*)?(?:\\n|$))`),hrRegex:l=>new RegExp(`^ {0,${Math.min(3,l-1)}}((?:- *){3,}|(?:_ *){3,}|(?:\\* *){3,})(?:\\n+|$)`),fencesBeginRegex:l=>new RegExp(`^ {0,${Math.min(3,l-1)}}(?:\`\`\`|~~~)`),headingBeginRegex:l=>new RegExp(`^ {0,${Math.min(3,l-1)}}#`),htmlBeginRegex:l=>new RegExp(`^ {0,${Math.min(3,l-1)}}<(?:[a-z].*>|!--)`,"i")},$e=/^(?:[ \t]*(?:\n|$))+/,_e=/^((?: {4}| {0,3}\t)[^\n]+(?:\n(?:[ \t]*(?:\n|$))*)?)+/,Le=/^ {0,3}(`{3,}(?=[^`\n]*(?:\n|$))|~{3,})([^\n]*)(?:\n|$)(?:|([\s\S]*?)(?:\n|$))(?: {0,3}\1[~`]* *(?=\n|$)|$)/,O=/^ {0,3}((?:-[\t ]*){3,}|(?:_[ \t]*){3,}|(?:\*[ \t]*){3,})(?:\n+|$)/,ze=/^ {0,3}(#{1,6})(?=\s|$)(.*)(?:\n+|$)/,F=/(?:[*+-]|\d{1,9}[.)])/,ie=/^(?!bull |blockCode|fences|blockquote|heading|html|table)((?:.|\n(?!\s*?\n|bull |blockCode|fences|blockquote|heading|html|table))+?)\n {0,3}(=+|-+) *(?:\n+|$)/,oe=h(ie).replace(/bull/g,F).replace(/blockCode/g,/(?: {4}| {0,3}\t)/).replace(/fences/g,/ {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g,/ {0,3}>/).replace(/heading/g,/ {0,3}#{1,6}/).replace(/html/g,/ {0,3}<[^\n>]+>\n/).replace(/\|table/g,"").getRegex(),Me=h(ie).replace(/bull/g,F).replace(/blockCode/g,/(?: {4}| {0,3}\t)/).replace(/fences/g,/ {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g,/ {0,3}>/).replace(/heading/g,/ {0,3}#{1,6}/).replace(/html/g,/ {0,3}<[^\n>]+>\n/).replace(/table/g,/ {0,3}\|?(?:[:\- ]*\|)+[\:\- ]*\n/).getRegex(),Q=/^([^\n]+(?:\n(?!hr|heading|lheading|blockquote|fences|list|html|table| +\n)[^\n]+)*)/,Pe=/^[^\n]+/,U=/(?!\s*\])(?:\\.|[^\[\]\\])+/,Ae=h(/^ {0,3}\[(label)\]: *(?:\n[ \t]*)?([^<\s][^\s]*|<.*?>)(?:(?: +(?:\n[ \t]*)?| *\n[ \t]*)(title))? *(?:\n+|$)/).replace("label",U).replace("title",/(?:"(?:\\"?|[^"\\])*"|'[^'\n]*(?:\n[^'\n]+)*\n?'|\([^()]*\))/).getRegex(),Ee=h(/^( {0,3}bull)([ \t][^\n]+?)?(?:\n|$)/).replace(/bull/g,F).getRegex(),v="address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|meta|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul",K=/<!--(?:-?>|[\s\S]*?(?:-->|$))/,Ce=h("^ {0,3}(?:<(script|pre|style|textarea)[\\s>][\\s\\S]*?(?:</\\1>[^\\n]*\\n+|$)|comment[^\\n]*(\\n+|$)|<\\?[\\s\\S]*?(?:\\?>\\n*|$)|<![A-Z][\\s\\S]*?(?:>\\n*|$)|<!\\[CDATA\\[[\\s\\S]*?(?:\\]\\]>\\n*|$)|</?(tag)(?: +|\\n|/?>)[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$)|<(?!script|pre|style|textarea)([a-z][\\w-]*)(?:attribute)*? */?>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$)|</(?!script|pre|style|textarea)[a-z][\\w-]*\\s*>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$))","i").replace("comment",K).replace("tag",v).replace("attribute",/ +[a-zA-Z:_][\w.:-]*(?: *= *"[^"\n]*"| *= *'[^'\n]*'| *= *[^\s"'=<>`]+)?/).getRegex(),le=h(Q).replace("hr",O).replace("heading"," {0,3}#{1,6}(?:\\s|$)").replace("|lheading","").replace("|table","").replace("blockquote"," {0,3}>").replace("fences"," {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list"," {0,3}(?:[*+-]|1[.)]) ").replace("html","</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag",v).getRegex(),Ie=h(/^( {0,3}> ?(paragraph|[^\n]*)(?:\n|$))+/).replace("paragraph",le).getRegex(),X={blockquote:Ie,code:_e,def:Ae,fences:Le,heading:ze,hr:O,html:Ce,lheading:oe,list:Ee,newline:$e,paragraph:le,table:I,text:Pe},re=h("^ *([^\\n ].*)\\n {0,3}((?:\\| *)?:?-+:? *(?:\\| *:?-+:? *)*(?:\\| *)?)(?:\\n((?:(?! *\\n|hr|heading|blockquote|code|fences|list|html).*(?:\\n|$))*)\\n*|$)").replace("hr",O).replace("heading"," {0,3}#{1,6}(?:\\s|$)").replace("blockquote"," {0,3}>").replace("code","(?: {4}| {0,3}	)[^\\n]").replace("fences"," {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list"," {0,3}(?:[*+-]|1[.)]) ").replace("html","</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag",v).getRegex(),Oe={...X,lheading:Me,table:re,paragraph:h(Q).replace("hr",O).replace("heading"," {0,3}#{1,6}(?:\\s|$)").replace("|lheading","").replace("table",re).replace("blockquote"," {0,3}>").replace("fences"," {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list"," {0,3}(?:[*+-]|1[.)]) ").replace("html","</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag",v).getRegex()},Be={...X,html:h(`^ *(?:comment *(?:\\n|\\s*$)|<(tag)[\\s\\S]+?</\\1> *(?:\\n{2,}|\\s*$)|<tag(?:"[^"]*"|'[^']*'|\\s[^'"/>\\s]*)*?/?> *(?:\\n{2,}|\\s*$))`).replace("comment",K).replace(/tag/g,"(?!(?:a|em|strong|small|s|cite|q|dfn|abbr|data|time|code|var|samp|kbd|sub|sup|i|b|u|mark|ruby|rt|rp|bdi|bdo|span|br|wbr|ins|del|img)\\b)\\w+(?!:|[^\\w\\s@]*@)\\b").getRegex(),def:/^ *\[([^\]]+)\]: *<?([^\s>]+)>?(?: +(["(][^\n]+[")]))? *(?:\n+|$)/,heading:/^(#{1,6})(.*)(?:\n+|$)/,fences:I,lheading:/^(.+?)\n {0,3}(=+|-+) *(?:\n+|$)/,paragraph:h(Q).replace("hr",O).replace("heading",` *#{1,6} *[^
+]`).replace("lheading",oe).replace("|table","").replace("blockquote"," {0,3}>").replace("|fences","").replace("|list","").replace("|html","").replace("|tag","").getRegex()},qe=/^\\([!"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])/,ve=/^(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/,ae=/^( {2,}|\\)\n(?!\s*$)/,De=/^(`+|[^`])(?:(?= {2,}\n)|[\s\S]*?(?:(?=[\\<!\[`*_]|\b_|$)|[^ ](?= {2,}\n)))/,D=/[\p{P}\p{S}]/u,W=/[\s\p{P}\p{S}]/u,ce=/[^\s\p{P}\p{S}]/u,Ze=h(/^((?![*_])punctSpace)/,"u").replace(/punctSpace/g,W).getRegex(),pe=/(?!~)[\p{P}\p{S}]/u,Ge=/(?!~)[\s\p{P}\p{S}]/u,He=/(?:[^\s\p{P}\p{S}]|~)/u,Ne=/\[[^[\]]*?\]\((?:\\.|[^\\\(\)]|\((?:\\.|[^\\\(\)])*\))*\)|`[^`]*?`|<[^<>]*?>/g,ue=/^(?:\*+(?:((?!\*)punct)|[^\s*]))|^_+(?:((?!_)punct)|([^\s_]))/,je=h(ue,"u").replace(/punct/g,D).getRegex(),Fe=h(ue,"u").replace(/punct/g,pe).getRegex(),he="^[^_*]*?__[^_*]*?\\*[^_*]*?(?=__)|[^*]+(?=[^*])|(?!\\*)punct(\\*+)(?=[\\s]|$)|notPunctSpace(\\*+)(?!\\*)(?=punctSpace|$)|(?!\\*)punctSpace(\\*+)(?=notPunctSpace)|[\\s](\\*+)(?!\\*)(?=punct)|(?!\\*)punct(\\*+)(?!\\*)(?=punct)|notPunctSpace(\\*+)(?=notPunctSpace)",Qe=h(he,"gu").replace(/notPunctSpace/g,ce).replace(/punctSpace/g,W).replace(/punct/g,D).getRegex(),Ue=h(he,"gu").replace(/notPunctSpace/g,He).replace(/punctSpace/g,Ge).replace(/punct/g,pe).getRegex(),Ke=h("^[^_*]*?\\*\\*[^_*]*?_[^_*]*?(?=\\*\\*)|[^_]+(?=[^_])|(?!_)punct(_+)(?=[\\s]|$)|notPunctSpace(_+)(?!_)(?=punctSpace|$)|(?!_)punctSpace(_+)(?=notPunctSpace)|[\\s](_+)(?!_)(?=punct)|(?!_)punct(_+)(?!_)(?=punct)","gu").replace(/notPunctSpace/g,ce).replace(/punctSpace/g,W).replace(/punct/g,D).getRegex(),Xe=h(/\\(punct)/,"gu").replace(/punct/g,D).getRegex(),We=h(/^<(scheme:[^\s\x00-\x1f<>]*|email)>/).replace("scheme",/[a-zA-Z][a-zA-Z0-9+.-]{1,31}/).replace("email",/[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+(@)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+(?![-_])/).getRegex(),Je=h(K).replace("(?:-->|$)","-->").getRegex(),Ve=h("^comment|^</[a-zA-Z][\\w:-]*\\s*>|^<[a-zA-Z][\\w-]*(?:attribute)*?\\s*/?>|^<\\?[\\s\\S]*?\\?>|^<![a-zA-Z]+\\s[\\s\\S]*?>|^<!\\[CDATA\\[[\\s\\S]*?\\]\\]>").replace("comment",Je).replace("attribute",/\s+[a-zA-Z:_][\w.:-]*(?:\s*=\s*"[^"]*"|\s*=\s*'[^']*'|\s*=\s*[^\s"'=<>`]+)?/).getRegex(),q=/(?:\[(?:\\.|[^\[\]\\])*\]|\\.|`[^`]*`|[^\[\]\\`])*?/,Ye=h(/^!?\[(label)\]\(\s*(href)(?:(?:[ \t]*(?:\n[ \t]*)?)(title))?\s*\)/).replace("label",q).replace("href",/<(?:\\.|[^\n<>\\])+>|[^ \t\n\x00-\x1f]*/).replace("title",/"(?:\\"?|[^"\\])*"|'(?:\\'?|[^'\\])*'|\((?:\\\)?|[^)\\])*\)/).getRegex(),ke=h(/^!?\[(label)\]\[(ref)\]/).replace("label",q).replace("ref",U).getRegex(),ge=h(/^!?\[(ref)\](?:\[\])?/).replace("ref",U).getRegex(),et=h("reflink|nolink(?!\\()","g").replace("reflink",ke).replace("nolink",ge).getRegex(),J={_backpedal:I,anyPunctuation:Xe,autolink:We,blockSkip:Ne,br:ae,code:ve,del:I,emStrongLDelim:je,emStrongRDelimAst:Qe,emStrongRDelimUnd:Ke,escape:qe,link:Ye,nolink:ge,punctuation:Ze,reflink:ke,reflinkSearch:et,tag:Ve,text:De,url:I},tt={...J,link:h(/^!?\[(label)\]\((.*?)\)/).replace("label",q).getRegex(),reflink:h(/^!?\[(label)\]\s*\[([^\]]*)\]/).replace("label",q).getRegex()},j={...J,emStrongRDelimAst:Ue,emStrongLDelim:Fe,url:h(/^((?:ftp|https?):\/\/|www\.)(?:[a-zA-Z0-9\-]+\.?)+[^\s<]*|^email/,"i").replace("email",/[A-Za-z0-9._+-]+(@)[a-zA-Z0-9-_]+(?:\.[a-zA-Z0-9-_]*[a-zA-Z0-9])+(?![-_])/).getRegex(),_backpedal:/(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![a-zA-Z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+/,del:/^(~~?)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/,text:/^([`~]+|[^`~])(?:(?= {2,}\n)|(?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)|[\s\S]*?(?:(?=[\\<!\[`*~_]|\b_|https?:\/\/|ftp:\/\/|www\.|$)|[^ ](?= {2,}\n)|[^a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-](?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)))/},nt={...j,br:h(ae).replace("{2,}","*").getRegex(),text:h(j.text).replace("\\b_","\\b_| {2,}\\n").replace(/\{2,\}/g,"*").getRegex()},B={normal:X,gfm:Oe,pedantic:Be},P={normal:J,gfm:j,breaks:nt,pedantic:tt};var st={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"},fe=l=>st[l];function R(l,e){if(e){if(m.escapeTest.test(l))return l.replace(m.escapeReplace,fe)}else if(m.escapeTestNoEncode.test(l))return l.replace(m.escapeReplaceNoEncode,fe);return l}function V(l){try{l=encodeURI(l).replace(m.percentDecode,"%")}catch{return null}return l}function Y(l,e){let t=l.replace(m.findPipe,(i,r,o)=>{let a=!1,c=r;for(;--c>=0&&o[c]==="\\";)a=!a;return a?"|":" |"}),n=t.split(m.splitPipe),s=0;if(n[0].trim()||n.shift(),n.length>0&&!n.at(-1)?.trim()&&n.pop(),e)if(n.length>e)n.splice(e);else for(;n.length<e;)n.push("");for(;s<n.length;s++)n[s]=n[s].trim().replace(m.slashPipe,"|");return n}function A(l,e,t){let n=l.length;if(n===0)return"";let s=0;for(;s<n;){let i=l.charAt(n-s-1);if(i===e&&!t)s++;else if(i!==e&&t)s++;else break}return l.slice(0,n-s)}function de(l,e){if(l.indexOf(e[1])===-1)return-1;let t=0;for(let n=0;n<l.length;n++)if(l[n]==="\\")n++;else if(l[n]===e[0])t++;else if(l[n]===e[1]&&(t--,t<0))return n;return t>0?-2:-1}function me(l,e,t,n,s){let i=e.href,r=e.title||null,o=l[1].replace(s.other.outputLinkReplace,"$1");n.state.inLink=!0;let a={type:l[0].charAt(0)==="!"?"image":"link",raw:t,href:i,title:r,text:o,tokens:n.inlineTokens(o)};return n.state.inLink=!1,a}function rt(l,e,t){let n=l.match(t.other.indentCodeCompensation);if(n===null)return e;let s=n[1];return e.split(`\n`).map(i=>{let r=i.match(t.other.beginningSpace);if(r===null)return i;let[o]=r;return o.length>=s.length?i.slice(s.length):i}).join(`\n`)}var S=class{options;rules;lexer;constructor(e){this.options=e||w}space(e){let t=this.rules.block.newline.exec(e);if(t&&t[0].length>0)return{type:"space",raw:t[0]}}code(e){let t=this.rules.block.code.exec(e);if(t){let n=t[0].replace(this.rules.other.codeRemoveIndent,"");return{type:"code",raw:t[0],codeBlockStyle:"indented",text:this.options.pedantic?n:A(n,`\n`)}}}fences(e){let t=this.rules.block.fences.exec(e);if(t){let n=t[0],s=rt(n,t[3]||"",this.rules);return{type:"code",raw:n,lang:t[2]?t[2].trim().replace(this.rules.inline.anyPunctuation,"$1"):t[2],text:s}}}heading(e){let t=this.rules.block.heading.exec(e);if(t){let n=t[2].trim();if(this.rules.other.endingHash.test(n)){let s=A(n,"#");(this.options.pedantic||!s||this.rules.other.endingSpaceChar.test(s))&&(n=s.trim())}return{type:"heading",raw:t[0],depth:t[1].length,text:n,tokens:this.lexer.inline(n)}}}hr(e){let t=this.rules.block.hr.exec(e);if(t)return{type:"hr",raw:A(t[0],`\n`)}}blockquote(e){let t=this.rules.block.blockquote.exec(e);if(t){let n=A(t[0],`\n`).split(`\n`),s="",i="",r=[];for(;n.length>0;){let o=!1,a=[],c;for(c=0;c<n.length;c++)if(this.rules.other.blockquoteStart.test(n[c]))a.push(n[c]),o=!0;else if(!o)a.push(n[c]);else break;n=n.slice(c);let p=a.join(`\n`),u=p.replace(this.rules.other.blockquoteSetextReplace,`\n    $1`).replace(this.rules.other.blockquoteSetextReplace2,"");s=s?`${s}\n${p}`:p,i=i?`${i}\n${u}`:u;let d=this.lexer.state.top;if(this.lexer.state.top=!0,this.lexer.blockTokens(u,r,!0),this.lexer.state.top=d,n.length===0)break;let g=r.at(-1);if(g?.type==="code")break;if(g?.type==="blockquote"){let T=g,f=T.raw+`\n`+n.join(`\n`),y=this.blockquote(f);r[r.length-1]=y,s=s.substring(0,s.length-T.raw.length)+y.raw,i=i.substring(0,i.length-T.text.length)+y.text;break}else if(g?.type==="list"){let T=g,f=T.raw+`\n`+n.join(`\n`),y=this.list(f);r[r.length-1]=y,s=s.substring(0,s.length-g.raw.length)+y.raw,i=i.substring(0,i.length-T.raw.length)+y.raw,n=f.substring(r.at(-1).raw.length).split(`\n`);continue}}return{type:"blockquote",raw:s,tokens:r,text:i}}}list(e){let t=this.rules.block.list.exec(e);if(t){let n=t[1].trim(),s=n.length>1,i={type:"list",raw:"",ordered:s,start:s?+n.slice(0,-1):"",loose:!1,items:[]};n=s?`\\d{1,9}\\${n.slice(-1)}`:`\\${n}`,this.options.pedantic&&(n=s?n:"[*+-]");let r=this.rules.other.listItemRegex(n),o=!1;for(;e;){let c=!1,p="",u="";if(!(t=r.exec(e))||this.rules.block.hr.test(e))break;p=t[0],e=e.substring(p.length);let d=t[2].split(`\n`,1)[0].replace(this.rules.other.listReplaceTabs,Z=>" ".repeat(3*Z.length)),g=e.split(`\n`,1)[0],T=!d.trim(),f=0;if(this.options.pedantic?(f=2,u=d.trimStart()):T?f=t[1].length+1:(f=t[2].search(this.rules.other.nonSpaceChar),f=f>4?1:f,u=d.slice(f),f+=t[1].length),T&&this.rules.other.blankLine.test(g)&&(p+=g+`\n`,e=e.substring(g.length+1),c=!0),!c){let Z=this.rules.other.nextBulletRegex(f),te=this.rules.other.hrRegex(f),ne=this.rules.other.fencesBeginRegex(f),se=this.rules.other.headingBeginRegex(f),xe=this.rules.other.htmlBeginRegex(f);for(;e;){let G=e.split(`\n`,1)[0],C;if(g=G,this.options.pedantic?(g=g.replace(this.rules.other.listReplaceNesting,"  "),C=g):C=g.replace(this.rules.other.tabCharGlobal,"    "),ne.test(g)||se.test(g)||xe.test(g)||Z.test(g)||te.test(g))break;if(C.search(this.rules.other.nonSpaceChar)>=f||!g.trim())u+=`\n`+C.slice(f);else{if(T||d.replace(this.rules.other.tabCharGlobal,"    ").search(this.rules.other.nonSpaceChar)>=4||ne.test(d)||se.test(d)||te.test(d))break;u+=`\n`+g}!T&&!g.trim()&&(T=!0),p+=G+`\n`,e=e.substring(G.length+1),d=C.slice(f)}}i.loose||(o?i.loose=!0:this.rules.other.doubleBlankLine.test(p)&&(o=!0));let y=null,ee;this.options.gfm&&(y=this.rules.other.listIsTask.exec(u),y&&(ee=y[0]!=="[ ] ",u=u.replace(this.rules.other.listReplaceTask,""))),i.items.push({type:"list_item",raw:p,task:!!y,checked:ee,loose:!1,text:u,tokens:[]}),i.raw+=p}let a=i.items.at(-1);if(a)a.raw=a.raw.trimEnd(),a.text=a.text.trimEnd();else return;i.raw=i.raw.trimEnd();for(let c=0;c<i.items.length;c++)if(this.lexer.state.top=!1,i.items[c].tokens=this.lexer.blockTokens(i.items[c].text,[]),!i.loose){let p=i.items[c].tokens.filter(d=>d.type==="space"),u=p.length>0&&p.some(d=>this.rules.other.anyLine.test(d.raw));i.loose=u}if(i.loose)for(let c=0;c<i.items.length;c++)i.items[c].loose=!0;return i}}html(e){let t=this.rules.block.html.exec(e);if(t)return{type:"html",block:!0,raw:t[0],pre:t[1]==="pre"||t[1]==="script"||t[1]==="style",text:t[0]}}def(e){let t=this.rules.block.def.exec(e);if(t){let n=t[1].toLowerCase().replace(this.rules.other.multipleSpaceGlobal," "),s=t[2]?t[2].replace(this.rules.other.hrefBrackets,"$1").replace(this.rules.inline.anyPunctuation,"$1"):"",i=t[3]?t[3].substring(1,t[3].length-1).replace(this.rules.inline.anyPunctuation,"$1"):t[3];return{type:"def",tag:n,raw:t[0],href:s,title:i}}}table(e){let t=this.rules.block.table.exec(e);if(!t||!this.rules.other.tableDelimiter.test(t[2]))return;let n=Y(t[1]),s=t[2].replace(this.rules.other.tableAlignChars,"").split("|"),i=t[3]?.trim()?t[3].replace(this.rules.other.tableRowBlankLine,"").split(`\n`):[],r={type:"table",raw:t[0],header:[],align:[],rows:[]};if(n.length===s.length){for(let o of s)this.rules.other.tableAlignRight.test(o)?r.align.push("right"):this.rules.other.tableAlignCenter.test(o)?r.align.push("center"):this.rules.other.tableAlignLeft.test(o)?r.align.push("left"):r.align.push(null);for(let o=0;o<n.length;o++)r.header.push({text:n[o],tokens:this.lexer.inline(n[o]),header:!0,align:r.align[o]});for(let o of i)r.rows.push(Y(o,r.header.length).map((a,c)=>({text:a,tokens:this.lexer.inline(a),header:!1,align:r.align[c]})));return r}}lheading(e){let t=this.rules.block.lheading.exec(e);if(t)return{type:"heading",raw:t[0],depth:t[2].charAt(0)==="="?1:2,text:t[1],tokens:this.lexer.inline(t[1])}}paragraph(e){let t=this.rules.block.paragraph.exec(e);if(t){let n=t[1].charAt(t[1].length-1)===`\n`?t[1].slice(0,-1):t[1];return{type:"paragraph",raw:t[0],text:n,tokens:this.lexer.inline(n)}}}text(e){let t=this.rules.block.text.exec(e);if(t)return{type:"text",raw:t[0],text:t[0],tokens:this.lexer.inline(t[0])}}escape(e){let t=this.rules.inline.escape.exec(e);if(t)return{type:"escape",raw:t[0],text:t[1]}}tag(e){let t=this.rules.inline.tag.exec(e);if(t)return!this.lexer.state.inLink&&this.rules.other.startATag.test(t[0])?this.lexer.state.inLink=!0:this.lexer.state.inLink&&this.rules.other.endATag.test(t[0])&&(this.lexer.state.inLink=!1),!this.lexer.state.inRawBlock&&this.rules.other.startPreScriptTag.test(t[0])?this.lexer.state.inRawBlock=!0:this.lexer.state.inRawBlock&&this.rules.other.endPreScriptTag.test(t[0])&&(this.lexer.state.inRawBlock=!1),{type:"html",raw:t[0],inLink:this.lexer.state.inLink,inRawBlock:this.lexer.state.inRawBlock,block:!1,text:t[0]}}link(e){let t=this.rules.inline.link.exec(e);if(t){let n=t[2].trim();if(!this.options.pedantic&&this.rules.other.startAngleBracket.test(n)){if(!this.rules.other.endAngleBracket.test(n))return;let r=A(n.slice(0,-1),"\\");if((n.length-r.length)%2===0)return}else{let r=de(t[2],"()");if(r===-2)return;if(r>-1){let a=(t[0].indexOf("!")===0?5:4)+t[1].length+r;t[2]=t[2].substring(0,r),t[0]=t[0].substring(0,a).trim(),t[3]=""}}let s=t[2],i="";if(this.options.pedantic){let r=this.rules.other.pedanticHrefTitle.exec(s);r&&(s=r[1],i=r[3])}else i=t[3]?t[3].slice(1,-1):"";return s=s.trim(),this.rules.other.startAngleBracket.test(s)&&(this.options.pedantic&&!this.rules.other.endAngleBracket.test(n)?s=s.slice(1):s=s.slice(1,-1)),me(t,{href:s&&s.replace(this.rules.inline.anyPunctuation,"$1"),title:i&&i.replace(this.rules.inline.anyPunctuation,"$1")},t[0],this.lexer,this.rules)}}reflink(e,t){let n;if((n=this.rules.inline.reflink.exec(e))||(n=this.rules.inline.nolink.exec(e))){let s=(n[2]||n[1]).replace(this.rules.other.multipleSpaceGlobal," "),i=t[s.toLowerCase()];if(!i){let r=n[0].charAt(0);return{type:"text",raw:r,text:r}}return me(n,i,n[0],this.lexer,this.rules)}}emStrong(e,t,n=""){let s=this.rules.inline.emStrongLDelim.exec(e);if(!s||s[3]&&n.match(this.rules.other.unicodeAlphaNumeric))return;if(!(s[1]||s[2]||"")||!n||this.rules.inline.punctuation.exec(n)){let r=[...s[0]].length-1,o,a,c=r,p=0,u=s[0][0]==="*"?this.rules.inline.emStrongRDelimAst:this.rules.inline.emStrongRDelimUnd;for(u.lastIndex=0,t=t.slice(-1*e.length+r);(s=u.exec(t))!=null;){if(o=s[1]||s[2]||s[3]||s[4]||s[5]||s[6],!o)continue;if(a=[...o].length,s[3]||s[4]){c+=a;continue}else if((s[5]||s[6])&&r%3&&!((r+a)%3)){p+=a;continue}if(c-=a,c>0)continue;a=Math.min(a,a+c+p);let d=[...s[0]][0].length,g=e.slice(0,r+s.index+d+a);if(Math.min(r,a)%2){let f=g.slice(1,-1);return{type:"em",raw:g,text:f,tokens:this.lexer.inlineTokens(f)}}let T=g.slice(2,-2);return{type:"strong",raw:g,text:T,tokens:this.lexer.inlineTokens(T)}}}}codespan(e){let t=this.rules.inline.code.exec(e);if(t){let n=t[2].replace(this.rules.other.newLineCharGlobal," "),s=this.rules.other.nonSpaceChar.test(n),i=this.rules.other.startingSpaceChar.test(n)&&this.rules.other.endingSpaceChar.test(n);return s&&i&&(n=n.substring(1,n.length-1)),{type:"codespan",raw:t[0],text:n}}}br(e){let t=this.rules.inline.br.exec(e);if(t)return{type:"br",raw:t[0]}}del(e){let t=this.rules.inline.del.exec(e);if(t)return{type:"del",raw:t[0],text:t[2],tokens:this.lexer.inlineTokens(t[2])}}autolink(e){let t=this.rules.inline.autolink.exec(e);if(t){let n,s;return t[2]==="@"?(n=t[1],s="mailto:"+n):(n=t[1],s=n),{type:"link",raw:t[0],text:n,href:s,tokens:[{type:"text",raw:n,text:n}]}}}url(e){let t;if(t=this.rules.inline.url.exec(e)){let n,s;if(t[2]==="@")n=t[0],s="mailto:"+n;else{let i;do i=t[0],t[0]=this.rules.inline._backpedal.exec(t[0])?.[0]??"";while(i!==t[0]);n=t[0],t[1]==="www."?s="http://"+t[0]:s=t[0]}return{type:"link",raw:t[0],text:n,href:s,tokens:[{type:"text",raw:n,text:n}]}}}inlineText(e){let t=this.rules.inline.text.exec(e);if(t){let n=this.lexer.state.inRawBlock;return{type:"text",raw:t[0],text:t[0],escaped:n}}}};var x=class l{tokens;options;state;tokenizer;inlineQueue;constructor(e){this.tokens=[],this.tokens.links=Object.create(null),this.options=e||w,this.options.tokenizer=this.options.tokenizer||new S,this.tokenizer=this.options.tokenizer,this.tokenizer.options=this.options,this.tokenizer.lexer=this,this.inlineQueue=[],this.state={inLink:!1,inRawBlock:!1,top:!0};let t={other:m,block:B.normal,inline:P.normal};this.options.pedantic?(t.block=B.pedantic,t.inline=P.pedantic):this.options.gfm&&(t.block=B.gfm,this.options.breaks?t.inline=P.breaks:t.inline=P.gfm),this.tokenizer.rules=t}static get rules(){return{block:B,inline:P}}static lex(e,t){return new l(t).lex(e)}static lexInline(e,t){return new l(t).inlineTokens(e)}lex(e){e=e.replace(m.carriageReturn,`\n`),this.blockTokens(e,this.tokens);for(let t=0;t<this.inlineQueue.length;t++){let n=this.inlineQueue[t];this.inlineTokens(n.src,n.tokens)}return this.inlineQueue=[],this.tokens}blockTokens(e,t=[],n=!1){for(this.options.pedantic&&(e=e.replace(m.tabCharGlobal,"    ").replace(m.spaceLine,""));e;){let s;if(this.options.extensions?.block?.some(r=>(s=r.call({lexer:this},e,t))?(e=e.substring(s.raw.length),t.push(s),!0):!1))continue;if(s=this.tokenizer.space(e)){e=e.substring(s.raw.length);let r=t.at(-1);s.raw.length===1&&r!==void 0?r.raw+=`\n`:t.push(s);continue}if(s=this.tokenizer.code(e)){e=e.substring(s.raw.length);let r=t.at(-1);r?.type==="paragraph"||r?.type==="text"?(r.raw+=`\n`+s.raw,r.text+=`\n`+s.text,this.inlineQueue.at(-1).src=r.text):t.push(s);continue}if(s=this.tokenizer.fences(e)){e=e.substring(s.raw.length),t.push(s);continue}if(s=this.tokenizer.heading(e)){e=e.substring(s.raw.length),t.push(s);continue}if(s=this.tokenizer.hr(e)){e=e.substring(s.raw.length),t.push(s);continue}if(s=this.tokenizer.blockquote(e)){e=e.substring(s.raw.length),t.push(s);continue}if(s=this.tokenizer.list(e)){e=e.substring(s.raw.length),t.push(s);continue}if(s=this.tokenizer.html(e)){e=e.substring(s.raw.length),t.push(s);continue}if(s=this.tokenizer.def(e)){e=e.substring(s.raw.length);let r=t.at(-1);r?.type==="paragraph"||r?.type==="text"?(r.raw+=`\n`+s.raw,r.text+=`\n`+s.raw,this.inlineQueue.at(-1).src=r.text):this.tokens.links[s.tag]||(this.tokens.links[s.tag]={href:s.href,title:s.title});continue}if(s=this.tokenizer.table(e)){e=e.substring(s.raw.length),t.push(s);continue}if(s=this.tokenizer.lheading(e)){e=e.substring(s.raw.length),t.push(s);continue}let i=e;if(this.options.extensions?.startBlock){let r=1/0,o=e.slice(1),a;this.options.extensions.startBlock.forEach(c=>{a=c.call({lexer:this},o),typeof a=="number"&&a>=0&&(r=Math.min(r,a))}),r<1/0&&r>=0&&(i=e.substring(0,r+1))}if(this.state.top&&(s=this.tokenizer.paragraph(i))){let r=t.at(-1);n&&r?.type==="paragraph"?(r.raw+=`\n`+s.raw,r.text+=`\n`+s.text,this.inlineQueue.pop(),this.inlineQueue.at(-1).src=r.text):t.push(s),n=i.length!==e.length,e=e.substring(s.raw.length);continue}if(s=this.tokenizer.text(e)){e=e.substring(s.raw.length);let r=t.at(-1);r?.type==="text"?(r.raw+=`\n`+s.raw,r.text+=`\n`+s.text,this.inlineQueue.pop(),this.inlineQueue.at(-1).src=r.text):t.push(s);continue}if(e){let r="Infinite loop on byte: "+e.charCodeAt(0);if(this.options.silent){console.error(r);break}else throw new Error(r)}}return this.state.top=!0,t}inline(e,t=[]){return this.inlineQueue.push({src:e,tokens:t}),t}inlineTokens(e,t=[]){let n=e,s=null;if(this.tokens.links){let o=Object.keys(this.tokens.links);if(o.length>0)for(;(s=this.tokenizer.rules.inline.reflinkSearch.exec(n))!=null;)o.includes(s[0].slice(s[0].lastIndexOf("[")+1,-1))&&(n=n.slice(0,s.index)+"["+"a".repeat(s[0].length-2)+"]"+n.slice(this.tokenizer.rules.inline.reflinkSearch.lastIndex))}for(;(s=this.tokenizer.rules.inline.anyPunctuation.exec(n))!=null;)n=n.slice(0,s.index)+"++"+n.slice(this.tokenizer.rules.inline.anyPunctuation.lastIndex);for(;(s=this.tokenizer.rules.inline.blockSkip.exec(n))!=null;)n=n.slice(0,s.index)+"["+"a".repeat(s[0].length-2)+"]"+n.slice(this.tokenizer.rules.inline.blockSkip.lastIndex);let i=!1,r="";for(;e;){i||(r=""),i=!1;let o;if(this.options.extensions?.inline?.some(c=>(o=c.call({lexer:this},e,t))?(e=e.substring(o.raw.length),t.push(o),!0):!1))continue;if(o=this.tokenizer.escape(e)){e=e.substring(o.raw.length),t.push(o);continue}if(o=this.tokenizer.tag(e)){e=e.substring(o.raw.length),t.push(o);continue}if(o=this.tokenizer.link(e)){e=e.substring(o.raw.length),t.push(o);continue}if(o=this.tokenizer.reflink(e,this.tokens.links)){e=e.substring(o.raw.length);let c=t.at(-1);o.type==="text"&&c?.type==="text"?(c.raw+=o.raw,c.text+=o.text):t.push(o);continue}if(o=this.tokenizer.emStrong(e,n,r)){e=e.substring(o.raw.length),t.push(o);continue}if(o=this.tokenizer.codespan(e)){e=e.substring(o.raw.length),t.push(o);continue}if(o=this.tokenizer.br(e)){e=e.substring(o.raw.length),t.push(o);continue}if(o=this.tokenizer.del(e)){e=e.substring(o.raw.length),t.push(o);continue}if(o=this.tokenizer.autolink(e)){e=e.substring(o.raw.length),t.push(o);continue}if(!this.state.inLink&&(o=this.tokenizer.url(e))){e=e.substring(o.raw.length),t.push(o);continue}let a=e;if(this.options.extensions?.startInline){let c=1/0,p=e.slice(1),u;this.options.extensions.startInline.forEach(d=>{u=d.call({lexer:this},p),typeof u=="number"&&u>=0&&(c=Math.min(c,u))}),c<1/0&&c>=0&&(a=e.substring(0,c+1))}if(o=this.tokenizer.inlineText(a)){e=e.substring(o.raw.length),o.raw.slice(-1)!=="_"&&(r=o.raw.slice(-1)),i=!0;let c=t.at(-1);c?.type==="text"?(c.raw+=o.raw,c.text+=o.text):t.push(o);continue}if(e){let c="Infinite loop on byte: "+e.charCodeAt(0);if(this.options.silent){console.error(c);break}else throw new Error(c)}}return t}};var $=class{options;parser;constructor(e){this.options=e||w}space(e){return""}code({text:e,lang:t,escaped:n}){let s=(t||"").match(m.notSpaceStart)?.[0],i=e.replace(m.endingNewline,"")+`\n`;return s?'<pre><code class="language-'+R(s)+'">'+(n?i:R(i,!0))+`</code></pre>\n`:"<pre><code>"+(n?i:R(i,!0))+`</code></pre>\n`}blockquote({tokens:e}){return`<blockquote>\n${this.parser.parse(e)}</blockquote>\n`}html({text:e}){return e}heading({tokens:e,depth:t}){return`<h${t}>${this.parser.parseInline(e)}</h${t}>\n`}hr(e){return`<hr>\n`}list(e){let t=e.ordered,n=e.start,s="";for(let o=0;o<e.items.length;o++){let a=e.items[o];s+=this.listitem(a)}let i=t?"ol":"ul",r=t&&n!==1?' start="'+n+'"':"";return"<"+i+r+`>\n`+s+"</"+i+`>\n`}listitem(e){let t="";if(e.task){let n=this.checkbox({checked:!!e.checked});e.loose?e.tokens[0]?.type==="paragraph"?(e.tokens[0].text=n+" "+e.tokens[0].text,e.tokens[0].tokens&&e.tokens[0].tokens.length>0&&e.tokens[0].tokens[0].type==="text"&&(e.tokens[0].tokens[0].text=n+" "+R(e.tokens[0].tokens[0].text),e.tokens[0].tokens[0].escaped=!0)):e.tokens.unshift({type:"text",raw:n+" ",text:n+" ",escaped:!0}):t+=n+" "}return t+=this.parser.parse(e.tokens,!!e.loose),`<li>${t}</li>\n`}checkbox({checked:e}){return"<input "+(e?'checked="" ':"")+'disabled="" type="checkbox">'}paragraph({tokens:e}){return`<p>${this.parser.parseInline(e)}</p>\n`}table(e){let t="",n="";for(let i=0;i<e.header.length;i++)n+=this.tablecell(e.header[i]);t+=this.tablerow({text:n});let s="";for(let i=0;i<e.rows.length;i++){let r=e.rows[i];n="";for(let o=0;o<r.length;o++)n+=this.tablecell(r[o]);s+=this.tablerow({text:n})}return s&&(s=`<tbody>${s}</tbody>`),`<table>\n<thead>\n`+t+`</thead>\n`+s+`</table>\n`}tablerow({text:e}){return`<tr>\n${e}</tr>\n`}tablecell(e){let t=this.parser.parseInline(e.tokens),n=e.header?"th":"td";return(e.align?`<${n} align="${e.align}">`:`<${n}>`)+t+`</${n}>\n`}strong({tokens:e}){return`<strong>${this.parser.parseInline(e)}</strong>`}em({tokens:e}){return`<em>${this.parser.parseInline(e)}</em>`}codespan({text:e}){return`<code>${R(e,!0)}</code>`}br(e){return"<br>"}del({tokens:e}){return`<del>${this.parser.parseInline(e)}</del>`}link({href:e,title:t,tokens:n}){let s=this.parser.parseInline(n),i=V(e);if(i===null)return s;e=i;let r='<a href="'+e+'"';return t&&(r+=' title="'+R(t)+'"'),r+=">"+s+"</a>",r}image({href:e,title:t,text:n,tokens:s}){s&&(n=this.parser.parseInline(s,this.parser.textRenderer));let i=V(e);if(i===null)return R(n);e=i;let r=`<img src="${e}" alt="${n}"`;return t&&(r+=` title="${R(t)}"`),r+=">",r}text(e){return"tokens"in e&&e.tokens?this.parser.parseInline(e.tokens):"escaped"in e&&e.escaped?e.text:R(e.text)}};var _=class{strong({text:e}){return e}em({text:e}){return e}codespan({text:e}){return e}del({text:e}){return e}html({text:e}){return e}text({text:e}){return e}link({text:e}){return""+e}image({text:e}){return""+e}br(){return""}};var b=class l{options;renderer;textRenderer;constructor(e){this.options=e||w,this.options.renderer=this.options.renderer||new $,this.renderer=this.options.renderer,this.renderer.options=this.options,this.renderer.parser=this,this.textRenderer=new _}static parse(e,t){return new l(t).parse(e)}static parseInline(e,t){return new l(t).parseInline(e)}parse(e,t=!0){let n="";for(let s=0;s<e.length;s++){let i=e[s];if(this.options.extensions?.renderers?.[i.type]){let o=i,a=this.options.extensions.renderers[o.type].call({parser:this},o);if(a!==!1||!["space","hr","heading","code","table","blockquote","list","html","paragraph","text"].includes(o.type)){n+=a||"";continue}}let r=i;switch(r.type){case"space":{n+=this.renderer.space(r);continue}case"hr":{n+=this.renderer.hr(r);continue}case"heading":{n+=this.renderer.heading(r);continue}case"code":{n+=this.renderer.code(r);continue}case"table":{n+=this.renderer.table(r);continue}case"blockquote":{n+=this.renderer.blockquote(r);continue}case"list":{n+=this.renderer.list(r);continue}case"html":{n+=this.renderer.html(r);continue}case"paragraph":{n+=this.renderer.paragraph(r);continue}case"text":{let o=r,a=this.renderer.text(o);for(;s+1<e.length&&e[s+1].type==="text";)o=e[++s],a+=`\n`+this.renderer.text(o);t?n+=this.renderer.paragraph({type:"paragraph",raw:a,text:a,tokens:[{type:"text",raw:a,text:a,escaped:!0}]}):n+=a;continue}default:{let o='Token with "'+r.type+'" type was not found.';if(this.options.silent)return console.error(o),"";throw new Error(o)}}}return n}parseInline(e,t=this.renderer){let n="";for(let s=0;s<e.length;s++){let i=e[s];if(this.options.extensions?.renderers?.[i.type]){let o=this.options.extensions.renderers[i.type].call({parser:this},i);if(o!==!1||!["escape","html","link","image","strong","em","codespan","br","del","text"].includes(i.type)){n+=o||"";continue}}let r=i;switch(r.type){case"escape":{n+=t.text(r);break}case"html":{n+=t.html(r);break}case"link":{n+=t.link(r);break}case"image":{n+=t.image(r);break}case"strong":{n+=t.strong(r);break}case"em":{n+=t.em(r);break}case"codespan":{n+=t.codespan(r);break}case"br":{n+=t.br(r);break}case"del":{n+=t.del(r);break}case"text":{n+=t.text(r);break}default:{let o='Token with "'+r.type+'" type was not found.';if(this.options.silent)return console.error(o),"";throw new Error(o)}}}return n}};var L=class{options;block;constructor(e){this.options=e||w}static passThroughHooks=new Set(["preprocess","postprocess","processAllTokens"]);preprocess(e){return e}postprocess(e){return e}processAllTokens(e){return e}provideLexer(){return this.block?x.lex:x.lexInline}provideParser(){return this.block?b.parse:b.parseInline}};var E=class{defaults=z();options=this.setOptions;parse=this.parseMarkdown(!0);parseInline=this.parseMarkdown(!1);Parser=b;Renderer=$;TextRenderer=_;Lexer=x;Tokenizer=S;Hooks=L;constructor(...e){this.use(...e)}walkTokens(e,t){let n=[];for(let s of e)switch(n=n.concat(t.call(this,s)),s.type){case"table":{let i=s;for(let r of i.header)n=n.concat(this.walkTokens(r.tokens,t));for(let r of i.rows)for(let o of r)n=n.concat(this.walkTokens(o.tokens,t));break}case"list":{let i=s;n=n.concat(this.walkTokens(i.items,t));break}default:{let i=s;this.defaults.extensions?.childTokens?.[i.type]?this.defaults.extensions.childTokens[i.type].forEach(r=>{let o=i[r].flat(1/0);n=n.concat(this.walkTokens(o,t))}):i.tokens&&(n=n.concat(this.walkTokens(i.tokens,t)))}}return n}use(...e){let t=this.defaults.extensions||{renderers:{},childTokens:{}};return e.forEach(n=>{let s={...n};if(s.async=this.defaults.async||s.async||!1,n.extensions&&(n.extensions.forEach(i=>{if(!i.name)throw new Error("extension name required");if("renderer"in i){let r=t.renderers[i.name];r?t.renderers[i.name]=function(...o){let a=i.renderer.apply(this,o);return a===!1&&(a=r.apply(this,o)),a}:t.renderers[i.name]=i.renderer}if("tokenizer"in i){if(!i.level||i.level!=="block"&&i.level!=="inline")throw new Error("extension level must be 'block' or 'inline'");let r=t[i.level];r?r.unshift(i.tokenizer):t[i.level]=[i.tokenizer],i.start&&(i.level==="block"?t.startBlock?t.startBlock.push(i.start):t.startBlock=[i.start]:i.level==="inline"&&(t.startInline?t.startInline.push(i.start):t.startInline=[i.start]))}"childTokens"in i&&i.childTokens&&(t.childTokens[i.name]=i.childTokens)}),s.extensions=t),n.renderer){let i=this.defaults.renderer||new $(this.defaults);for(let r in n.renderer){if(!(r in i))throw new Error(`renderer '${r}' does not exist`);if(["options","parser"].includes(r))continue;let o=r,a=n.renderer[o],c=i[o];i[o]=(...p)=>{let u=a.apply(i,p);return u===!1&&(u=c.apply(i,p)),u||""}}s.renderer=i}if(n.tokenizer){let i=this.defaults.tokenizer||new S(this.defaults);for(let r in n.tokenizer){if(!(r in i))throw new Error(`tokenizer '${r}' does not exist`);if(["options","rules","lexer"].includes(r))continue;let o=r,a=n.tokenizer[o],c=i[o];i[o]=(...p)=>{let u=a.apply(i,p);return u===!1&&(u=c.apply(i,p)),u}}s.tokenizer=i}if(n.hooks){let i=this.defaults.hooks||new L;for(let r in n.hooks){if(!(r in i))throw new Error(`hook '${r}' does not exist`);if(["options","block"].includes(r))continue;let o=r,a=n.hooks[o],c=i[o];L.passThroughHooks.has(r)?i[o]=p=>{if(this.defaults.async)return Promise.resolve(a.call(i,p)).then(d=>c.call(i,d));let u=a.call(i,p);return c.call(i,u)}:i[o]=(...p)=>{let u=a.apply(i,p);return u===!1&&(u=c.apply(i,p)),u}}s.hooks=i}if(n.walkTokens){let i=this.defaults.walkTokens,r=n.walkTokens;s.walkTokens=function(o){let a=[];return a.push(r.call(this,o)),i&&(a=a.concat(i.call(this,o))),a}}this.defaults={...this.defaults,...s}}),this}setOptions(e){return this.defaults={...this.defaults,...e},this}lexer(e,t){return x.lex(e,t??this.defaults)}parser(e,t){return b.parse(e,t??this.defaults)}parseMarkdown(e){return(n,s)=>{let i={...s},r={...this.defaults,...i},o=this.onError(!!r.silent,!!r.async);if(this.defaults.async===!0&&i.async===!1)return o(new Error("marked(): The async option was set to true by an extension. Remove async: false from the parse options object to return a Promise."));if(typeof n>"u"||n===null)return o(new Error("marked(): input parameter is undefined or null"));if(typeof n!="string")return o(new Error("marked(): input parameter is of type "+Object.prototype.toString.call(n)+", string expected"));r.hooks&&(r.hooks.options=r,r.hooks.block=e);let a=r.hooks?r.hooks.provideLexer():e?x.lex:x.lexInline,c=r.hooks?r.hooks.provideParser():e?b.parse:b.parseInline;if(r.async)return Promise.resolve(r.hooks?r.hooks.preprocess(n):n).then(p=>a(p,r)).then(p=>r.hooks?r.hooks.processAllTokens(p):p).then(p=>r.walkTokens?Promise.all(this.walkTokens(p,r.walkTokens)).then(()=>p):p).then(p=>c(p,r)).then(p=>r.hooks?r.hooks.postprocess(p):p).catch(o);try{r.hooks&&(n=r.hooks.preprocess(n));let p=a(n,r);r.hooks&&(p=r.hooks.processAllTokens(p)),r.walkTokens&&this.walkTokens(p,r.walkTokens);let u=c(p,r);return r.hooks&&(u=r.hooks.postprocess(u)),u}catch(p){return o(p)}}}onError(e,t){return n=>{if(n.message+=`\nPlease report this to https://github.com/markedjs/marked.`,e){let s="<p>An error occurred:</p><pre>"+R(n.message+"",!0)+"</pre>";return t?Promise.resolve(s):s}if(t)return Promise.reject(n);throw n}}};var M=new E;function k(l,e){return M.parse(l,e)}k.options=k.setOptions=function(l){return M.setOptions(l),k.defaults=M.defaults,N(k.defaults),k};k.getDefaults=z;k.defaults=w;k.use=function(...l){return M.use(...l),k.defaults=M.defaults,N(k.defaults),k};k.walkTokens=function(l,e){return M.walkTokens(l,e)};k.parseInline=M.parseInline;k.Parser=b;k.parser=b.parse;k.Renderer=$;k.TextRenderer=_;k.Lexer=x;k.lexer=x.lex;k.Tokenizer=S;k.Hooks=L;k.parse=k;var it=k.options,ot=k.setOptions,lt=k.use,at=k.walkTokens,ct=k.parseInline,pt=k,ut=b.parse,ht=x.lex;
+if(__exports != exports)module.exports = exports;return module.exports}));
+    </script>
+
+    <script>
+        /* Embedded Data Payload */
+        /* __MEETING_DATA__ */
+
+        const i18nData = {
+            'zh-TW': {
+                copy_gdoc_summary_btn: 'Google 文件 (摘要)',
+                copy_md_summary_btn: 'Markdown (摘要)',
+                opt_summary_gdoc: '複製會議摘要 (預設)',
+                desc_summary_gdoc: '第 1~5 節重點、決策與待辦事項',
+                opt_full_gdoc: '複製完整記錄',
+                desc_full_gdoc: '含摘要及第 6 節全場逐字稿',
+                opt_transcript_gdoc: '僅複製逐字稿',
+                desc_transcript_gdoc: '第 6 節全場逐字發言輪次',
+                opt_summary_md: '複製會議摘要 Markdown (預設)',
+                opt_full_md: '複製完整 Markdown',
+                opt_transcript_md: '僅複製逐字稿 Markdown',
+                summary_title: '會議摘要',
+                search_placeholder: '搜尋逐字稿關鍵字與發言人...',
+                quick_copy_transcript: '複製逐字稿',
+                copied_summary_gdoc_toast: '✅ 已複製摘要！正在開啟 Google 文件...',
+                copied_full_gdoc_toast: '✅ 已複製完整記錄！正在開啟 Google 文件...',
+                copied_transcript_gdoc_toast: '✅ 已複製逐字稿！正在開啟 Google 文件...',
+                copied_summary_md_toast: '📋 已複製會議摘要 Markdown 至剪貼簿！',
+                copied_full_md_toast: '📋 已複製完整記錄 Markdown 至剪貼簿！',
+                copied_transcript_md_toast: '📋 已複製逐字稿 Markdown 至剪貼簿！',
+                yt_file_notice: '⚠️ YouTube 官方限制本機檔案 (file://) 內嵌播放。',
+                yt_open_tab: '↗ 在 YouTube 觀看',
+                yt_copy_cmd: '📋 伺服器指令',
+                server_cmd_copied_toast: '📋 伺服器啟動指令已複製到剪貼簿！',
+                copy_failed_alert: '剪貼簿寫入失敗，請檢查瀏覽器權限。'
+            },
+            'en': {
+                copy_gdoc_summary_btn: 'Google Doc (Summary)',
+                copy_md_summary_btn: 'Markdown (Summary)',
+                opt_summary_gdoc: 'Copy Meeting Summary (Default)',
+                desc_summary_gdoc: 'Sections 1–5: Topics, Decisions & Actions',
+                opt_full_gdoc: 'Copy Full Record',
+                desc_full_gdoc: 'Full minutes including verbatim transcript',
+                opt_transcript_gdoc: 'Copy Transcript Only',
+                desc_transcript_gdoc: 'Section 6: Verbatim dialogue turns',
+                opt_summary_md: 'Copy Summary Markdown (Default)',
+                opt_full_md: 'Copy Full Markdown',
+                opt_transcript_md: 'Copy Transcript Markdown',
+                summary_title: 'Executive Summary',
+                search_placeholder: 'Search keywords & speakers...',
+                quick_copy_transcript: 'Copy Transcript',
+                copied_summary_gdoc_toast: '✅ Summary copied! Opening Google Docs...',
+                copied_full_gdoc_toast: '✅ Full record copied! Opening Google Docs...',
+                copied_transcript_gdoc_toast: '✅ Transcript copied! Opening Google Docs...',
+                copied_summary_md_toast: '📋 Meeting summary Markdown copied to clipboard!',
+                copied_full_md_toast: '📋 Full record Markdown copied to clipboard!',
+                copied_transcript_md_toast: '📋 Verbatim transcript Markdown copied to clipboard!',
+                yt_file_notice: '⚠️ YouTube restricts embedded playback under file://.',
+                yt_open_tab: '↗ Watch on YouTube',
+                yt_copy_cmd: '📋 Server Command',
+                server_cmd_copied_toast: '📋 HTTP Server command copied to clipboard!',
+                copy_failed_alert: 'Clipboard access denied. Please check browser permissions.'
+            },
+            'ja': {
+                copy_gdoc_summary_btn: 'Google ドキュメント (要約)',
+                copy_md_summary_btn: 'Markdown (要約)',
+                opt_summary_gdoc: '会議要約をコピー (デフォルト)',
+                desc_summary_gdoc: '第 1〜5 節：主要議題・決定事項・ToDo',
+                opt_full_gdoc: '議事録全体をコピー',
+                desc_full_gdoc: '要約と全編文字起こしを含む',
+                opt_transcript_gdoc: '文字起こしのみコピー',
+                desc_transcript_gdoc: '第 6 節：全発言者の逐語記録',
+                opt_summary_md: '要約 Markdown をコピー (デフォルト)',
+                opt_full_md: '全体 Markdown をコピー',
+                opt_transcript_md: '文字起こし Markdown をコピー',
+                summary_title: '会議の要約',
+                search_placeholder: 'キーワードや発言者を検索...',
+                quick_copy_transcript: '文字起こしをコピー',
+                copied_summary_gdoc_toast: '✅ 要約をコピーしました！Google ドキュメントを開いています...',
+                copied_full_gdoc_toast: '✅ 議事録全体をコピーしました！Google ドキュメントを開いています...',
+                copied_transcript_gdoc_toast: '✅ 文字起こしをコピーしました！Google ドキュメントを開いています...',
+                copied_summary_md_toast: '📋 会議要約の Markdown をクリップボードにコピーしました！',
+                copied_full_md_toast: '📋 全体 Markdown をクリップボードにコピーしました！',
+                copied_transcript_md_toast: '📋 文字起こし Markdown をクリップボードにコピーしました！',
+                yt_file_notice: '⚠️ YouTube はローカルファイル (file://) の埋め込み再生を制限しています。',
+                yt_open_tab: '↗ YouTube で視聴',
+                yt_copy_cmd: '📋 サーバー起動コマンド',
+                server_cmd_copied_toast: '📋 サーバー起動コマンドをコピーしました！',
+                copy_failed_alert: 'クリップボードへのアクセスが拒否されました。'
+            },
+            'ko': {
+                copy_gdoc_summary_btn: 'Google 문서 (요약)',
+                copy_md_summary_btn: 'Markdown (요약)',
+                opt_summary_gdoc: '회의 요약 복사 (기본)',
+                desc_summary_gdoc: '1~5절: 핵심 안건, 결정 사항 및 작업 목록',
+                opt_full_gdoc: '전체 회의록 복사',
+                desc_full_gdoc: '요약 및 전체 녹취록 포함',
+                opt_transcript_gdoc: '녹취록만 복사',
+                desc_transcript_gdoc: '6절: 전체 발언자 대화록',
+                opt_summary_md: '회의 요약 Markdown 복사 (기본)',
+                opt_full_md: '전체 Markdown 복사',
+                opt_transcript_md: '녹취록 Markdown 복사',
+                summary_title: '회의 요약',
+                search_placeholder: '키워드 및 발언자 검색...',
+                quick_copy_transcript: '녹취록 복사',
+                copied_summary_gdoc_toast: '✅ 요약 복사 완료! Google 문서를 여는 중...',
+                copied_full_gdoc_toast: '✅ 전체 회의록 복사 완료! Google 문서를 여는 중...',
+                copied_transcript_gdoc_toast: '✅ 녹취록 복사 완료! Google 문서를 여는 중...',
+                copied_summary_md_toast: '📋 회의 요약 Markdown이 클립보드에 복사되었습니다!',
+                copied_full_md_toast: '📋 전체 Markdown이 클립보드에 복사되었습니다!',
+                copied_transcript_md_toast: '📋 녹취록 Markdown이 클립보드에 복사되었습니다!',
+                yt_file_notice: '⚠️ YouTube는 로컬 파일(file://) 재생을 제한합니다.',
+                yt_open_tab: '↗ YouTube에서 보기',
+                yt_copy_cmd: '📋 서버 명령어',
+                server_cmd_copied_toast: '📋 서버 명령어가 클립보드에 복사되었습니다!',
+                copy_failed_alert: '클립보드 접근이 거부되었습니다.'
+            },
+            'zh-CN': {
+                copy_gdoc_summary_btn: 'Google 文档 (摘要)',
+                copy_md_summary_btn: 'Markdown (摘要)',
+                opt_summary_gdoc: '复制会议摘要 (默认)',
+                desc_summary_gdoc: '第 1~5 节重点、决议与待办事项',
+                opt_full_gdoc: '复制完整记录',
+                desc_full_gdoc: '含摘要及第 6 节全场逐字稿',
+                opt_transcript_gdoc: '仅复制逐字稿',
+                desc_transcript_gdoc: '第 6 节全场逐字发言轮次',
+                opt_summary_md: '复制会议摘要 Markdown (默认)',
+                opt_full_md: '复制完整 Markdown',
+                opt_transcript_md: '仅复制逐字稿 Markdown',
+                summary_title: '会议摘要',
+                search_placeholder: '搜索逐字稿关键字与发言人...',
+                quick_copy_transcript: '复制逐字稿',
+                copied_summary_gdoc_toast: '✅ 已复制摘要！正在打开 Google 文档...',
+                copied_full_gdoc_toast: '✅ 已复制完整记录！正在打开 Google 文档...',
+                copied_transcript_gdoc_toast: '✅ 已复制逐字稿！正在打开 Google 文档...',
+                copied_summary_md_toast: '📋 已复制会议摘要 Markdown 至剪贴板！',
+                copied_full_md_toast: '📋 已复制完整记录 Markdown 至剪贴板！',
+                copied_transcript_md_toast: '📋 已复制逐字稿 Markdown 至剪贴板！',
+                yt_file_notice: '⚠️ YouTube 官方限制本地文件 (file://) 嵌入播放。',
+                yt_open_tab: '↗ 在 YouTube 观看',
+                yt_copy_cmd: '📋 服务器指令',
+                server_cmd_copied_toast: '📋 服务器指令已复制到剪贴板！',
+                copy_failed_alert: '剪贴板写入失败，请检查浏览器权限。'
+            },
+            'es': {
+                copy_gdoc_summary_btn: 'Google Doc (Resumen)',
+                copy_md_summary_btn: 'Markdown (Resumen)',
+                opt_summary_gdoc: 'Copiar resumen (Predeterminado)',
+                desc_summary_gdoc: 'Secciones 1–5: Temas, decisiones y acciones',
+                opt_full_gdoc: 'Copiar registro completo',
+                desc_full_gdoc: 'Acta completa con transcripción',
+                opt_transcript_gdoc: 'Copiar solo transcripción',
+                desc_transcript_gdoc: 'Sección 6: Diálogos textuales',
+                opt_summary_md: 'Copiar Markdown del resumen (Predeterminado)',
+                opt_full_md: 'Copiar Markdown completo',
+                opt_transcript_md: 'Copiar Markdown de transcripción',
+                summary_title: 'Resumen Ejecutivo',
+                search_placeholder: 'Buscar palabras clave y oradores...',
+                quick_copy_transcript: 'Copiar transcripción',
+                copied_summary_gdoc_toast: '✅ ¡Resumen copiado! Abriendo Google Docs...',
+                copied_full_gdoc_toast: '✅ ¡Registro copiado! Abriendo Google Docs...',
+                copied_transcript_gdoc_toast: '✅ ¡Transcripción copiada! Abriendo Google Docs...',
+                copied_summary_md_toast: '📋 ¡Markdown del resumen copiado al portapapeles!',
+                copied_full_md_toast: '📋 ¡Markdown completo copiado al portapapeles!',
+                copied_transcript_md_toast: '📋 ¡Transcripción Markdown copiada al portapapeles!',
+                yt_file_notice: '⚠️ YouTube restringe la reproducción en file://.',
+                yt_open_tab: '↗ Ver en YouTube',
+                yt_copy_cmd: '📋 Comando de servidor',
+                server_cmd_copied_toast: '📋 ¡Comando de servidor copiado!',
+                copy_failed_alert: 'Acceso al portapapeles denegado.'
+            },
+            'fr': {
+                copy_gdoc_summary_btn: 'Google Doc (Résumé)',
+                copy_md_summary_btn: 'Markdown (Résumé)',
+                opt_summary_gdoc: 'Copier le résumé (Défaut)',
+                desc_summary_gdoc: 'Sections 1–5 : Sujets, décisions et actions',
+                opt_full_gdoc: 'Copier l\'intégralité',
+                desc_full_gdoc: 'Procès-verbal complet avec transcription',
+                opt_transcript_gdoc: 'Copier uniquement la transcription',
+                desc_transcript_gdoc: 'Section 6 : Échanges textuels',
+                opt_summary_md: 'Copier le résumé Markdown (Défaut)',
+                opt_full_md: 'Copier tout le Markdown',
+                opt_transcript_md: 'Copier la transcription Markdown',
+                summary_title: 'Résumé de la réunion',
+                search_placeholder: 'Rechercher mots-clés et intervenants...',
+                quick_copy_transcript: 'Copier la transcription',
+                copied_summary_gdoc_toast: '✅ Résumé copié ! Ouverture de Google Docs...',
+                copied_full_gdoc_toast: '✅ Tout copié ! Ouverture de Google Docs...',
+                copied_transcript_gdoc_toast: '✅ Transcription copiée ! Ouverture de Google Docs...',
+                copied_summary_md_toast: '📋 Résumé Markdown copié !',
+                copied_full_md_toast: '📋 Markdown complet copié !',
+                copied_transcript_md_toast: '📋 Transcription Markdown copiée !',
+                yt_file_notice: '⚠️ YouTube restreint la lecture intégrée sous file://.',
+                yt_open_tab: '↗ Regarder sur YouTube',
+                yt_copy_cmd: '📋 Commande serveur',
+                server_cmd_copied_toast: '📋 Commande serveur copiée !',
+                copy_failed_alert: 'Accès au presse-papier refusé.'
+            },
+            'de': {
+                copy_gdoc_summary_btn: 'Google Doc (Zusammenfassung)',
+                copy_md_summary_btn: 'Markdown (Zusammenfassung)',
+                opt_summary_gdoc: 'Zusammenfassung kopieren (Standard)',
+                desc_summary_gdoc: 'Abschnitte 1–5: Themen, Beschlüsse & ToDos',
+                opt_full_gdoc: 'Vollständiges Protokoll kopieren',
+                desc_full_gdoc: 'Inklusive Transkript',
+                opt_transcript_gdoc: 'Nur Transkript kopieren',
+                desc_transcript_gdoc: 'Abschnitt 6: Wortlaut',
+                opt_summary_md: 'Zusammenfassung Markdown kopieren (Standard)',
+                opt_full_md: 'Vollständiges Markdown kopieren',
+                opt_transcript_md: 'Transkript Markdown kopieren',
+                summary_title: 'Zusammenfassung',
+                search_placeholder: 'Stichworte und Sprecher suchen...',
+                quick_copy_transcript: 'Transkript kopieren',
+                copied_summary_gdoc_toast: '✅ Zusammenfassung kopiert! Google Docs wird geöffnet...',
+                copied_full_gdoc_toast: '✅ Vollständiges Protokoll kopiert! Google Docs wird geöffnet...',
+                copied_transcript_gdoc_toast: '✅ Transkript kopiert! Google Docs wird geöffnet...',
+                copied_summary_md_toast: '📋 Zusammenfassung Markdown in Zwischenablage kopiert!',
+                copied_full_md_toast: '📋 Vollständiges Markdown kopiert!',
+                copied_transcript_md_toast: '📋 Transkript Markdown kopiert!',
+                yt_file_notice: '⚠️ YouTube blockiert Einbettung unter file://.',
+                yt_open_tab: '↗ Auf YouTube ansehen',
+                yt_copy_cmd: '📋 Server-Befehl',
+                server_cmd_copied_toast: '📋 Server-Befehl kopiert!',
+                copy_failed_alert: 'Zugriff auf Zwischenablage verweigert.'
+            }
+        };
+
+        let currentLang = 'zh-TW';
+        function t(key) {
+            return (i18nData[currentLang] && i18nData[currentLang][key]) ||
+                   (i18nData['en'] && i18nData['en'][key]) || key;
+        }
+
+        function changeLanguage(lang) {
+            if (!i18nData[lang]) lang = 'zh-TW';
+            currentLang = lang;
+            const sel = document.getElementById('lang-select');
+            if (sel) sel.value = lang;
+
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const k = el.getAttribute('data-i18n');
+                if (k) el.textContent = t(k);
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                const k = el.getAttribute('data-i18n-placeholder');
+                if (k) el.placeholder = t(k);
+            });
+        }
+
+        /* Theme Toggle */
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme') || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('meeting_transcribe_theme', next);
+            updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('theme-icon');
+            if (icon) icon.textContent = theme === 'dark' ? '🌙' : '☀️';
+        }
+
+        /* Toast helper */
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 4000);
+        }
+
+        /* Dropdown toggles */
+        function toggleDropdown(menuId, event) {
+            if (event) event.stopPropagation();
+            const menu = document.getElementById(menuId);
+            const isShown = menu.classList.contains('show');
+            closeAllDropdowns();
+            if (!isShown) {
+                menu.classList.add('show');
+            }
+        }
+
+        function closeAllDropdowns() {
+            document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('show'));
+        }
+        document.addEventListener('click', closeAllDropdowns);
+
+        /* Split markdown into Summary (Sections 1-5) and Transcript (Section 6) */
+        let parsedSummaryMarkdown = '';
+        let parsedTranscriptMarkdown = '';
+        let fullRawMarkdown = '';
+
+        function renderMeetingContent() {
+            const data = window.MEETING_DATA || {};
+            const markdown = data.markdown || '';
+            fullRawMarkdown = markdown;
+
+            const turnRegex = /^\s*\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*(?:\*\*([^*]+)\*\*[:：])?\s*(.*)/;
+            const lines = markdown.split('\n');
+            let firstTurnIdx = -1;
+            for (let i = 0; i < lines.length; i++) {
+                if (turnRegex.test(lines[i])) {
+                    firstTurnIdx = i;
+                    break;
+                }
+            }
+
+            let summaryPart = markdown;
+            let transcriptLines = [];
+
+            if (firstTurnIdx !== -1) {
+                let headerIdx = -1;
+                for (let j = firstTurnIdx - 1; j >= 0; j--) {
+                    if (/^\s*#+\s+/.test(lines[j])) {
+                        headerIdx = j;
+                        break;
+                    }
+                }
+                if (headerIdx !== -1) {
+                    summaryPart = lines.slice(0, headerIdx).join('\n').trim();
+                    transcriptLines = lines.slice(headerIdx);
+                } else {
+                    summaryPart = lines.slice(0, firstTurnIdx).join('\n').trim();
+                    transcriptLines = lines.slice(firstTurnIdx);
+                }
+            }
+
+            parsedSummaryMarkdown = summaryPart;
+            parsedTranscriptMarkdown = transcriptLines.join('\n');
+
+            // Render Summary HTML
+            const summaryEl = document.getElementById('summary-content');
+            if (summaryEl) {
+                summaryEl.innerHTML = marked.parse(summaryPart);
+            }
+
+            // Render Transcript Turns
+            const streamEl = document.getElementById('transcript-stream');
+            if (streamEl && transcriptLines.length > 0) {
+                const frag = document.createDocumentFragment();
+                let currentCard = null;
+                let currentTextEl = null;
+
+                transcriptLines.forEach(line => {
+                    const lineTrim = line.trim();
+                    if (!lineTrim) return;
+
+                    const m = lineTrim.match(turnRegex);
+                    if (m) {
+                        const startStr = m[1];
+                        const endStr = m[2];
+                        const speaker = (m[3] || '').trim();
+                        const text = (m[4] || '').trim();
+                        const sSec = parseTimestampToSeconds(startStr);
+                        const eSec = parseTimestampToSeconds(endStr);
+                        const spkClass = getSpeakerClass(speaker);
+
+                        const card = document.createElement('div');
+                        card.className = 'transcript-turn';
+                        card.dataset.start = sSec;
+                        card.dataset.end = eSec;
+                        card.onclick = () => seekVideo(sSec);
+
+                        const meta = document.createElement('div');
+                        meta.className = 'turn-meta';
+
+                        const btn = document.createElement('button');
+                        btn.className = 'ts-badge';
+                        btn.title = '點擊跳轉影片播放';
+                        btn.onclick = (e) => { e.stopPropagation(); seekVideo(sSec); };
+                        btn.innerHTML = `<span>▶ ${escapeHtml(startStr)} - ${escapeHtml(endStr)}</span>`;
+                        meta.appendChild(btn);
+
+                        if (speaker) {
+                            const tag = document.createElement('span');
+                            tag.className = `speaker-tag ${spkClass}`;
+                            tag.textContent = speaker;
+                            meta.appendChild(tag);
+                        }
+
+                        const textEl = document.createElement('div');
+                        textEl.className = 'turn-text';
+                        if (text) {
+                            const p = document.createElement('p');
+                            p.textContent = text;
+                            textEl.appendChild(p);
+                        }
+
+                        card.appendChild(meta);
+                        card.appendChild(textEl);
+
+                        card.dataset.origText = escapeHtml(text);
+                        card.dataset.origSpk = escapeHtml(speaker);
+
+                        frag.appendChild(card);
+                        currentCard = card;
+                        currentTextEl = textEl;
+                    } else if (/^\s*#+\s+/.test(lineTrim)) {
+                        const h = document.createElement('h3');
+                        h.className = 'transcript-subtitle';
+                        h.textContent = lineTrim.replace(/^\s*#+\s*/, '');
+                        frag.appendChild(h);
+                        currentCard = null;
+                        currentTextEl = null;
+                    } else if (currentTextEl) {
+                        const p = document.createElement('p');
+                        p.textContent = lineTrim;
+                        currentTextEl.appendChild(p);
+                        if (currentCard) {
+                            const prev = currentCard.dataset.origText || '';
+                            currentCard.dataset.origText = prev + ' ' + escapeHtml(lineTrim);
+                        }
+                    } else {
+                        const p = document.createElement('p');
+                        p.className = 'transcript-plain';
+                        p.textContent = lineTrim;
+                        frag.appendChild(p);
+                    }
+                });
+                streamEl.innerHTML = '';
+                streamEl.appendChild(frag);
+            }
+        }
+
+        /* Speaker color hashing */
+        const speakerColorMap = new Map();
+        let speakerColorIdx = 1;
+        function getSpeakerClass(speaker) {
+            if (!speaker) return 'spk-c1';
+            const clean = speaker.replace(/[【】\[\]\s]/g, '');
+            if (!speakerColorMap.has(clean)) {
+                speakerColorMap.set(clean, `spk-c${(speakerColorIdx % 6) + 1}`);
+                speakerColorIdx++;
+            }
+            return speakerColorMap.get(clean);
+        }
+
+        function parseTimestampToSeconds(ts) {
+            if (!ts) return 0;
+            const parts = ts.split(':').map(Number);
+            if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+            if (parts.length === 2) return parts[0] * 60 + parts[1];
+            return 0;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        /* Copy Handler: target ('summary' | 'full' | 'transcript'), format ('gdoc' | 'markdown') */
+        async function copyContent(target, format) {
+            closeAllDropdowns();
+            let textToCopy = '';
+            let htmlToCopy = '';
+            let toastMsg = '';
+
+            if (target === 'summary') {
+                textToCopy = parsedSummaryMarkdown;
+                htmlToCopy = marked.parse(parsedSummaryMarkdown);
+                toastMsg = format === 'gdoc' ? t('copied_summary_gdoc_toast') : t('copied_summary_md_toast');
+            } else if (target === 'transcript') {
+                textToCopy = parsedTranscriptMarkdown;
+                htmlToCopy = marked.parse(parsedTranscriptMarkdown);
+                toastMsg = format === 'gdoc' ? t('copied_transcript_gdoc_toast') : t('copied_transcript_md_toast');
+            } else {
+                textToCopy = fullRawMarkdown;
+                htmlToCopy = marked.parse(fullRawMarkdown);
+                toastMsg = format === 'gdoc' ? t('copied_full_gdoc_toast') : t('copied_full_md_toast');
+            }
+
+            try {
+                if (format === 'gdoc') {
+                    if (navigator.clipboard && window.ClipboardItem) {
+                        const blobHtml = new Blob([htmlToCopy], { type: 'text/html' });
+                        const blobText = new Blob([textToCopy], { type: 'text/plain' });
+                        await navigator.clipboard.write([
+                            new ClipboardItem({ 'text/html': blobHtml, 'text/plain': blobText })
+                        ]);
+                    } else {
+                        fallbackCopy(textToCopy);
+                    }
+                    showToast(toastMsg);
+                    setTimeout(() => {
+                        window.open('https://docs.new', '_blank');
+                    }, 350);
+                } else {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(textToCopy);
+                    } else {
+                        fallbackCopy(textToCopy);
+                    }
+                    showToast(toastMsg);
+                }
+            } catch (err) {
+                console.error('Copy error:', err);
+                try {
+                    fallbackCopy(textToCopy);
+                    showToast(toastMsg);
+                    if (format === 'gdoc') {
+                        setTimeout(() => window.open('https://docs.new', '_blank'), 350);
+                    }
+                } catch (e2) {
+                    alert(t('copy_failed_alert'));
+                }
+            }
+        }
+
+        function fallbackCopy(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+
+        function copyHttpServerCommand() {
+            const cmd = 'python3 -m http.server 8000';
+            fallbackCopy(cmd);
+            showToast(t('server_cmd_copied_toast'));
+        }
+
+        /* Video Player Initialization & Synchronization */
+        let ytPlayer = null;
+        let localVideoEl = null;
+        let isYouTube = false;
+        let ytTimer = null;
+
+        function initVideoPlayer() {
+            const data = window.MEETING_DATA || {};
+            const videoContainer = document.getElementById('video-container');
+            if (!videoContainer) return;
+
+            if (data.mediaType === 'youtube' && data.youtubeId) {
+                isYouTube = true;
+                const ytDiv = document.createElement('div');
+                ytDiv.id = 'yt-player';
+                videoContainer.appendChild(ytDiv);
+
+                // Check file:// protocol
+                if (window.location.protocol === 'file:') {
+                    const notice = document.getElementById('yt-notice');
+                    if (notice) notice.style.display = 'flex';
+                    const openBtn = document.getElementById('yt-direct-open');
+                    if (openBtn) openBtn.href = data.youtubeUrl || `https://www.youtube.com/watch?v=${data.youtubeId}`;
+                }
+
+                // Load YouTube IFrame API
+                const tag = document.createElement('script');
+                tag.src = "https://www.youtube.com/iframe_api";
+                const firstScript = document.getElementsByTagName('script')[0];
+                firstScript.parentNode.insertBefore(tag, firstScript);
+
+                window.onYouTubeIframeAPIReady = function() {
+                    ytPlayer = new YT.Player('yt-player', {
+                        videoId: data.youtubeId,
+                        playerVars: {
+                            'playsinline': 1,
+                            'rel': 0,
+                            'modestbranding': 1,
+                            'enablejsapi': 1
+                        },
+                        events: {
+                            'onReady': () => {
+                                ytTimer = setInterval(() => {
+                                    if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
+                                        const cur = ytPlayer.getCurrentTime();
+                                        highlightActiveTurn(cur);
+                                    }
+                                }, 300);
+                            }
+                        }
+                    });
+                };
+            } else {
+                // Local Video Mode
+                isYouTube = false;
+                const video = document.createElement('video');
+                video.id = 'main-video';
+                video.controls = true;
+                video.playsInline = true;
+                video.preload = 'metadata';
+                video.src = data.videoSrc || '';
+                videoContainer.appendChild(video);
+                localVideoEl = video;
+
+                video.addEventListener('timeupdate', () => {
+                    highlightActiveTurn(video.currentTime);
+                });
+            }
+        }
+
+        function seekVideo(sec) {
+            highlightActiveTurn(sec);
+            if (isYouTube && ytPlayer && typeof ytPlayer.seekTo === 'function') {
+                try {
+                    ytPlayer.seekTo(sec, true);
+                    ytPlayer.playVideo();
+                } catch (e) {}
+            } else if (localVideoEl) {
+                localVideoEl.currentTime = sec;
+                localVideoEl.play();
+            }
+        }
+
+        /* Active turn highlighting */
+        let activeTurnEl = null;
+        function highlightActiveTurn(currentTimeSec) {
+            const allTurns = document.querySelectorAll('.transcript-turn');
+            let match = null;
+            allTurns.forEach(turn => {
+                const s = parseFloat(turn.dataset.start);
+                const e = parseFloat(turn.dataset.end);
+                if (currentTimeSec >= s && currentTimeSec <= e) {
+                    match = turn;
+                }
+            });
+
+            if (match && match !== activeTurnEl) {
+                if (activeTurnEl) activeTurnEl.classList.remove('active');
+                match.classList.add('active');
+                activeTurnEl = match;
+                match.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        /* Transcript Search & Highlighting */
+        let currentSearchQuery = '';
+        let allMatchElements = [];
+        let currentMatchIndex = -1;
+
+        function onSearchInput() {
+            const input = document.getElementById('search-input');
+            const val = input.value.trim();
+            const countBadge = document.getElementById('search-count');
+            const clearBtn = document.getElementById('search-clear-btn');
+            const prevBtn = document.getElementById('search-prev-btn');
+            const nextBtn = document.getElementById('search-next-btn');
+
+            clearBtn.style.display = val ? 'inline-block' : 'none';
+            currentSearchQuery = val;
+            allMatchElements = [];
+            currentMatchIndex = -1;
+
+            const allTurns = document.querySelectorAll('.transcript-turn');
+            allTurns.forEach(turn => {
+                const origHtml = turn.dataset.origText || '';
+                const origSpk = turn.dataset.origSpk || '';
+                const textEl = turn.querySelector('.turn-text');
+
+                if (!val) {
+                    turn.style.display = 'block';
+                    return;
+                }
+
+                const regex = new RegExp(`(${escapeRegex(val)})`, 'gi');
+                const textMatch = regex.test(turn.innerText);
+
+                if (textMatch) {
+                    turn.style.display = 'block';
+                    highlightNodeMatches(turn, regex);
+                } else {
+                    turn.style.display = 'none';
+                }
+            });
+
+            if (!val) {
+                countBadge.style.display = 'none';
+                prevBtn.disabled = true;
+                nextBtn.disabled = true;
+                return;
+            }
+
+            allMatchElements = Array.from(document.querySelectorAll('mark.search-match'));
+            if (allMatchElements.length > 0) {
+                countBadge.style.display = 'inline-block';
+                prevBtn.disabled = false;
+                nextBtn.disabled = false;
+                currentMatchIndex = 0;
+                updateCurrentMatch(true);
+            } else {
+                countBadge.style.display = 'inline-block';
+                countBadge.textContent = '0 / 0';
+                prevBtn.disabled = true;
+                nextBtn.disabled = true;
+            }
+        }
+
+        function highlightNodeMatches(node, regex) {
+            const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null, false);
+            const textNodes = [];
+            let n;
+            while (n = walker.nextNode()) {
+                if (n.parentElement.tagName !== 'MARK' && n.nodeValue.trim()) {
+                    textNodes.push(n);
+                }
+            }
+            textNodes.forEach(tn => {
+                if (regex.test(tn.nodeValue)) {
+                    const span = document.createElement('span');
+                    span.innerHTML = tn.nodeValue.replace(regex, '<mark class="search-match">$1</mark>');
+                    tn.parentNode.replaceChild(span, tn);
+                }
+            });
+        }
+
+        function escapeRegex(str) {
+            return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function updateCurrentMatch(shouldScroll = true) {
+            allMatchElements.forEach((el, idx) => {
+                if (idx === currentMatchIndex) {
+                    el.classList.add('current');
+                    if (shouldScroll) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    el.classList.remove('current');
+                }
+            });
+            const countBadge = document.getElementById('search-count');
+            countBadge.textContent = `${currentMatchIndex + 1} / ${allMatchElements.length}`;
+        }
+
+        function navigateSearch(delta) {
+            if (allMatchElements.length === 0) return;
+            currentMatchIndex = (currentMatchIndex + delta + allMatchElements.length) % allMatchElements.length;
+            updateCurrentMatch(true);
+        }
+
+        function clearSearch() {
+            const input = document.getElementById('search-input');
+            input.value = '';
+            onSearchInput();
+            input.focus();
+        }
+
+        // Initialize application
+        window.addEventListener('DOMContentLoaded', () => {
+            renderMeetingContent();
+            initVideoPlayer();
+            changeLanguage(currentLang);
+            updateThemeIcon(document.documentElement.getAttribute('data-theme') || 'dark');
+        });
+    </script>
+</body>
+</html>

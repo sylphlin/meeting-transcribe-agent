@@ -90,14 +90,18 @@ def generate_meeting_minutes_and_transcript(
             video_p = Path(source_str).resolve()
             if not video_p.exists():
                 raise FileNotFoundError(f"Video file not found: {video_p}")
-            extracted_audio_for_player = extract_audio_from_video(video_p)
-            play_media = extracted_audio_for_player
+            play_media = video_p
             default_out_stem = video_p.stem
             out_parent = video_p.parent
         else:
+            from scripts.audio_utils import fetch_youtube_title, sanitize_filename
             yt_id = extract_youtube_id(source_str) or "youtube_meeting"
             play_media = source_str
-            default_out_stem = f"yt_{yt_id}"
+            yt_title = fetch_youtube_title(source_str)
+            if yt_title:
+                default_out_stem = sanitize_filename(yt_title)
+            else:
+                default_out_stem = f"yt_{yt_id}"
             out_parent = Path.cwd()
 
         final_markdown, video_time = process_video_meeting_end_to_end(
@@ -114,6 +118,13 @@ def generate_meeting_minutes_and_transcript(
         if output_file:
             out_path = Path(output_file).resolve()
         else:
+            from scripts.html_generator import extract_meeting_title
+            from scripts.audio_utils import sanitize_filename
+            md_title = extract_meeting_title(final_markdown)
+            if md_title:
+                clean_title_stem = sanitize_filename(md_title)
+                if clean_title_stem:
+                    default_out_stem = clean_title_stem
             out_path = out_parent / f"{default_out_stem}_minutes.md"
 
         out_path.write_text(final_markdown, encoding="utf-8")
