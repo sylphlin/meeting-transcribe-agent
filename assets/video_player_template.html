@@ -1248,13 +1248,32 @@ if(__exports != exports)module.exports = exports;return module.exports}));
             const markdown = data.markdown || '';
             fullRawMarkdown = markdown;
 
-            const turnRegex = /^\s*\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*(?:\*\*([^*]+)\*\*[:：])?\s*(.*)/;
+            const turnRegexRange = /^\s*(?:[-*]\s*)?\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*(?:(?:\*{1,2})?([^*:：\n\r]+?)(?:\*{1,2})?[:：])?\s*(.*)/;
+            const turnRegexSingle = /^\s*(?:[-*]\s*)?\[(\d+:\d+(?::\d+)?)\]\s*(?:(?:\*{1,2})?([^*:：\n\r]+?)(?:\*{1,2})?[:：])?\s*(.*)/;
+            const turnRegexSpeakerOnly = /^\s*(?:[-*]\s*)?(?:\*{1,2})?([^*:：\n\r]{2,30}?)(?:\*{1,2})?[:：]\s*(.*)/;
             const lines = markdown.split('\n');
             let firstTurnIdx = -1;
             for (let i = 0; i < lines.length; i++) {
-                if (turnRegex.test(lines[i])) {
+                if (turnRegexRange.test(lines[i]) || turnRegexSingle.test(lines[i])) {
                     firstTurnIdx = i;
                     break;
+                }
+            }
+            // Fallback: look for Section 6 header if no timestamps found
+            let sec6HeaderIdx = -1;
+            for (let i = 0; i < lines.length; i++) {
+                if (/^\s*#+\s*(?:6[\.、\s\:]|.*(?:Transcript|逐字稿|全文|Verbatim|Protocol|Transcription|Transkript|Compte\s*rendu))/i.test(lines[i])) {
+                    sec6HeaderIdx = i;
+                    break;
+                }
+            }
+            // Additional fallback: find first speaker-only turn if neither timestamps nor header found
+            if (firstTurnIdx === -1 && sec6HeaderIdx === -1) {
+                for (let i = 0; i < lines.length; i++) {
+                    if (turnRegexSpeakerOnly.test(lines[i])) {
+                        firstTurnIdx = i;
+                        break;
+                    }
                 }
             }
 
@@ -1276,6 +1295,9 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                     summaryPart = lines.slice(0, firstTurnIdx).join('\n').trim();
                     transcriptLines = lines.slice(firstTurnIdx);
                 }
+            } else if (sec6HeaderIdx !== -1) {
+                summaryPart = lines.slice(0, sec6HeaderIdx).join('\n').trim();
+                transcriptLines = lines.slice(sec6HeaderIdx);
             }
 
             parsedSummaryMarkdown = summaryPart;
@@ -1298,31 +1320,53 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                     const lineTrim = line.trim();
                     if (!lineTrim) return;
 
-                    const m = lineTrim.match(turnRegex);
-                    if (m) {
-                        const startStr = m[1];
-                        const endStr = m[2];
-                        const speaker = (m[3] || '').trim();
-                        const text = (m[4] || '').trim();
-                        const sSec = parseTimestampToSeconds(startStr);
-                        const eSec = parseTimestampToSeconds(endStr);
+                    const mRange = lineTrim.match(turnRegexRange);
+                    const mSingle = !mRange ? lineTrim.match(turnRegexSingle) : null;
+                    const mSpk = (!mRange && !mSingle) ? lineTrim.match(turnRegexSpeakerOnly) : null;
+
+                    if (mRange || mSingle || mSpk) {
+                        let startStr = '', endStr = '', speaker = '', text = '';
+                        let sSec = 0, eSec = 0;
+
+                        if (mRange) {
+                            startStr = mRange[1];
+                            endStr = mRange[2];
+                            speaker = (mRange[3] || '').trim();
+                            text = (mRange[4] || '').trim();
+                            sSec = parseTimestampToSeconds(startStr);
+                            eSec = parseTimestampToSeconds(endStr);
+                        } else if (mSingle) {
+                            startStr = mSingle[1];
+                            speaker = (mSingle[2] || '').trim();
+                            text = (mSingle[3] || '').trim();
+                            sSec = parseTimestampToSeconds(startStr);
+                            eSec = sSec + 10;
+                        } else if (mSpk) {
+                            speaker = (mSpk[1] || '').trim();
+                            text = (mSpk[2] || '').trim();
+                        }
+
                         const spkClass = getSpeakerClass(speaker);
 
                         const card = document.createElement('div');
                         card.className = 'transcript-turn';
-                        card.dataset.start = sSec;
-                        card.dataset.end = eSec;
-                        card.onclick = () => seekVideo(sSec);
+                        if (startStr) {
+                            card.dataset.start = sSec;
+                            card.dataset.end = eSec;
+                            card.onclick = () => seekVideo(sSec);
+                        }
 
                         const meta = document.createElement('div');
                         meta.className = 'turn-meta';
 
-                        const btn = document.createElement('button');
-                        btn.className = 'ts-badge';
-                        btn.title = '點擊跳轉影片播放';
-                        btn.onclick = (e) => { e.stopPropagation(); seekVideo(sSec); };
-                        btn.innerHTML = `<span>▶ ${escapeHtml(startStr)} - ${escapeHtml(endStr)}</span>`;
-                        meta.appendChild(btn);
+                        if (startStr) {
+                            const btn = document.createElement('button');
+                            btn.className = 'ts-badge';
+                            btn.title = '點擊跳轉影片播放';
+                            btn.onclick = (e) => { e.stopPropagation(); seekVideo(sSec); };
+                            btn.innerHTML = endStr ? `<span>▶ ${escapeHtml(startStr)} - ${escapeHtml(endStr)}</span>` : `<span>▶ ${escapeHtml(startStr)}</span>`;
+                            meta.appendChild(btn);
+                        }
 
                         if (speaker) {
                             const tag = document.createElement('span');
@@ -1364,10 +1408,20 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                             currentCard.dataset.origText = prev + ' ' + escapeHtml(lineTrim);
                         }
                     } else {
+                        // Resilient Fallback: Wrap loose paragraphs in Section 6 into a proper searchable .transcript-turn card
+                        const card = document.createElement('div');
+                        card.className = 'transcript-turn';
+                        const textEl = document.createElement('div');
+                        textEl.className = 'turn-text';
                         const p = document.createElement('p');
-                        p.className = 'transcript-plain';
                         p.textContent = lineTrim;
-                        frag.appendChild(p);
+                        textEl.appendChild(p);
+                        card.appendChild(textEl);
+                        card.dataset.origText = escapeHtml(lineTrim);
+                        card.dataset.origSpk = '';
+                        frag.appendChild(card);
+                        currentCard = card;
+                        currentTextEl = textEl;
                     }
                 });
                 streamEl.innerHTML = '';

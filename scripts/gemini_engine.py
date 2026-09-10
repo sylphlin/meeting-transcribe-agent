@@ -317,8 +317,10 @@ You are an elite verbatim meeting transcription editor. Your mission is to trans
 1. Map every speaker ID (`spk_X`, `spk-X`, or `Speaker X`) to their identified Role / Name based on dialogue context (e.g. Chair, Host, Presenter, Department Head, or identified Name).
 2. Faithfully preserve all spoken dialogue turns, words, numbers, and chronological order without dropping or truncating sentences.
 3. {verbatim_lang_instruction}
-4. Format every dialogue turn strictly as:
-   `[MM:SS - MM:SS] **Role / Name**: Spoken utterance`
+4. **Mandatory Timestamp Syntax Contract**:
+   - Every single dialogue turn MUST strictly preserve and begin with its exact time interval `[MM:SS - MM:SS]`.
+   - STRICTLY FORBIDDEN to omit timestamps or produce plain script format without bracketed times.
+   - Format: `[MM:SS - MM:SS] **Role / Name**: Spoken utterance`
 
 ---
 # Output Format
@@ -443,6 +445,15 @@ Analyze this recorded meeting video (utilizing visual slides, on-screen speaker 
 3. **Speaker Perspectives in Section 3**:
    - In Section 3, under "Discussion Flow & Speaker Perspectives", explicitly summarize key arguments and inputs organized per speaker:
      - **【Role / Name】**: Key points, metrics, proposals, or directives presented by this speaker.
+4. **Acoustic Grounding & Strict Timestamp Contract (CRITICAL)**:
+   - **Real-Time Acoustic Grounding & Anti-Recitation**: You are transcribing the real-time audio and visual stream of this specific recorded session. Do NOT recite or reproduce text from external knowledge bases, web pages, or pre-training memory. Every dialogue turn MUST strictly represent real-time utterances synchronized with the media player timeline.
+   - **Mandatory Timestamp Syntax Contract**: EVERY dialogue turn in Section 6 MUST begin with an exact bracketed time interval `[Start MM:SS - End MM:SS]` matching the recording clock.
+   - **NEVER OMIT TIMESTAMPS**: Outputting dialogue in plain script format (`**Speaker**: text` without timestamps) is STRICTLY PROHIBITED.
+   - Valid turn examples:
+     `[01:15 - 01:45] **Alex Smith (Chair)**: Good morning everyone, let us begin the session.`
+     `[01:45 - 04:30] **Maria Garcia (Engineering)**: I will present the sprint review. First, our cloud migration is on schedule...`
+   - Invalid turn format:
+     `**Alex Smith**: Good morning everyone...` (Missing timestamps will corrupt the player interface).
 
 # Output Structure
 Output strictly the following 6 sections in Markdown (DO NOT include any emojis or icons in headings):
@@ -503,16 +514,24 @@ Output strictly the following 6 sections in Markdown (DO NOT include any emojis 
         )
         duration = time.time() - t0
 
-        # Extract text content
+        # Extract text content safely
         output_text = ""
-        if hasattr(resp, "text") and resp.text:
-            output_text = resp.text
-        elif hasattr(resp, "candidates") and resp.candidates:
+        try:
+            if resp.text:
+                output_text = resp.text
+        except Exception:
+            pass
+
+        if not output_text and hasattr(resp, "candidates") and resp.candidates:
             for cand in resp.candidates:
-                if hasattr(cand, "content") and cand.content:
+                if getattr(cand, "content", None) and getattr(cand.content, "parts", None):
                     for p in cand.content.parts:
                         if getattr(p, "text", None):
                             output_text += p.text
+
+        if not output_text.strip():
+            finish_reason = getattr(resp.candidates[0], "finish_reason", "UNKNOWN") if resp.candidates else "NO_CANDIDATE"
+            raise RuntimeError(f"Video analysis model returned no text content (finish_reason: {finish_reason})")
 
         # Print token usage accounting
         if hasattr(resp, "usage_metadata") and resp.usage_metadata:

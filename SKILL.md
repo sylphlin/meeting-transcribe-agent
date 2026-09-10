@@ -2,7 +2,7 @@
 name: meeting-transcribe-agent
 description: Universal meeting intelligence and interactive verbatim transcription suite adhering to Agent Skills Specification. Features native Multimodal Video Pipeline (YouTube URLs & local video files with visual slide/speaker OCR and optional Agentic Video Understanding), Google Gemini 3.5 Transcribe (cloud primary audio with ephemeral Files API auto-cleanup), and local Apple Silicon MLX/Whisper + Sherpa-ONNX diarization (offline backup) with Gemini 3.8 Flash minutes structuring, canonical speaker consolidation, and standalone zero-dependency interactive HTML playback player.
 metadata:
-  version: "2.5.0"
+  version: "2.5.1"
   author: "sylphlin"
   repository: "https://github.com/sylphlin/meeting-transcribe-agent"
   category: "audio-transcription"
