@@ -43,15 +43,15 @@ In real-world meeting transcription, visual video feeds and pure audio streams c
 > [!NOTE]
 > Actual token consumption varies based on speech density, visual movement, and slide detail. The multipliers below reflect empirical benchmarks from long-form executive meetings for architectural reference:
 
-* **🎙️ Pure Audio Mode (`~1x` Baseline)**:
-  - **Consumption**: Audio tokens run at ~32 tokens per second (~tens of thousands to ~100k tokens per hour).
-  - **Positioning**: **Most token-efficient and economical**. Best for everyday recordings, interviews, and podcasts without visual slides.
-* **🤖 Agentic Video Understanding (`~2x` Consumption)**:
-  - **Consumption**: Approximately **2x** the baseline pure audio token consumption.
-  - **Positioning**: The model actively navigates key frames via dynamic tool calling and thinking cache. Best for multi-hour videos or slide-dense technical conferences.
-* **⚡ Static Video Mode (`~3x` Consumption)**:
-  - **Consumption**: Approximately **3x** the baseline pure audio token consumption.
-  - **Positioning**: Samples frames at a fixed 1 FPS rate. Delivers ultra-fast turnaround (~40-50s for 30 minutes) and 100% nameplate/slide recognition. Ideal for YouTube public meetings, keynotes, and seminars.
+* **1. Pure Audio Pipeline — `~1x` Baseline**:
+  - **Mechanism & Consumption**: Spoken audio consumes ~32 tokens per second (~tens of thousands to ~100k tokens per hour).
+  - **Positioning**: **Most token-efficient and economical**. Designed specifically for audio-only scenarios (dictaphones, podcasts, interviews) where dedicated acoustic models strictly anchor word-level timestamps and speaker boundaries.
+* **2. Gemini Agentic Video Understanding — `~2x` Consumption**:
+  - **Mechanism & Consumption**: Powered by Google's latest [Gemini Agentic Video](https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-agentic-video-in-gemini/) technology. Consumes approximately **2x** the pure audio baseline.
+  - **Positioning**: **Recommended deep video understanding mode (`--agentic`)**. Instead of scanning all frames indiscriminately, the model couples thinking cache with dynamic tool calling to inspect high-resolution frames only when relevant. Ideal for multi-hour sessions, slide-dense presentations, and cross-temporal reasoning.
+* **3. Traditional Gemini Video Understanding — `~3x` Consumption**:
+  - **Mechanism & Consumption**: Traditional video multimodal processing relies on rigid 1 FPS uniform frame sampling, incurring the highest token footprint (approximately **3x or more** compared to pure audio).
+  - **Positioning**: **[Not adopted in this project; listed for benchmark comparison only]**. Uniform sampling transmits high volumes of static and redundant frames, inflating token costs and latency. This project replaces this approach with cloud-native direct YouTube ingestion and agentic frame navigation.
 
 ---
 
