@@ -221,7 +221,7 @@ The system categorizes processing into **Routing**, **Dual-Track Execution**, an
 #### Step 3: Artifact Delivery & Interactive Player
 1. **Structured Markdown Minutes**: Saved as `<filename>_會議記錄.md` (metadata, executive summaries, decision matrices, action items, verbatim transcript).
 2. **Zero-Dependency HTML Player**: Saved as `<filename>_player.html`:
-   - **YouTube Source**: Embeds floating resizable YouTube Picture-in-Picture dock with instant click-to-seek.
+   - **YouTube Source**: Embeds floating resizable YouTube Picture-in-Picture dock with instant click-to-seek. (*Note: YouTube security policies require an HTTP/HTTPS referer; opening via `file://` triggers Error 153. Use `--serve` or `python3 -m http.server 8000` for video playback.*)
    - **Audio Source**: Embeds native audio player with timeline scrubber, speed toggles, and karaoke text highlighting.
 
 ### Generated Deliverables:
@@ -325,6 +325,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 | `--summary-language` | Summary language (`auto` to follow audio; or `en`, `zh-TW`, `ja`) | `None` (auto) |
 | `--only-transcript` | Only output verbatim transcript without structured minutes | `False` |
 | `--language` | Offline Whisper language code (`auto`, `en`, `zh`, `ja`) | `auto` |
+| `--serve` | Automatically spin up local HTTP server and open browser (recommended for YouTube) | `False` |
 
 ---
 

@@ -223,7 +223,7 @@ flowchart TD
 #### 步驟 3：成果發布與雙欄播放器生成 (Delivery)
 1. **結構化會議記錄 Markdown**：存檔為 `<檔名>_會議記錄.md`，內含會議資訊、高管摘要、討論議題、重大決策、待辦追蹤與發言逐字稿。
 2. **零依賴互動式 HTML 播放器**：存檔為 `<檔名>_player.html`：
-   - **YouTube 輸入**：右下角自動嵌入畫中畫可縮放之 YouTube 視訊視窗，點擊逐字稿秒數精確跳轉 YouTube 播放位置。
+   - **YouTube 輸入**：右下角自動嵌入畫中畫可縮放之 YouTube 視訊視窗，點擊逐字稿秒數精確跳轉 YouTube 播放位置。（*註：因 YouTube 官方安全政策強制要求 HTTP/HTTPS 來源，直接以 `file://` 開啟會觸發錯誤 153，建議搭配 `--serve` 參數自動啟動本機伺服器，或以 `python3 -m http.server 8000` 開啟*）。
    - **音訊/本地影片**：底欄內建原生音訊控制器，支援進度條拖曳、倍速調整與卡拉 OK 歌詞式語者即時高亮。
 
 ### 產出成果檔案：
@@ -362,6 +362,7 @@ python3 meeting_transcribe.py "會議錄音.mp3" --outline "agenda.txt" --summar
 | `--summary-language` | 指定會議記錄語言 (`auto` 自動跟隨對話；或 `en`, `zh-TW`, `ja` 等) | `None` (auto) |
 | `--only-transcript` | 僅執行第一階段轉譯輸出純逐字稿，跳過結構化摘要 | `False` |
 | `--language` | 離線 Whisper 語音語言代碼 (`auto`, `en`, `zh`, `ja`) | `auto` |
+| `--serve` | 自動啟動輕量本機 HTTP 伺服器並開啟瀏覽器（YouTube 視訊同步播放推薦） | `False` |
 
 ---
 

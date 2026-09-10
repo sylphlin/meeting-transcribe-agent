@@ -208,7 +208,7 @@ flowchart TD
 
 #### 3단계: 결과물 생성 (Delivery)
 - **구조화된 회의록 Markdown**: `<파일명>_會議記錄.md`로 저장.
-- **대화형 HTML 플레이어**: `<파일명>_player.html`로 저장 (YouTube PIP 창 및 오디오 컨트롤러 내장).
+- **대화형 HTML 플레이어**: `<파일명>_player.html`로 저장 (YouTube PIP 창 및 오디오 컨트롤러 내장). (*참고: YouTube 보안 정책으로 인해 HTTP/HTTPS 출처가 필요합니다. `file://`로 직접 열면 오류 153이 발생하므로 `--serve` 플래그 또는 `python3 -m http.server 8000` 사용을 권장합니다.*)
 
 ---
 
@@ -293,6 +293,7 @@ python3 meeting_transcribe.py "회의녹음.mp3" --engine whisper --whisper-back
 | `--outline` | 회의 안건/식순 파일 경로 (.txt / .md) | `None` |
 | `--no-player` | 대화형 HTML 플레이어 생성 비활성화 | `False` |
 | `--summary-language` | 회의록 생성 언어 지정 (`auto`, `ko`, `en`, `zh-TW` 등) | `None` (auto) |
+| `--serve` | 로컬 HTTP 서버를 자동 시작하고 브라우저 열기 (YouTube 영상 재생 권장) | `False` |
 
 ---
 

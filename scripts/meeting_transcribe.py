@@ -62,6 +62,7 @@ def generate_meeting_minutes_and_transcript(
     language: str | None = "auto",
     agentic: bool = False,
     extract_audio: bool = False,
+    serve: bool = False,
 ) -> Path:
 
     """
@@ -133,6 +134,9 @@ def generate_meeting_minutes_and_transcript(
                     markdown_content=final_markdown,
                     output_html_path=player_path
                 )
+                if serve and player_path.exists():
+                    from scripts.html_generator import serve_html_player
+                    serve_html_player(player_path)
             except Exception as e:
                 print(f"[!] Warning: Interactive HTML player generation failed ({e}).")
 
@@ -304,6 +308,9 @@ def generate_meeting_minutes_and_transcript(
                 markdown_content=final_markdown,
                 output_html_path=player_path
             )
+            if serve and player_path.exists():
+                from scripts.html_generator import serve_html_player
+                serve_html_player(player_path)
         except Exception as e:
             print(f"[!] Warning: Interactive HTML player generation failed ({e}).")
 
@@ -419,6 +426,11 @@ def main():
         default="auto",
         help="Spoken audio language code for offline Whisper ASR (e.g. 'auto', 'en', 'zh', 'ja') [default: auto]"
     )
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Launch lightweight local HTTP server and open browser for HTML player (recommended for YouTube embedded playback)"
+    )
 
 
     args = parser.parse_args()
@@ -447,6 +459,7 @@ def main():
             language=args.language,
             agentic=args.agentic,
             extract_audio=args.extract_audio,
+            serve=args.serve,
         )
 
     except Exception as e:

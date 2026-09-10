@@ -68,26 +68,89 @@ def generate_interactive_html(
     output_html_path.write_text(rendered_html, encoding="utf-8")
     print(f"[*] 🌐 Standalone interactive player HTML generated: {output_html_path}")
 
+    if is_youtube_url(source_str):
+        print(f"[*] 💡 [YouTube Notice] Due to YouTube security policies, opening via file:// triggers Error 153.")
+        print(f"[*]    To enable full embedded video sync, serve via a local HTTP server:")
+        print(f"[*]    👉 python3 -m http.server 8000 --directory \"{output_html_path.parent}\"")
+        print(f"[*]    then open: http://localhost:8000/{output_html_path.name}")
+
     return output_html_path
+
+
+def serve_html_player(html_path: Path, port: int = 8000):
+    """
+    Spins up a lightweight local HTTP server and opens the browser.
+    Ensures embedded YouTube videos and local assets comply with web origin policies.
+    """
+    import http.server
+    import socketserver
+    import webbrowser
+    import socket
+
+    html_path = html_path.resolve()
+    serve_dir = str(html_path.parent)
+
+    # Find available port
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(('localhost', port)) != 0:
+                break
+            port += 1
+
+    class CustomHandler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=serve_dir, **kwargs)
+
+        def log_message(self, format, *args):
+            pass  # Quiet logging
+
+    target_url = f"http://localhost:{port}/{html_path.name}"
+    print(f"\n========================================================")
+    print(f"🚀 Serving Meeting Transcribe Player at:")
+    print(f"   {target_url}")
+    print(f"   (Press Ctrl+C to stop local server)")
+    print(f"========================================================\n")
+
+    webbrowser.open(target_url)
+
+    with socketserver.TCPServer(("localhost", port), CustomHandler) as httpd:
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\n[*] Local HTTP server stopped.")
 
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Generate interactive meeting player HTML from markdown & audio.")
-    parser.add_argument("audio", help="Path to audio file (mp3, m4a, wav, etc.)")
+    parser = argparse.ArgumentParser(description="Generate interactive meeting player HTML from markdown & audio/video.")
+    parser.add_argument("media", help="Path to audio/video file or YouTube URL")
     parser.add_argument("markdown", help="Path to structured meeting minutes markdown file")
-    parser.add_argument("-o", "--output", help="Output HTML file path (default: <audio_stem>_player.html)")
+    parser.add_argument("-o", "--output", help="Output HTML file path (default: <stem>_player.html)")
+    parser.add_argument("--serve", action="store_true", help="Automatically launch local HTTP server and open browser")
 
     args = parser.parse_args()
-    audio_p = Path(args.audio)
+    source_str = args.media.strip()
     md_p = Path(args.markdown)
-    if not audio_p.exists():
-        print(f"[!] Audio file not found: {audio_p}")
-        exit(1)
+
     if not md_p.exists():
         print(f"[!] Markdown file not found: {md_p}")
         exit(1)
 
-    out_p = Path(args.output) if args.output else audio_p.parent / f"{audio_p.stem}_player.html"
+    from scripts.audio_utils import is_youtube_url, extract_youtube_id
+    if not is_youtube_url(source_str):
+        media_p = Path(source_str)
+        if not media_p.exists():
+            print(f"[!] Media file not found: {media_p}")
+            exit(1)
+        default_out = media_p.parent / f"{media_p.stem}_player.html"
+    else:
+        yt_id = extract_youtube_id(source_str) or "youtube"
+        default_out = Path.cwd() / f"{yt_id}_player.html"
+
+    out_p = Path(args.output) if args.output else default_out
     md_text = md_p.read_text(encoding="utf-8")
-    generate_interactive_html(audio_p, md_text, out_p)
+    generated = generate_interactive_html(source_str, md_text, out_p)
+
+    if args.serve:
+        serve_html_player(generated)
+

@@ -208,7 +208,7 @@ flowchart TD
 
 #### ステップ 3：成果物の出力 (Delivery)
 - **構造化議事録 Markdown**：`<ファイル名>_會議記錄.md` として保存。
-- **インタラクティブ HTML プレイヤー**：`<ファイル名>_player.html` を出力。YouTube 映像との同期や、音声再生バー、カラオケハイライトを標準搭載。
+- **インタラクティブ HTML プレイヤー**：`<ファイル名>_player.html` を出力。YouTube 映像との同期や、音声再生バー、カラオケハイライトを標準搭載。（*注意：YouTube のセキュリティ規約により HTTP/HTTPS 経由でのアクセスが必須です。直接 `file://` で開くとエラー 153 が発生するため、`--serve` オプションまたは `python3 -m http.server 8000` の使用を推奨します*）
 
 ---
 
@@ -293,6 +293,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --engine whisper --whisper-ba
 | `--outline` | 会議通知・次第ファイルパス (.txt / .md) | `None` |
 | `--no-player` | インタラクティブ HTML プレイヤーの出力を無効化 | `False` |
 | `--summary-language` | 議事録の出力言語指定 (`auto`, `ja`, `en`, `zh-TW` 等) | `None` (auto) |
+| `--serve` | ローカル HTTP サーバーを自動起動しブラウザを開く (YouTube 再生推奨) | `False` |
 
 ---
 

@@ -223,7 +223,7 @@ flowchart TD
 #### 步骤 3：成果发布与双栏播放器生成 (Delivery)
 1. **结构化会议记录 Markdown**：保存为 `<文件名>_會議記錄.md`，内含会议信息、高管摘要、讨论议题、重大决策、待办追踪与发言逐字稿。
 2. **零依赖交互式 HTML 播放器**：保存为 `<文件名>_player.html`：
-   - **YouTube 输入**：右下角自动嵌入画中画可缩放的 YouTube 视频窗口，点击逐字稿秒数精确跳转播放位置。
+   - **YouTube 输入**：右下角自动嵌入画中画可缩放的 YouTube 视频窗口，点击逐字稿秒数精确跳转播放位置。（*注：因 YouTube 官方安全政策强制要求 HTTP 来源，直接以 `file://` 打开会触发错误 153，建议搭配 `--serve` 参数或 `python3 -m http.server 8000` 启动本地服务打开*）。
    - **音频/本地视频**：底栏内置原生音频控制器，支持进度条拖曳、倍速调整与卡拉 OK 歌词式发言人即时高亮。
 
 ### 产出成果文件：
@@ -327,6 +327,7 @@ python3 meeting_transcribe.py "会议录音.mp3" --outline "agenda.txt" --summar
 | `--summary-language` | 指定会议纪要语言 (`auto` 自动跟随对话；或 `en`, `zh-CN`, `ja` 等) | `None` (auto) |
 | `--only-transcript` | 仅执行第一阶段转录输出纯逐字稿，跳过结构化摘要 | `False` |
 | `--language` | 离线 Whisper 语音语言代码 (`auto`, `en`, `zh`, `ja`) | `auto` |
+| `--serve` | 自动启动轻量本地 HTTP 服务器并打开浏览器（YouTube 视频同步推荐） | `False` |
 
 ---
 

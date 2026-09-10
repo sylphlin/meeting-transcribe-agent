@@ -1058,11 +1058,68 @@
             width: 100%;
             height: 100%;
         }
-        .yt-dock.minimized .yt-player-wrapper {
+        .yt-dock.minimized .yt-player-wrapper,
+        .yt-dock.minimized .yt-file-banner {
             display: none;
         }
         .yt-dock.minimized {
             width: 180px;
+        }
+        /* Fallback banner for file:// protocol YouTube Error 153 */
+        .yt-file-banner {
+            background: rgba(245, 158, 11, 0.12);
+            border-top: 1px solid rgba(245, 158, 11, 0.35);
+            padding: 10px 12px;
+            font-size: 0.76rem;
+            line-height: 1.45;
+            color: var(--text-main);
+        }
+        .yt-file-banner-title {
+            font-weight: 700;
+            color: var(--accent-amber);
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .yt-file-banner-desc {
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            font-size: 0.72rem;
+            line-height: 1.4;
+        }
+        .yt-file-banner-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .yt-banner-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            border: 1px solid var(--border-color);
+            background: var(--surface);
+            color: var(--text-main);
+            transition: all 0.15s;
+        }
+        .yt-banner-btn:hover {
+            border-color: var(--accent-amber);
+            color: var(--accent-amber);
+        }
+        .yt-banner-btn.primary {
+            background: var(--accent-amber);
+            color: #000000;
+            border-color: var(--accent-amber);
+        }
+        .yt-banner-btn.primary:hover {
+            background: #d97706;
+            color: #ffffff;
         }
     </style>
 </head>
@@ -1146,6 +1203,18 @@
         </div>
         <div class="yt-player-wrapper">
             <div id="yt-player"></div>
+        </div>
+        <div id="yt-file-banner" class="yt-file-banner" style="display: none;">
+            <div class="yt-file-banner-title">
+                <span>⚠️</span> <span data-i18n="yt_banner_title">YouTube 限制本機檔案播放 (錯誤 153)</span>
+            </div>
+            <div class="yt-file-banner-desc" data-i18n="yt_banner_desc">
+                YouTube 官方強制要求 HTTP/HTTPS 來源。直接以本機檔案 (file://) 開啟會被 YouTube 阻擋。
+            </div>
+            <div class="yt-file-banner-actions">
+                <a id="yt-direct-link" href="#" target="_blank" class="yt-banner-btn primary" data-i18n="yt_banner_watch">↗ 前往 YouTube 觀看</a>
+                <button onclick="copyHttpServerCommand()" class="yt-banner-btn" data-i18n="yt_banner_copy_cmd">📋 複製伺服器指令</button>
+            </div>
         </div>
     </div>
 
@@ -1512,7 +1581,12 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                 shortcut_mute: '靜音切換',
                 shortcut_search: '快速搜尋',
                 shortcut_esc: '關閉 / 清除',
-                volume_tooltip: '音量 / 靜音切換'
+                volume_tooltip: '音量 / 靜音切換',
+                yt_banner_title: 'YouTube 限制本機檔案播放 (錯誤 153)',
+                yt_banner_desc: 'YouTube 官方安全政策強制要求 HTTP 來源。直接以本機檔案 (file://) 開啟會被阻擋，建議透過本機 HTTP 伺服器開啟。',
+                yt_banner_watch: '↗ 前往 YouTube 觀看',
+                yt_banner_copy_cmd: '📋 複製伺服器指令',
+                yt_cmd_copied_toast: '📋 已複製指令：python3 -m http.server 8000 (執行後於瀏覽器開啟 http://localhost:8000 即可享有完整視訊同步)'
             },
             'en': {
                 header_sub: 'Gemini Transcribe Dual-Engine Meeting Minutes & Interactive Player',
@@ -1542,7 +1616,12 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                 shortcut_mute: 'Toggle Mute',
                 shortcut_search: 'Focus Search',
                 shortcut_esc: 'Close / Clear',
-                volume_tooltip: 'Volume / Toggle Mute'
+                volume_tooltip: 'Volume / Toggle Mute',
+                yt_banner_title: 'YouTube File Protocol Restriction (Error 153)',
+                yt_banner_desc: 'YouTube security policy requires an HTTP/HTTPS referer. Opening via file:// is blocked by YouTube. Serve via local HTTP for video sync.',
+                yt_banner_watch: '↗ Watch on YouTube',
+                yt_banner_copy_cmd: '📋 Copy Server Command',
+                yt_cmd_copied_toast: '📋 Copied: python3 -m http.server 8000 (Open http://localhost:8000 in browser for video sync)'
             },
             'ja': {
                 header_sub: 'Gemini Transcribe デュアルエンジン議事録＆マルチモーダル再生システム',
@@ -1572,7 +1651,12 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                 shortcut_mute: '消音 (ミュート)',
                 shortcut_search: '検索フォーカス',
                 shortcut_esc: '閉じる / クリア',
-                volume_tooltip: '音量 / ミュート切替'
+                volume_tooltip: '音量 / ミュート切替',
+                yt_banner_title: 'YouTube ローカルファイル制限 (エラー 153)',
+                yt_banner_desc: 'YouTube のセキュリティ規約により HTTP 経由でのみ再生可能です。file:// では再生できないためローカルサーバーを推奨します。',
+                yt_banner_watch: '↗ YouTube で視聴',
+                yt_banner_copy_cmd: '📋 サーバー起動コマンドをコピー',
+                yt_cmd_copied_toast: '📋 コピーしました: python3 -m http.server 8000 (http://localhost:8000 で開くと動画同期が利用できます)'
             },
             'ko': {
                 header_sub: 'Gemini Transcribe 듀얼 엔진 회의록 및 멀티모달 대화형 플레이어',
@@ -1602,7 +1686,12 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                 shortcut_mute: '음소거 전환',
                 shortcut_search: '검색창 포커스',
                 shortcut_esc: '닫기 / 지우기',
-                volume_tooltip: '볼륨 / 음소거 전환'
+                volume_tooltip: '볼륨 / 음소거 전환',
+                yt_banner_title: 'YouTube 로컬 파일 재생 제한 (오류 153)',
+                yt_banner_desc: 'YouTube 보안 정책으로 인해 HTTP/HTTPS 출처가 필요합니다. file:// 에서는 차단되므로 로컬 웹 서버 실행을 권장합니다.',
+                yt_banner_watch: '↗ YouTube에서 보기',
+                yt_banner_copy_cmd: '📋 로컬 서버 명령어 복사',
+                yt_cmd_copied_toast: '📋 복사되었습니다: python3 -m http.server 8000 (http://localhost:8000 접속 시 영상 동기화 지원)'
             },
             'zh-CN': {
                 header_sub: 'Gemini Transcribe 双引擎会议记录与多模态交互审阅系统',
@@ -1632,7 +1721,12 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                 shortcut_mute: '静音切换',
                 shortcut_search: '快速搜索',
                 shortcut_esc: '关闭 / 清除',
-                volume_tooltip: '音量 / 静音切换'
+                volume_tooltip: '音量 / 静音切换',
+                yt_banner_title: 'YouTube 限制本地文件播放 (错误 153)',
+                yt_banner_desc: 'YouTube 官方安全政策强制要求 HTTP 来源。直接以本地文件 (file://) 打开会被拦截，建议通过本地 HTTP 服务器运行。',
+                yt_banner_watch: '↗ 前往 YouTube 观看',
+                yt_banner_copy_cmd: '📋 复制服务器命令',
+                yt_cmd_copied_toast: '📋 已复制命令：python3 -m http.server 8000 (运行后在浏览器打开 http://localhost:8000 即可畅享视频同步)'
             },
             'es': {
                 header_sub: 'Gemini Transcribe Actas de reuniones y reproductor interactivo',
@@ -1662,7 +1756,12 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                 shortcut_mute: 'Silenciar',
                 shortcut_search: 'Enfocar búsqueda',
                 shortcut_esc: 'Cerrar / Limpiar',
-                volume_tooltip: 'Volumen / Silenciar'
+                volume_tooltip: 'Volumen / Silenciar',
+                yt_banner_title: 'Restricción de archivo local de YouTube (Error 153)',
+                yt_banner_desc: 'YouTube requiere origen HTTP/HTTPS. file:// está bloqueado. Ejecute un servidor HTTP local.',
+                yt_banner_watch: '↗ Ver en YouTube',
+                yt_banner_copy_cmd: '📋 Copiar comando',
+                yt_cmd_copied_toast: '📋 Copiado: python3 -m http.server 8000'
             },
             'fr': {
                 header_sub: 'Gemini Transcribe Compte-rendu de réunion & lecteur interactif',
@@ -1692,7 +1791,12 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                 shortcut_mute: 'Activer / couper le son',
                 shortcut_search: 'Recherche rapide',
                 shortcut_esc: 'Fermer / Effacer',
-                volume_tooltip: 'Volume / Sourdine'
+                volume_tooltip: 'Volume / Sourdine',
+                yt_banner_title: 'Restriction de fichier local YouTube (Erreur 153)',
+                yt_banner_desc: 'YouTube exige une source HTTP/HTTPS. file:// est bloqué. Lancez un serveur HTTP local.',
+                yt_banner_watch: '↗ Regarder sur YouTube',
+                yt_banner_copy_cmd: '📋 Copier la commande',
+                yt_cmd_copied_toast: '📋 Copié : python3 -m http.server 8000'
             },
             'de': {
                 header_sub: 'Gemini Transcribe Protokoll & interaktiver Multimodal-Player',
@@ -1722,7 +1826,12 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                 shortcut_mute: 'Stummschalten',
                 shortcut_search: 'Suchfeld fokussieren',
                 shortcut_esc: 'Schließen / Löschen',
-                volume_tooltip: 'Lautstärke / Stummschalten'
+                volume_tooltip: 'Lautstärke / Stummschalten',
+                yt_banner_title: 'YouTube-Einschränkung für lokale Dateien (Fehler 153)',
+                yt_banner_desc: 'YouTube erfordert HTTP/HTTPS-Origin. file:// wird blockiert. Lokalen HTTP-Server starten.',
+                yt_banner_watch: '↗ Auf YouTube ansehen',
+                yt_banner_copy_cmd: '📋 Befehl kopieren',
+                yt_cmd_copied_toast: '📋 Kopiert: python3 -m http.server 8000'
             }
         };
 
@@ -1955,6 +2064,18 @@ if(__exports != exports)module.exports = exports;return module.exports}));
             const ytDock = document.getElementById('yt-dock');
             if (ytDock) ytDock.style.display = 'block';
 
+            const isFileProtocol = (window.location.protocol === 'file:');
+            const ytFileBanner = document.getElementById('yt-file-banner');
+            const ytDirectLink = document.getElementById('yt-direct-link');
+            if (ytDirectLink && window.MEETING_DATA && window.MEETING_DATA.youtubeUrl) {
+                ytDirectLink.href = window.MEETING_DATA.youtubeUrl;
+            }
+
+            // Immediately show guidance banner if loaded under file:// protocol
+            if (isFileProtocol && ytFileBanner) {
+                ytFileBanner.style.display = 'block';
+            }
+
             // Load YouTube IFrame API asynchronously
             const tag = document.createElement('script');
             tag.src = "https://www.youtube.com/iframe_api";
@@ -1967,14 +2088,24 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                     playerVars: {
                         'playsinline': 1,
                         'rel': 0,
-                        'modestbranding': 1
+                        'modestbranding': 1,
+                        'enablejsapi': 1,
+                        'origin': window.location.origin && window.location.origin !== 'null' ? window.location.origin : 'http://localhost'
                     },
                     events: {
                         'onReady': onPlayerReady,
-                        'onStateChange': onPlayerStateChange
+                        'onStateChange': onPlayerStateChange,
+                        'onError': onPlayerError
                     }
                 });
             };
+
+            function onPlayerError(event) {
+                console.warn('[Meeting Transcribe] YouTube Player Error:', event.data);
+                if (ytFileBanner) {
+                    ytFileBanner.style.display = 'block';
+                }
+            }
 
             function onPlayerReady(event) {
                 const dur = ytPlayer.getDuration() || 0;
@@ -2018,6 +2149,35 @@ if(__exports != exports)module.exports = exports;return module.exports}));
             });
         }
 
+        function copyHttpServerCommand() {
+            const cmd = 'python3 -m http.server 8000';
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(cmd).then(() => {
+                    showToast(t('yt_cmd_copied_toast'));
+                }).catch(() => {
+                    fallbackCopyCmd(cmd);
+                });
+            } else {
+                fallbackCopyCmd(cmd);
+            }
+        }
+
+        function fallbackCopyCmd(cmd) {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = cmd;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast(t('yt_cmd_copied_toast'));
+            } catch (e) {
+                prompt('請複製伺服器指令：', cmd);
+            }
+        }
+
         function formatSec(sec) {
             if (!sec || isNaN(sec)) return "00:00";
             const totalSec = Math.floor(sec);
@@ -2048,9 +2208,17 @@ if(__exports != exports)module.exports = exports;return module.exports}));
         }
 
         function seekAudio(sec) {
-            if (isYouTube && ytPlayer && typeof ytPlayer.seekTo === 'function') {
-                ytPlayer.seekTo(sec, true);
-                ytPlayer.playVideo();
+            slider.value = sec;
+            curTimeLabel.textContent = formatSec(sec);
+            highlightActiveTurn(sec);
+
+            if (isYouTube) {
+                if (ytPlayer && typeof ytPlayer.seekTo === 'function') {
+                    try {
+                        ytPlayer.seekTo(sec, true);
+                        ytPlayer.playVideo();
+                    } catch (e) {}
+                }
             } else {
                 audio.currentTime = sec;
                 if (audio.paused) {
