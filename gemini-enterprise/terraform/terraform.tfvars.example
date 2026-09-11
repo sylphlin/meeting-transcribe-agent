@@ -1,0 +1,12 @@
+# Google Cloud Project Configuration
+project_id = "YOUR_GCP_PROJECT_ID"
+region     = "us-central1"
+
+# Storage Bucket Configuration
+# Leave blank to auto-generate: {project_id}-meeting-transcribe-{random_hex}
+bucket_name          = ""
+cors_max_age_seconds = 86400  # 24 hours
+
+# Retention Policies
+video_retention_days = 14     # Purge raw videos after 14 days
+audio_retention_days = 30     # Purge raw audios after 30 days
