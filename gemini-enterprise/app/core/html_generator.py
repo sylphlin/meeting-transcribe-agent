@@ -45,7 +45,7 @@ def generate_interactive_html(
     Automatically chooses between dedicated audio and video templates based on media type.
     Supports local audio files, local video files, and YouTube URLs.
     """
-    from scripts.audio_utils import is_youtube_url, extract_youtube_id, is_video_file, fetch_youtube_title
+    from .audio_utils import is_youtube_url, extract_youtube_id, is_video_file, fetch_youtube_title
 
     source = media_source if media_source is not None else audio_file_path
     if source is None:
@@ -197,11 +197,9 @@ if __name__ == "__main__":
         exit(1)
 
     try:
-        from scripts.audio_utils import is_youtube_url, extract_youtube_id
-    except ModuleNotFoundError:
-        import sys
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        from scripts.audio_utils import is_youtube_url, extract_youtube_id
+        from .audio_utils import is_youtube_url, extract_youtube_id
+    except (ImportError, ModuleNotFoundError):
+        from audio_utils import is_youtube_url, extract_youtube_id
     if not is_youtube_url(source_str):
         media_p = Path(source_str)
         if not media_p.exists():

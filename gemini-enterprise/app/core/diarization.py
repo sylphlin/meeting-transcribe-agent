@@ -14,7 +14,7 @@ import platform
 from pathlib import Path
 from typing import Tuple, List, Dict, Any
 
-from scripts.audio_utils import get_audio_duration, format_offset, compress_audio_for_upload
+from .audio_utils import get_audio_duration, format_offset, compress_audio_for_upload
 
 
 def join_cjk_text(tokens: List[str]) -> str:

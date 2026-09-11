@@ -11,7 +11,7 @@ import concurrent.futures
 from google import genai
 from google.genai import types
 
-from scripts.audio_utils import (
+from .audio_utils import (
     format_offset,
     compress_audio_for_upload,
     safe_ascii_upload_path,

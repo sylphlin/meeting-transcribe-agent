@@ -15,7 +15,7 @@ root_dir = Path(__file__).parent.parent.resolve()
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-from scripts.audio_utils import (
+from .audio_utils import (
     compress_audio_for_upload,
     get_audio_duration,
     format_offset,
@@ -24,19 +24,19 @@ from scripts.audio_utils import (
     is_video_file,
     extract_audio_from_video,
 )
-from scripts.diarization import transcribe_with_local_whisper_and_diarization
-from scripts.gemini_engine import (
+from .diarization import transcribe_with_local_whisper_and_diarization
+from .gemini_engine import (
     get_gemini_client,
     transcribe_with_gemini_cloud,
     generate_minutes_with_gemini,
     process_video_meeting_end_to_end,
 )
-from scripts.glossary import (
+from .glossary import (
     extract_global_consistency_glossary,
     extract_keywords_from_glossary,
 )
-from scripts.canonicalizer import consolidate_meeting_minutes
-from scripts.html_generator import generate_interactive_html
+from .canonicalizer import consolidate_meeting_minutes
+from .html_generator import generate_interactive_html
 
 
 def generate_meeting_minutes_and_transcript(
@@ -94,7 +94,7 @@ def generate_meeting_minutes_and_transcript(
             default_out_stem = video_p.stem
             out_parent = video_p.parent
         else:
-            from scripts.audio_utils import fetch_youtube_title, sanitize_filename
+            from .audio_utils import fetch_youtube_title, sanitize_filename
             yt_id = extract_youtube_id(source_str) or "youtube_meeting"
             play_media = source_str
             yt_title = fetch_youtube_title(source_str)
@@ -118,8 +118,8 @@ def generate_meeting_minutes_and_transcript(
         if output_file:
             out_path = Path(output_file).resolve()
         else:
-            from scripts.html_generator import extract_meeting_title
-            from scripts.audio_utils import sanitize_filename
+            from .html_generator import extract_meeting_title
+            from .audio_utils import sanitize_filename
             md_title = extract_meeting_title(final_markdown)
             if md_title:
                 clean_title_stem = sanitize_filename(md_title)
@@ -146,7 +146,7 @@ def generate_meeting_minutes_and_transcript(
                     output_html_path=player_path
                 )
                 if serve and player_path.exists():
-                    from scripts.html_generator import serve_html_player
+                    from .html_generator import serve_html_player
                     serve_html_player(player_path)
             except Exception as e:
                 print(f"[!] Warning: Interactive HTML player generation failed ({e}).")
@@ -320,7 +320,7 @@ def generate_meeting_minutes_and_transcript(
                 output_html_path=player_path
             )
             if serve and player_path.exists():
-                from scripts.html_generator import serve_html_player
+                from .html_generator import serve_html_player
                 serve_html_player(player_path)
         except Exception as e:
             print(f"[!] Warning: Interactive HTML player generation failed ({e}).")
@@ -480,5 +480,9 @@ def main():
         sys.exit(1)
 
 
+# Alias for enterprise tool dispatcher
+transcribe_meeting = generate_meeting_minutes_and_transcript
+
 if __name__ == "__main__":
     main()
+

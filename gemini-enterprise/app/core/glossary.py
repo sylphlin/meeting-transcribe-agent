@@ -7,7 +7,7 @@ import re
 import time
 from pathlib import Path
 from google import genai
-from scripts.audio_utils import safe_ascii_upload_path
+from .audio_utils import safe_ascii_upload_path
 
 
 def extract_keywords_from_glossary(glossary_text: str, max_keywords: int = 40) -> str:
