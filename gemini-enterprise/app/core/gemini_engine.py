@@ -4,7 +4,6 @@ Handles Stage 1 Cloud ASR, Stage 2 Minutes Generation, Files API management, and
 """
 
 import os
-import re
 import time
 from pathlib import Path
 import concurrent.futures
@@ -17,7 +16,6 @@ from .audio_utils import (
     safe_ascii_upload_path,
     should_compress_audio,
     is_youtube_url,
-    is_video_file,
     optimize_video_for_upload,
 )
 
@@ -51,22 +49,6 @@ def get_gemini_client(api_key: str = None) -> genai.Client:
     if not key:
         raise ValueError('Missing GEMINI_API_KEY. Please export it or put it in ~/.gemini/.env or .env.')
     return genai.Client(api_key=key)
-
-
-def parse_transcription_parts(raw_text: str) -> str:
-    """Format structured Gemini transcription parts into clean timestamped transcript."""
-    lines = []
-    pattern = re.compile(r'\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*(.*)')
-    for line in raw_text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        m = pattern.match(line)
-        if m:
-            lines.append(f"[{m.group(1)} - {m.group(2)}] {m.group(3).strip()}")
-        else:
-            lines.append(line)
-    return "\n".join(lines)
 
 
 def _parse_offset_to_seconds(val) -> float:

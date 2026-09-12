@@ -4,7 +4,6 @@ Handles duration extraction, timestamp formatting, and ffmpeg pre-compression.
 Guarantees ASCII-safe file basenames to prevent google-genai httpx header UnicodeEncodeError.
 """
 
-import os
 import shutil
 import hashlib
 import subprocess

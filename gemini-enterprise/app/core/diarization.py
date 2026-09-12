@@ -3,18 +3,15 @@ scripts/diarization.py - Local Acoustic Speaker Diarization & Whisper/MLX Transc
 Integrates Sherpa-ONNX (3D-Speaker / PyAnnote), word-level alignment, and VAD audio processing.
 """
 
-import os
-import re
-import sys
 import time
 import shutil
 import urllib.request
 import subprocess
 import platform
 from pathlib import Path
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List
 
-from .audio_utils import get_audio_duration, format_offset, compress_audio_for_upload
+from .audio_utils import format_offset
 
 
 def join_cjk_text(tokens: List[str]) -> str:
@@ -174,7 +171,6 @@ def transcribe_with_local_whisper_and_diarization(
             
             import wave
             with wave.open(str(enhanced_wav), "rb") as wf:
-                sample_rate = wf.getframerate()
                 num_frames = wf.getnframes()
                 audio_bytes = wf.readframes(num_frames)
                 import numpy as np

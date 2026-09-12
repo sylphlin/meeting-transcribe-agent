@@ -4,7 +4,6 @@ scripts/meeting_transcribe.py - Main Pipeline Orchestrator for Meeting Transcrib
 Universal Cloud-Scale Intelligence (gemini-3.5-transcribe) with Offline Whisper Backup.
 """
 
-import os
 import sys
 import time
 import argparse
@@ -381,7 +380,7 @@ def main():
     )
     parser.add_argument(
         "--embedding-type",
-        choices=["eres2net", "pyannote", "cam++"],
+        choices=["eres2net", "cam++"],
         default="eres2net",
         help="Sherpa-ONNX speaker embedding model architecture [default: eres2net]"
     )
