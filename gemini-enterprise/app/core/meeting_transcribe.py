@@ -480,9 +480,6 @@ def main():
         sys.exit(1)
 
 
-# Alias for enterprise tool dispatcher
-transcribe_meeting = generate_meeting_minutes_and_transcript
-
 if __name__ == "__main__":
     main()
 
