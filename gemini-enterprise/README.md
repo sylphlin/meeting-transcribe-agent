@@ -29,16 +29,15 @@ gemini-enterprise/
 │   │   └── gcs_tool.py           # GCS storage and 24h signed URL generator
 │   ├── core/                     # Transcription and diarization engines
 │   └── assets/                   # Offline audio and multimodal video player templates
-├── terraform/                    # Standalone GCS storage provisioning
-│   ├── main.tf                   # GCS bucket with 24h CORS & lifecycle rules
-│   ├── variables.tf              # GCP project, region, and retention policies
-│   ├── outputs.tf                # Bucket names and IAM service account emails
-│   └── terraform.tfvars.example  # Configuration template
-├── deployment/                   # agents-cli deployment templates
-│   └── terraform/                # Single-project and shared GCP infrastructure
 ├── deploy.sh                     # Unified shell deployment script
 ├── agents-cli-manifest.yaml      # agents-cli project manifest (deployment target: agent_runtime)
 └── pyproject.toml                # Dependencies (google-adk, google-genai, google-cloud-storage)
+
+../terraform/                     # Shared GCS storage provisioning (repo root; also used by the Antigravity CLI)
+├── main.tf                       # GCS bucket with 24h CORS & lifecycle rules
+├── variables.tf                  # GCP project, region, and retention policies
+├── outputs.tf                    # Bucket name and IAM service account email
+└── terraform.tfvars.example      # Configuration template
 ```
 
 ---
@@ -49,9 +48,8 @@ The generated meeting storage bucket enforces enterprise lifecycle rules and cro
 
 * **24-Hour CORS (`max_age_seconds = 86400`)**: Allows web browsers to stream audio/video media directly from Cloud Storage signed URLs within the interactive player.
 * **Tiered Lifecycle Policies**:
-  * `raw/videos/`: Bulky video recordings (MP4/MOV) are automatically deleted after 14 days.
-  * `raw/audios/`: Audio files are automatically purged after 30 days.
-  * `minutes/` and `players/`: Executive minutes and player HTML files are retained permanently.
+  * `raw/`: Media staged here purely to feed Gemini (Vertex AI has no Files API of its own, so this mirrors its old ~48h ephemeral-upload behavior) is automatically deleted after 2 days.
+  * `minutes/` and `players/`: Generated executive minutes and player HTML deliverables are automatically deleted after 14 days.
 
 ---
 
@@ -89,10 +87,10 @@ chmod +x deploy.sh
 
 1. Provision Storage:
    ```bash
-   cd terraform
+   cd ../terraform
    terraform init
    terraform apply -var="project_id=YOUR_PROJECT_ID" -var="region=us-central1"
-   cd ..
+   cd -
    ```
 2. Deploy Agent:
    ```bash

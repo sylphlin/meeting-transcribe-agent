@@ -144,7 +144,7 @@ fi
 # ------------------------------------------------------------------------------
 # 4. Terraform Storage Provisioning (Optional / Automatic)
 # ------------------------------------------------------------------------------
-TF_DIR="$SCRIPT_DIR/terraform"
+TF_DIR="$SCRIPT_DIR/../terraform"
 if [ "$APPLY_TERRAFORM" = true ] || [ "$APPLY_TERRAFORM" = false -a -t 0 ]; then
     if [ "$APPLY_TERRAFORM" = false ]; then
         echo ""
