@@ -1,6 +1,6 @@
 ---
 name: meeting-transcribe-agent
-description: Universal meeting intelligence and interactive verbatim transcription suite adhering to Agent Skills Specification. Features native Multimodal Video Pipeline (YouTube URLs & local video files with visual slide/speaker OCR and optional Agentic Video Understanding), Google Gemini 3.5 Transcribe (cloud primary audio with ephemeral Files API auto-cleanup), and local Apple Silicon MLX/Whisper + Sherpa-ONNX diarization (offline backup) with Gemini 3.8 Flash minutes structuring, canonical speaker consolidation, and standalone zero-dependency interactive HTML playback player.
+description: Universal meeting intelligence and interactive verbatim transcription suite adhering to Agent Skills Specification. Features native Multimodal Video Pipeline (YouTube URLs & local video files with visual slide/speaker OCR and optional Agentic Video Understanding), Google Gemini 3.5 Transcribe (cloud primary audio via Vertex AI with ephemeral Cloud Storage auto-cleanup), and local Apple Silicon MLX/Whisper + Sherpa-ONNX diarization (offline backup) with Gemini 3.8 Flash minutes structuring, canonical speaker consolidation, and standalone zero-dependency interactive HTML playback player.
 metadata:
   version: "2.5.1"
   author: "sylphlin"
@@ -15,7 +15,7 @@ Universal meeting intelligence and interactive transcription suite adhering to t
 
 Provides dual specialized pipelines tailored to input media:
 1. **Multimodal Video Pipeline (YouTube URLs & Local Video)**: End-to-end single-request analysis via **Gemini 3.8 Flash** with visual lower-third caption OCR, presentation slide extraction, and optional **Agentic Video Understanding** (`--agentic`). Automatically synchronizes with an embedded 3-pane interactive video player (top-left video, bottom-left executive summary, right synchronized transcript).
-2. **Pure Audio Pipeline (Audio Files & Podcasts)**: Combines **Google Gemini 3.5 Transcribe** (Cloud Primary with ephemeral Files API auto-cleanup) or **Local Apple Silicon MLX / Faster-Whisper + Sherpa-ONNX Diarization** (Offline Backup) with **Gemini 3.8 Flash** for executive minutes structuring, speaker role arbitration, and technical glossary consistency. Outputs a zero-dependency 2-pane audio player functioning 100% offline via local `file://` protocol.
+2. **Pure Audio Pipeline (Audio Files & Podcasts)**: Combines **Google Gemini 3.5 Transcribe** (Cloud Primary via Vertex AI with ephemeral Cloud Storage auto-cleanup) or **Local Apple Silicon MLX / Faster-Whisper + Sherpa-ONNX Diarization** (Offline Backup) with **Gemini 3.8 Flash** for executive minutes structuring, speaker role arbitration, and technical glossary consistency. Outputs a zero-dependency 2-pane audio player functioning 100% offline via local `file://` protocol.
 
 ---
 
@@ -31,7 +31,8 @@ meeting-transcribe-agent/
 │   ├── __init__.py
 │   ├── meeting_transcribe.py         # Master pipeline orchestrator (Video & Audio Dual-Track)
 │   ├── audio_utils.py                # Video detection, YouTube title fetching, FFmpeg compression, filename sanitization
-│   ├── gemini_engine.py              # Multimodal video end-to-end, Files API upload & auto-cleanup, universal LLM localization
+│   ├── gcs_utils.py                  # Google Cloud Storage upload/download, signed URLs, ephemeral blob cleanup
+│   ├── gemini_engine.py              # Multimodal video end-to-end, Cloud Storage upload & auto-cleanup, universal LLM localization
 │   ├── diarization.py                # Local Sherpa-ONNX acoustic diarization & Whisper/MLX transcription
 │   ├── glossary.py                   # Dual-track terminology mining (audio pre-scan + agenda outline)
 │   ├── canonicalizer.py              # Acoustic cluster drift convergence & sequential turn merging
@@ -56,7 +57,7 @@ meeting-transcribe-agent/
    - **Agentic Video Understanding (`--agentic`)**: Harnesses dynamic multi-turn frame navigation and tool-use (`types.MediaProcessing.AGENTIC`) for intricate multi-hour video deep dives.
 
 2. **Dual-Engine Audio Architecture (Cloud Primary + Local Offline Backup)**:
-   - **Primary Engine (`--engine gemini`)**: Multimodal cloud transcription via `gemini-3.5-transcribe` with native speaker diarization and zero-persistence Files API auto-cleanup. Lightning-fast (30~60s for 1 hour).
+   - **Primary Engine (`--engine gemini`)**: Multimodal cloud transcription via `gemini-3.5-transcribe` (Vertex AI) with native speaker diarization and zero-persistence Cloud Storage auto-cleanup. Lightning-fast (30~60s for 1 hour).
    - **Offline Backup Engine (`--engine whisper`)**: 100% local transcription running on Apple Silicon Metal GPU (`mlx-whisper`) or CPU (`faster-whisper`), combined with Sherpa-ONNX acoustic diarization. Designed for corporate intranet, air-gapped, or network-restricted environments.
 
 3. **Dual-Track Global Consistency Glossary**:
@@ -143,8 +144,10 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 | `--no-diarization` | Disable acoustic speaker diarization in offline Whisper mode | `False` |
 | `--clustering-threshold`| Acoustic clustering threshold for Sherpa-ONNX | `0.68` |
 | `--num-speakers` | Exact number of speakers if known, otherwise -1 for auto-detect | `-1` |
-| `--embedding-type` | Sherpa-ONNX embedding architecture (`eres2net`, `pyannote`, `cam++`) | `eres2net` |
-| `--api-key` | Gemini API key (reads `GEMINI_API_KEY` from environment or `~/.gemini/.env`) | `None` |
+| `--embedding-type` | Sherpa-ONNX embedding architecture (`eres2net`, `cam++`) | `eres2net` |
+| `--project` | Google Cloud project ID for Vertex AI | `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT` env var, or ADC default project |
+| `--region` | Google Cloud region for Vertex AI | `GOOGLE_CLOUD_LOCATION`/`GCP_REGION` env var, or `us-central1` |
+| `--bucket` | GCS bucket used to stage local audio/video for Gemini | `MEETING_STORAGE_BUCKET` env var |
 | `--transcribe-model` | Gemini cloud speech transcription model | `gemini-3.5-transcribe` |
 | `--summary-model` | Gemini executive summary and vision model | `gemini-3.8-flash` |
 | `--outline` | Path to external meeting notice, outline, or agenda document | `None` |

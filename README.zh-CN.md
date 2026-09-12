@@ -81,7 +81,7 @@
 * **双轨异步并行，发言人身份统一 (Dual-Track Concurrency with Unified Speaker Identity)**：
   * 先解析出唯一权威的发言人对照表，再将“核心决策摘要”与“长篇逐字稿修复”拆分为两个独立轨道并行生成，确保两轨输出的发言人称呼完全一致，同时彻底解决长篇文本顺序输出的阻塞问题。
   * 关闭思考预热延迟（Zero Thinking Budget），实现即时的首字流式响应。
-* **零残留隐私保护**：媒体经由 Google Files API 传输，转录完成后自动调用清理机制销毁云端暂存，不留数据隐患。
+* **零残留隐私保护**：媒体经由 Google Cloud Storage 暂存上传，转录完成后自动调用清理机制销毁云端暂存，不留数据隐患。
 
 ### 2. 本地语音识别备用模式（Whisper + Sherpa-ONNX）
 * **本地声学识别备用**：支持在网络受限或特定本地 ASR 需求下，在第一阶段利用本地模型提取词级时间戳与声学切分。
@@ -201,7 +201,7 @@ flowchart TD
 #### 步骤 2A：视频多模态处理流程 (YouTube 与本地视频)
 1. **云端直传与暂存优化**：
    - **YouTube**：直接将 YouTube URL 传入 Gemini 多模态 API，免本地下载、免 `yt-dlp`，彻底规避 YouTube 429 频率限制。
-   - **本地视频**：若文件超过 250MB，后台自动转码为 720p 轻量 H.264，上传至 Google Files API（并在处理完毕后立即自动销毁）。
+   - **本地视频**：若文件超过 250MB，后台自动转码为 720p 轻量 H.264，上传至 Google Cloud Storage 暂存（并在处理完毕后立即自动销毁）。
 2. **多模态端到端分析 (Single-Request)**：
    - **默认模式 (静态采样 1 FPS)**：极速（约数十秒）同步完成演示 Slide OCR、现场座牌字卡与语音对齐。
    - **Agentic 模式 (`--agentic`)**：启用动态视频帧导航与工具调用，专门深入探索数小时长视频的细节幻灯片与关键段落。
@@ -213,7 +213,7 @@ flowchart TD
 1. **智能预处理 (Smart Ingestion)**：自动探测音频比特率，低码率直传免转码；高码率音频自动以 FFmpeg 预压缩为 16kHz mono 最佳语音格式。
 2. **术语与角色预先探勘 (选填)**：若有传入议程大纲 (`--outline`)，提炼与会名单与专有名词对照表。
 3. **底层声学转录 (ASR & Diarization)**：
-   - **云端模式 (默认)**：通过 `gemini-3.5-transcribe` 进行声波物理分离与词级时间戳提取（Files API 暂存自动销毁）。
+   - **云端模式 (默认)**：通过 `gemini-3.5-transcribe` 进行声波物理分离与词级时间戳提取（Cloud Storage 暂存自动销毁）。
    - **本地模式 (`--engine whisper`)**：在 Apple Silicon GPU 或 CPU 本地运行 Whisper 识别，并结合 Sherpa-ONNX 进行声学特征向量聚类与滑动窗口对齐。
 4. **上层语义重构 (Semantic Restructuring)**：
    - 由 `gemini-3.8-flash` 进行前后文理解、同音字校正、角色名称收敛平滑与语意流畅化，提炼出决策摘要与待办表格。
@@ -245,7 +245,7 @@ flowchart TD
 
 **云端默认模式**：
 ```bash
-pip install google-genai
+pip install google-genai google-cloud-storage
 ```
 
 **本地离线备用模式（可选）**：
@@ -257,18 +257,36 @@ pip install mlx-whisper sherpa-onnx soundfile numpy
 pip install faster-whisper sherpa-onnx soundfile numpy
 ```
 
+### 3. 创建 GCS 暂存 Bucket
+
+Gemini 调用统一改用 **Vertex AI + Application Default Credentials**，不再支持 AI Studio API Key。本地音频/视频需要先暂存到 GCS，才能以 `gs://` URI 提供给 Gemini（YouTube 链接与 `--engine whisper` 不需要）：
+
+```bash
+gcloud auth application-default login
+
+cd terraform
+terraform init
+terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
+```
+
+这会一并创建 `raw/` 前缀的生命周期规则（上传后约 2 天自动删除）与一个专属服务账号。
+
 ---
 
 ## ⚙️ 环境变量配置
 
-配置您的 Gemini API Key：
+配置您的 GCP 项目、区域与 Bucket（或复制 `.env.example` 为 `.env` 填写）：
 
 ```bash
 # macOS / Linux
-export GEMINI_API_KEY="your-gemini-api-key"
+export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
+export GOOGLE_CLOUD_LOCATION="us-central1"
+export MEETING_STORAGE_BUCKET="your-bucket-name"
 
 # Windows PowerShell
-$env:GEMINI_API_KEY="your-gemini-api-key"
+$env:GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
+$env:GOOGLE_CLOUD_LOCATION="us-central1"
+$env:MEETING_STORAGE_BUCKET="your-bucket-name"
 ```
 
 ---
@@ -306,7 +324,7 @@ python3 meeting_transcribe.py "会议录音.mp3" --outline "agenda.txt" --summar
 | 参数 | 说明 | 默认值 |
 | :--- | :--- | :--- |
 | `input_source` | 音频/视频文件路径 (mp3, m4a, wav, mp4, mov 等) 或 YouTube 网址 | *(必填)* |
-| `-o, --output` | 自定义 Markdown 会议记录输出路径 | `<文件名>_會議記錄.md` |
+| `-o, --output` | 自定义 Markdown 会议记录输出路径 | `<文件名>_minutes.md` |
 | `--agentic` | 启用 Agentic Video Understanding 动态视频帧导航与工具调用（视频/YouTube） | `False` |
 | `--extract-audio` | 强制从视频文件抽取纯音频走纯音频流程 | `False` |
 | `--engine` | 纯音频转录引擎：`gemini` (云端默认) 或 `whisper` (本地备用) | `gemini` |
@@ -315,8 +333,10 @@ python3 meeting_transcribe.py "会议录音.mp3" --outline "agenda.txt" --summar
 | `--no-diarization` | 停用离线模式的声学声纹切分 | `False` |
 | `--clustering-threshold` | Sherpa-ONNX 声学聚类阈值 | `0.68` |
 | `--num-speakers` | 精确参会发言人数（已知时填写，-1 为自动探测） | `-1` |
-| `--embedding-type` | Sherpa-ONNX 声纹特征抽取模型 (`eres2net`, `pyannote`, `cam++`) | `eres2net` |
-| `--api-key` | 手动指定 Gemini API Key (默认读取 `GEMINI_API_KEY`) | `None` |
+| `--embedding-type` | Sherpa-ONNX 声纹特征抽取模型 (`eres2net`, `cam++`) | `eres2net` |
+| `--project` | Vertex AI 的 GCP 项目 (默认读取 `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT`，或 ADC 默认项目) | `None` |
+| `--region` | Vertex AI 的 GCP 区域 (默认读取 `GOOGLE_CLOUD_LOCATION`/`GCP_REGION`) | `us-central1` |
+| `--bucket` | 暂存本地音频/视频的 GCS bucket (默认读取 `MEETING_STORAGE_BUCKET`) | `None` |
 | `--transcribe-model` | 云端转录语音识别模型 | `gemini-3.5-transcribe` |
 | `--summary-model` | 结构化会议纪要与视觉模型 | `gemini-3.8-flash` |
 | `--outline` | 外部会议通知、大纲或议程文件路径 (.txt / .md) | `None` |

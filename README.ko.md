@@ -79,7 +79,7 @@
 * **듀얼 모델 협업**: **Google Gemini 3.5 Transcribe** (음향 전사 및 화자 분리) + **Gemini 3.8 Flash** (구조화 및 회의록 작성).
 * **스마트 오디오 전처리 (Smart Ingestion)**: 비트레이트를 자동 감지하여 저비트레이트는 원본 전송, 고비트레이트는 16kHz mono로 최적 압축.
 * **듀얼 트랙 비동기 병렬 처리 (화자 식별 통일)**: 먼저 하나의 권위 있는 화자 매핑 표를 확정한 뒤, "요약/결정사항"과 "장문 전사 교정"을 병렬로 분리 생성 — 두 트랙이 동일한 화자 식별을 공유하므로 표기가 어긋나지 않으며, 응답 대기 시간도 단축.
-* **데이터 잔여물 제로 (Zero-Retention)**: Google Files API로 전송된 데이터는 처리가 끝나면 `finally` 블록에서 자동 영구 삭제.
+* **데이터 잔여물 제로 (Zero-Retention)**: Google Cloud Storage에 임시 업로드된 데이터는 처리가 끝나면 `finally` 블록에서 자동 영구 삭제.
 
 ### 2. 로컬 음성 전사 백업 모드 (Whisper + Sherpa-ONNX)
 * **로컬 음향 전사 백업**: 클라우드 연결이 불가능하거나 로컬 처리가 필요할 때 1단계 전사 및 화자 분리를 로컬에서 수행.
@@ -195,7 +195,7 @@ flowchart TD
 #### 2A단계: 비디오 멀티모달 파이프라인 (YouTube 및 로컬 영상)
 1. **클라우드 직접 스트리밍 및 최적화**:
    - **YouTube**: 다운로드 없이 API로 URL을 직접 전달하여 429 요청 제한을 회피합니다.
-   - **로컬 영상**: 대용량 파일은 720p H.264로 자동 압축하여 Google Files API에 업로드합니다 (완료 후 즉시 자동 삭제).
+   - **로컬 영상**: 대용량 파일은 720p H.264로 자동 압축하여 Google Cloud Storage에 임시 업로드합니다 (완료 후 즉시 자동 삭제).
 2. **단일 Request 통합 분석**:
    - `gemini-3.8-flash`가 화면 OCR(명패, 자막, 슬라이드)과 음성을 동시에 분석합니다.
    - 1회 호출로 정확한 화자명이 포함된 회의록과 타임스탬프 전사본을 한 번에 산출합니다.
@@ -224,7 +224,7 @@ flowchart TD
 
 **클라우드 기본 모드**:
 ```bash
-pip install google-genai
+pip install google-genai google-cloud-storage
 ```
 
 **로컬 오프라인 백업 모드 (선택 사항)**:
@@ -236,19 +236,39 @@ pip install mlx-whisper sherpa-onnx soundfile numpy
 pip install faster-whisper sherpa-onnx soundfile numpy
 ```
 
+### 3. GCS 스테이징 버킷 생성 (클라우드 기본 모드)
+
+Gemini 호출은 Vertex AI + Application Default Credentials(ADC)를 사용합니다. AI Studio API 키는 필요하지 않습니다. 먼저 ADC로 로그인합니다:
+
+```bash
+gcloud auth application-default login
+```
+
+그다음 로컬 오디오/영상 파일을 Gemini로 전달하기 위한 임시 스테이징 GCS 버킷을 생성합니다(`raw/`는 2일 후 자동 삭제됩니다):
+
+```bash
+cd terraform
+terraform init
+terraform apply -var="project_id=your-gcp-project-id"
+```
+
 ---
 
 ## ⚙️ 환경 변수 설정
 
-Gemini API 키를 설정합니다:
-
 ```bash
 # macOS / Linux
-export GEMINI_API_KEY="your-gemini-api-key"
+export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
+export GOOGLE_CLOUD_LOCATION="us-central1"
+export MEETING_STORAGE_BUCKET="your-bucket-name"
 
 # Windows PowerShell
-$env:GEMINI_API_KEY="your-gemini-api-key"
+$env:GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
+$env:GOOGLE_CLOUD_LOCATION="us-central1"
+$env:MEETING_STORAGE_BUCKET="your-bucket-name"
 ```
+
+`MEETING_STORAGE_BUCKET`은 로컬 오디오/영상 파일을 Gemini로 전달할 때만 필요합니다 (YouTube URL 또는 `--engine whisper` 사용 시에는 불필요).
 
 ---
 
@@ -280,7 +300,7 @@ python3 meeting_transcribe.py "회의녹음.mp3" --engine whisper --whisper-back
 | 매개변수 | 설명 | 기본값 |
 | :--- | :--- | :--- |
 | `input_source` | 오디오/영상 파일 경로 또는 YouTube URL | *(필수)* |
-| `-o, --output` | 회의록 출력 Markdown 경로 | `<파일명>_會議記錄.md` |
+| `-o, --output` | 회의록 출력 Markdown 경로 | `<파일명>_minutes.md` |
 | `--agentic` | 영상 Agentic Video 동적 프레임 탐색 활성화 | `False` |
 | `--extract-audio` | 영상 파일에서 음원을 추출하여 오디오 파이프라인으로 강제 전환 | `False` |
 | `--engine` | 오디오 전사 엔진: `gemini` (클라우드) 또는 `whisper` (로컬) | `gemini` |
@@ -289,7 +309,9 @@ python3 meeting_transcribe.py "회의녹음.mp3" --engine whisper --whisper-back
 | `--no-diarization` | 화자 분리 비활성화 | `False` |
 | `--clustering-threshold` | Sherpa-ONNX 클러스터링 임계값 | `0.68` |
 | `--num-speakers` | 참석자 수 (알고 있는 경우 지정, -1은 자동 감지) | `-1` |
-| `--api-key` | Gemini API 키 수동 지정 | `None` |
+| `--project` | Vertex AI용 Google Cloud 프로젝트 ID | `GOOGLE_CLOUD_PROJECT` 환경 변수 |
+| `--region` | Vertex AI용 Google Cloud 리전 | `GOOGLE_CLOUD_LOCATION` 환경 변수 또는 `us-central1` |
+| `--bucket` | 로컬 오디오/영상 스테이징용 GCS 버킷 이름 | `MEETING_STORAGE_BUCKET` 환경 변수 |
 | `--outline` | 회의 안건/식순 파일 경로 (.txt / .md) | `None` |
 | `--no-player` | 대화형 HTML 플레이어 생성 비활성화 | `False` |
 | `--summary-language` | 회의록 생성 언어 지정 (`auto`, `ko`, `en`, `zh-TW` 등) | `None` (auto) |

@@ -79,7 +79,7 @@
 * **2段階モデル連携**：**Google Gemini 3.5 Transcribe**（音響認識・話者分離）＋ **Gemini 3.8 Flash**（構造化・議事録作成）。
 * **スマート音声前処理 (Smart Ingestion)**：ビットレートを自動判定。低ビットレートはそのまま送信し、高ビットレートは最適な 16kHz mono へ自動圧縮。
 * **デュアルトラック並行処理（話者識別を統一）**：まず唯一の権威ある話者対応表を確定し、その上で「要約・決定事項」と「長文逐字録の校正」を非同期並行で生成——両トラックが同じ話者識別を共有するため表記のブレがなく、待機時間も大幅に短縮。
-* **完全プライベート（ゼロ保持）**：Google Files API 経由のアップロードデータは、処理完了後に `finally` 処理で自動削除。
+* **完全プライベート（ゼロ保持）**：Google Cloud Storage への一時アップロードデータは、処理完了後に `finally` 処理で自動削除。
 
 ### 2. ローカル音声認識バックアップモード（Whisper + Sherpa-ONNX）
 * **オフライン音響認識**：クラウド接続が制限されている環境で、第1段階の文字起こしと話者分離をローカルモデルで実行。
@@ -224,7 +224,7 @@ flowchart TD
 
 **クラウド通常モード**：
 ```bash
-pip install google-genai
+pip install google-genai google-cloud-storage
 ```
 
 **ローカルオフライン備えモード（任意）**：
@@ -236,19 +236,39 @@ pip install mlx-whisper sherpa-onnx soundfile numpy
 pip install faster-whisper sherpa-onnx soundfile numpy
 ```
 
+### 3. GCS ステージング Bucket の作成（クラウド通常モード）
+
+Gemini 呼び出しは Vertex AI + Application Default Credentials（ADC）を使用します。AI Studio の API キーは不要です。まず ADC でログインします：
+
+```bash
+gcloud auth application-default login
+```
+
+次に、ローカルの音声・動画ファイルを Gemini に渡すための一時ステージング用 GCS bucket を作成します（`raw/` は 2 日後に自動削除されます）：
+
+```bash
+cd terraform
+terraform init
+terraform apply -var="project_id=your-gcp-project-id"
+```
+
 ---
 
 ## ⚙️ 環境変数の設定
 
-Gemini API キーを設定します：
-
 ```bash
 # macOS / Linux
-export GEMINI_API_KEY="your-gemini-api-key"
+export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
+export GOOGLE_CLOUD_LOCATION="us-central1"
+export MEETING_STORAGE_BUCKET="your-bucket-name"
 
 # Windows PowerShell
-$env:GEMINI_API_KEY="your-gemini-api-key"
+$env:GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
+$env:GOOGLE_CLOUD_LOCATION="us-central1"
+$env:MEETING_STORAGE_BUCKET="your-bucket-name"
 ```
+
+`MEETING_STORAGE_BUCKET` はローカルの音声・動画ファイルを Gemini に渡す場合にのみ必要です（YouTube URL や `--engine whisper` の場合は不要）。
 
 ---
 
@@ -280,7 +300,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --engine whisper --whisper-ba
 | 引数 | 説明 | デフォルト値 |
 | :--- | :--- | :--- |
 | `input_source` | 音声/動画ファイルパス または YouTube URL | *(必須)* |
-| `-o, --output` | 出力先 Markdown ファイルパス | `<ファイル名>_會議記錄.md` |
+| `-o, --output` | 出力先 Markdown ファイルパス | `<ファイル名>_minutes.md` |
 | `--agentic` | 動画の Agentic Video 理解モードを有効化 | `False` |
 | `--extract-audio` | 動画から音声を抽出して音声パイプラインで処理 | `False` |
 | `--engine` | 音声認識エンジン：`gemini` (クラウド) または `whisper` (ローカル) | `gemini` |
@@ -289,7 +309,9 @@ python3 meeting_transcribe.py "meeting_record.mp3" --engine whisper --whisper-ba
 | `--no-diarization` | 話者分離を無効化 | `False` |
 | `--clustering-threshold` | Sherpa-ONNX クラスタリング閾値 | `0.68` |
 | `--num-speakers` | 参加人数（既知の場合指定、-1 は自動検出） | `-1` |
-| `--api-key` | Gemini API キーの手動指定 | `None` |
+| `--project` | Vertex AI 用 Google Cloud プロジェクト ID | `GOOGLE_CLOUD_PROJECT` 環境変数 |
+| `--region` | Vertex AI 用 Google Cloud リージョン | `GOOGLE_CLOUD_LOCATION` 環境変数、または `us-central1` |
+| `--bucket` | ローカル音声/動画のステージング用 GCS bucket 名 | `MEETING_STORAGE_BUCKET` 環境変数 |
 | `--outline` | 会議通知・次第ファイルパス (.txt / .md) | `None` |
 | `--no-player` | インタラクティブ HTML プレイヤーの出力を無効化 | `False` |
 | `--summary-language` | 議事録の出力言語指定 (`auto`, `ja`, `en`, `zh-TW` 等) | `None` (auto) |

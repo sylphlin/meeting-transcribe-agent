@@ -81,7 +81,7 @@
 * **雙軌非同步並行，發言人身分統一 (Dual-Track Concurrency with Unified Speaker Identity)**：
   * 先解析出唯一權威的發言人對照表，再將「核心決策摘要」與「長篇逐字稿修復」拆分為兩個獨立軌道並行生成，確保兩軌輸出的發言人稱呼完全一致，同時徹底解決長篇文本循序輸出的阻塞問題。
   * 關閉思考預熱延遲（Zero Thinking Budget），實現即時的首字串流響應。
-* **零殘留隱私保護**：音訊經由 Google Files API 傳輸，轉譯完成後自動呼叫清理機制銷毀雲端暫存，不留資料隱患。
+* **零殘留隱私保護**：音訊經由 Google Cloud Storage 暫存上傳，轉譯完成後自動呼叫清理機制銷毀雲端暫存，不留資料隱患。
 
 ### 2. 本地語音辨識備援模式（Whisper + Sherpa-ONNX）
 * **本機聲學辨識備援**：支援在網路受限或特定本機 ASR 需求下，於第一階段利用本機模型提取詞級時間戳記與聲學切分。
@@ -201,7 +201,7 @@ flowchart TD
 #### 步驟 2A：視訊多模態處理流程 (YouTube 與本地影片)
 1. **雲端直傳與暫存優化**：
    - **YouTube**：直接將 YouTube URL 傳入 Gemini 多模態 API，免本地下載、免 `yt-dlp`，徹底規避 YouTube 429 頻率限制。
-   - **本地影片**：若檔案超過 250MB，後台自動轉碼為 720p 輕量 H.264，上傳至 Google Files API（並於處理完畢後立即自動銷毀）。
+   - **本地影片**：若檔案超過 250MB，後台自動轉碼為 720p 輕量 H.264，上傳至 Google Cloud Storage 暫存（並於處理完畢後立即自動銷毀）。
 2. **多模態端到端分析 (Single-Request)**：
    - **預設模式 (靜態訊框 1 FPS)**：極速（約數十秒）同步完成簡報 Slide OCR、現場長官座牌字卡與語音對齊。
    - **Agentic 模式 (`--agentic`)**：啟用動態訊框導航與工具調用，專門深入探索數小時長影片的細部投影片與關鍵段落。
@@ -213,7 +213,7 @@ flowchart TD
 1. **智慧預處理 (Smart Ingestion)**：自動探測音訊位元率，低碼率直傳免轉碼；高碼率音訊自動以 FFmpeg 預壓縮為 16kHz mono 最佳語音格式。
 2. **術語與角色預先探勘 (選填)**：若有傳入議程大綱 (`--outline`)，提煉與會名單與專有名詞對照表。
 3. **底層聲學轉譯 (ASR & Diarization)**：
-   - **雲端模式 (預設)**：透過 `gemini-3.5-transcribe` 進行聲波物理分離與詞級時間戳記提取（Files API 暫存自動銷毀）。
+   - **雲端模式 (預設)**：透過 `gemini-3.5-transcribe` 進行聲波物理分離與詞級時間戳記提取（Cloud Storage 暫存自動銷毀）。
    - **本地模式 (`--engine whisper`)**：在 Apple Silicon GPU 或 CPU 本地執行 Whisper 辨識，並結合 Sherpa-ONNX 進行聲學特徵向量聚類與滑動窗口對齊。
 4. **上層語意重構 (Semantic Restructuring)**：
    - 由 `gemini-3.8-flash` 進行前後文理解、同音字校正、角色名稱收斂平滑與語法流暢化，提煉出決策摘要與待辦表格。
@@ -246,7 +246,7 @@ flowchart TD
 
 **雲端預設模式套件**：
 ```bash
-pip install google-genai
+pip install google-genai google-cloud-storage
 ```
 
 **離線備援模式可選套件（如需使用本機 Whisper 與聲紋切分）**：
@@ -258,12 +258,23 @@ pip install mlx-whisper sherpa-onnx
 pip install faster-whisper sherpa-onnx
 ```
 
-### 3. 設定 Gemini API Key
-從 [Google AI Studio](https://aistudio.google.com/) 取得 API Key，並設定環境變數：
+### 3. 建立 GCS 暫存 Bucket
+Gemini 呼叫全面改用 **Vertex AI + Application Default Credentials**，不再支援 AI Studio API Key。本機音訊/影片需要先暫存到 GCS，才能以 `gs://` URI 餵給 Gemini（YouTube 網址與 `--engine whisper` 不需要）：
 ```bash
-export GEMINI_API_KEY="AIzaSy..."
+gcloud auth application-default login
+
+cd terraform
+terraform init
+terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
 ```
-*(亦可填入工作區的 `.env` 或 `~/.gemini/.env` 檔案中，系統會自動載入)*
+這會一併建立 `raw/` 前綴的生命週期規則（上傳後約 2 天自動刪除）與一個專屬服務帳號。
+
+接著設定環境變數（或複製 `.env.example` 為 `.env` 填入）：
+```bash
+export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
+export GOOGLE_CLOUD_LOCATION="us-central1"
+export MEETING_STORAGE_BUCKET="your-bucket-name"
+```
 
 ### 4. 安裝為 Agent Skill
 本專案符合通用 Agent Skill 規格，可直接安裝至您的 AI 工作區：
@@ -341,7 +352,7 @@ python3 meeting_transcribe.py "會議錄音.mp3" --outline "agenda.txt" --summar
 | 參數 | 說明 | 預設值 |
 | :--- | :--- | :--- |
 | `input_source` | 音訊/影片檔案路徑 (mp3, m4a, wav, mp4, mov 等) 或 YouTube 網址 | *(必填)* |
-| `-o, --output` | 自訂 Markdown 會議記錄輸出路徑 | `<檔名>_會議記錄.md` |
+| `-o, --output` | 自訂 Markdown 會議記錄輸出路徑 | `<檔名>_minutes.md` |
 | `--agentic` | 啟用 Agentic Video Understanding 動態訊框導航與工具調用（視訊/YouTube） | `False` |
 | `--extract-audio` | 強制自視訊檔案抽取純音軌走純音訊流程 | `False` |
 | `--engine` | 純音訊轉譯引擎：`gemini` (雲端預設) 或 `whisper` (本地離線備援) | `gemini` |
@@ -350,8 +361,10 @@ python3 meeting_transcribe.py "會議錄音.mp3" --outline "agenda.txt" --summar
 | `--no-diarization` | 停用離線模式的聲學聲紋切分 | `False` |
 | `--clustering-threshold` | Sherpa-ONNX 聲學聚類閥值 | `0.68` |
 | `--num-speakers` | 精確與會發言人人數（已知時填寫，-1 為自動偵測） | `-1` |
-| `--embedding-type` | Sherpa-ONNX 聲紋特徵抽取模型 (`eres2net`, `pyannote`, `cam++`) | `eres2net` |
-| `--api-key` | 手動指定 Gemini API Key (預設讀取 `GEMINI_API_KEY`) | `None` |
+| `--embedding-type` | Sherpa-ONNX 聲紋特徵抽取模型 (`eres2net`, `cam++`) | `eres2net` |
+| `--project` | Vertex AI 的 GCP 專案 (預設讀取 `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT`，或 ADC 預設專案) | `None` |
+| `--region` | Vertex AI 的 GCP 區域 (預設讀取 `GOOGLE_CLOUD_LOCATION`/`GCP_REGION`) | `us-central1` |
+| `--bucket` | 暫存本機音訊/影片的 GCS bucket (預設讀取 `MEETING_STORAGE_BUCKET`) | `None` |
 | `--transcribe-model` | 雲端轉譯語音辨識模型 | `gemini-3.5-transcribe` |
 | `--summary-model` | 結構化會議記錄與視覺模型 | `gemini-3.8-flash` |
 | `--outline` | 外部會議通知、大綱或議程檔案路徑 (.txt / .md) | `None` |
