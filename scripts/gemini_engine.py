@@ -1,10 +1,12 @@
 """
 scripts/gemini_engine.py - Gemini Cloud Engine Client & Multimodal Orchestrator.
-Handles Stage 1 Cloud ASR, Stage 2 Minutes Generation, Files API management, and Token Accounting.
+Handles Stage 1 Cloud ASR, Stage 2 Minutes Generation, Cloud Storage upload staging, and Token Accounting.
+Uses Vertex AI with Application Default Credentials exclusively -- no AI Studio API key.
 """
 
 import os
 import time
+import uuid
 from pathlib import Path
 import concurrent.futures
 from google import genai
@@ -18,10 +20,15 @@ from scripts.audio_utils import (
     is_youtube_url,
     optimize_video_for_upload,
 )
+from scripts.gcs_utils import (
+    upload_file_to_gcs,
+    delete_gcs_blob,
+    guess_mime_type,
+)
 
 
 def load_env_file():
-    """Load GEMINI_API_KEY from ~/.gemini/.env or current directory .env."""
+    """Load KEY=VALUE pairs (e.g. GOOGLE_CLOUD_PROJECT) from ~/.gemini/.env or current directory .env."""
     candidates = [
         Path.home() / ".gemini" / ".env",
         Path.cwd() / ".env",
@@ -42,13 +49,42 @@ def load_env_file():
 
 
 
-def get_gemini_client(api_key: str = None) -> genai.Client:
-    """Initialize and return a Google GenAI Client, loading key from env if needed."""
+def get_gemini_client(project_id: str = None, location: str = None) -> genai.Client:
+    """
+    Initialize and return a Google GenAI Client backed by Vertex AI with Application
+    Default Credentials (run `gcloud auth application-default login` once beforehand).
+    Project/location resolve from arguments, then GOOGLE_CLOUD_PROJECT/GOOGLE_CLOUD_LOCATION
+    or GCP_PROJECT/GCP_REGION in the environment, then the ADC default project.
+    """
     load_env_file()
-    key = api_key or os.environ.get('GEMINI_API_KEY')
-    if not key:
-        raise ValueError('Missing GEMINI_API_KEY. Please export it or put it in ~/.gemini/.env or .env.')
-    return genai.Client(api_key=key)
+    project = (
+        project_id
+        or os.environ.get('GOOGLE_CLOUD_PROJECT')
+        or os.environ.get('GCP_PROJECT')
+    )
+    if not project:
+        try:
+            import google.auth
+            _, project = google.auth.default()
+        except Exception:
+            project = None
+    if not project:
+        raise ValueError(
+            'Missing Google Cloud project. Set GOOGLE_CLOUD_PROJECT (or GCP_PROJECT) in the '
+            'environment, pass it explicitly, or run `gcloud config set project <id>`.'
+        )
+    region = (
+        location
+        or os.environ.get('GOOGLE_CLOUD_LOCATION')
+        or os.environ.get('GCP_REGION')
+        or 'us-central1'
+    )
+    return genai.Client(vertexai=True, project=project, location=region)
+
+
+def _unique_raw_blob_name(local_path: Path) -> str:
+    """Object key for an ephemeral raw/ upload; unique per call so concurrent uploads never collide."""
+    return f"raw/{uuid.uuid4().hex[:12]}_{local_path.name}"
 
 
 def _parse_offset_to_seconds(val) -> float:
@@ -62,11 +98,12 @@ def _parse_offset_to_seconds(val) -> float:
 def transcribe_with_gemini_cloud(
     client: genai.Client,
     audio_path: Path,
+    bucket_name: str,
     model_name: str = "gemini-3.5-transcribe",
     compress: bool = True,
     language: str = "auto"
 ) -> tuple[str, float]:
-    """Upload audio to Gemini Files API and run cloud transcription."""
+    """Upload audio to Cloud Storage and run cloud transcription via Vertex AI."""
     t0 = time.time()
     upload_file_path = audio_path
     temp_compressed = None
@@ -80,22 +117,18 @@ def transcribe_with_gemini_cloud(
         else:
             print(f"[*] Skipping audio compression: {reason}.")
 
-    uploaded_file = None
+    gcs_uri = None
     try:
+        mime_type = guess_mime_type(upload_file_path)
         with safe_ascii_upload_path(upload_file_path) as safe_upload_path:
-            print(f"[*] Uploading audio file to Gemini Files API ({safe_upload_path.stat().st_size / (1024*1024):.1f} MB)...")
-            uploaded_file = client.files.upload(file=str(safe_upload_path))
-        
-        poll_delays = [0.5, 1.0, 2.0]
-        poll_idx = 0
-        while uploaded_file.state.name == "PROCESSING":
-            delay = poll_delays[min(poll_idx, len(poll_delays) - 1)]
-            time.sleep(delay)
-            poll_idx += 1
-            uploaded_file = client.files.get(name=uploaded_file.name)
-            
-        if uploaded_file.state.name == "FAILED":
-            raise RuntimeError(f"Audio file upload failed: {uploaded_file.error}")
+            print(f"[*] Uploading audio file to Cloud Storage ({safe_upload_path.stat().st_size / (1024*1024):.1f} MB)...")
+            gcs_uri = upload_file_to_gcs(
+                local_path=safe_upload_path,
+                bucket_name=bucket_name,
+                destination_blob_name=_unique_raw_blob_name(safe_upload_path),
+                content_type=mime_type,
+            )
+        file_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=mime_type)
 
         print(f"[*] Invoking Gemini transcription model `{model_name}` for speech recognition and turn timestamps...")
         lines = []
@@ -115,7 +148,7 @@ def transcribe_with_gemini_cloud(
             )
             stream = client.models.generate_content_stream(
                 model=model_name,
-                contents=[uploaded_file],
+                contents=[file_part],
                 config=config
             )
         else:
@@ -126,7 +159,7 @@ def transcribe_with_gemini_cloud(
             )
             stream = client.models.generate_content_stream(
                 model=model_name,
-                contents=[uploaded_file, prompt],
+                contents=[file_part, prompt],
             )
 
         for chunk in stream:
@@ -161,9 +194,9 @@ def transcribe_with_gemini_cloud(
         return raw_text, duration
 
     finally:
-        if uploaded_file:
+        if gcs_uri:
             try:
-                client.files.delete(name=uploaded_file.name)
+                delete_gcs_blob(gcs_uri)
             except Exception:
                 pass
         if temp_compressed and temp_compressed.exists():
@@ -381,6 +414,7 @@ Output strictly and exclusively Section 6 (translate heading to {target_lang}, D
 def process_video_meeting_end_to_end(
     client: genai.Client,
     video_source: str | Path,
+    bucket_name: str = None,
     summary_model: str = "gemini-3.8-flash",
     use_agentic: bool = False,
     summary_language: str = None,
@@ -488,7 +522,7 @@ Output strictly the following 6 sections in Markdown (DO NOT include any emojis 
 {video_schema}
 """
 
-    uploaded_file = None
+    gcs_uri = None
     try:
         if is_yt:
             print(f"[*] Connecting to YouTube video via Gemini Cloud backbone: {source_str}")
@@ -505,33 +539,32 @@ Output strictly the following 6 sections in Markdown (DO NOT include any emojis 
             video_path = Path(source_str).resolve()
             if not video_path.is_file():
                 raise FileNotFoundError(f"Local video file not found: {video_path}")
+            if not bucket_name:
+                raise ValueError("bucket_name is required to analyze a local video file.")
 
             # Check and optimize video size if needed
             upload_target = optimize_video_for_upload(video_path, max_size_mb=250.0)
 
-            print(f"[*] Uploading local video to Google Files API: {upload_target.name}...")
+            print(f"[*] Uploading local video to Cloud Storage: {upload_target.name}...")
+            mime_type = guess_mime_type(upload_target)
             with safe_ascii_upload_path(upload_target) as safe_path:
-                uploaded_file = client.files.upload(file=safe_path)
+                gcs_uri = upload_file_to_gcs(
+                    local_path=safe_path,
+                    bucket_name=bucket_name,
+                    destination_blob_name=_unique_raw_blob_name(safe_path),
+                    content_type=mime_type,
+                )
 
-            print(f"[*] File uploaded (URI: {uploaded_file.uri}). Polling for ACTIVE state...")
-            while uploaded_file.state.name == "PROCESSING":
-                time.sleep(3)
-                uploaded_file = client.files.get(name=uploaded_file.name)
-
-            if uploaded_file.state.name != "ACTIVE":
-                raise RuntimeError(f"Video file processing failed with state: {uploaded_file.state.name}")
-
-            mime_type = uploaded_file.mime_type or "video/mp4"
             if use_agentic:
                 print("[*] Mode: 🤖 Agentic Video Understanding (Dynamic frame navigation & tool-use)")
                 part = types.Part(
-                    file_data=types.FileData(file_uri=uploaded_file.uri, mime_type=mime_type),
+                    file_data=types.FileData(file_uri=gcs_uri, mime_type=mime_type),
                     media_processing=types.MediaProcessing.AGENTIC
                 )
             else:
                 print("[*] Mode: 📺 High-Speed Static Multimodal Video")
                 part = types.Part(
-                    file_data=types.FileData(file_uri=uploaded_file.uri, mime_type=mime_type)
+                    file_data=types.FileData(file_uri=gcs_uri, mime_type=mime_type)
                 )
 
         print(f"[*] Dispatching single-request video analysis to {summary_model}...")
@@ -575,11 +608,11 @@ Output strictly the following 6 sections in Markdown (DO NOT include any emojis 
         return output_text, duration
 
     finally:
-        if uploaded_file is not None:
+        if gcs_uri is not None:
             try:
-                print(f"[*] Cleaning up ephemeral Files API video ({uploaded_file.name})...")
-                client.files.delete(name=uploaded_file.name)
-                print(f"[✓] Files API storage cleaned up successfully.")
+                print(f"[*] Cleaning up ephemeral Cloud Storage video upload...")
+                delete_gcs_blob(gcs_uri)
+                print(f"[✓] Cloud Storage upload cleaned up successfully.")
             except Exception as e:
                 print(f"[!] Warning: Failed to delete uploaded video file: {e}")
 

@@ -42,6 +42,7 @@ PYTHON_PAIRS = [
     "audio_utils.py",
     "canonicalizer.py",
     "diarization.py",
+    "gcs_utils.py",
     "gemini_engine.py",
     "glossary.py",
     "html_generator.py",
