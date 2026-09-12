@@ -12,7 +12,7 @@ import google.auth
 
 from ..core.audio_utils import is_youtube_url, is_video_file
 from ..core.html_generator import extract_meeting_title
-from ..core.meeting_transcribe import transcribe_meeting
+from ..core.meeting_transcribe import generate_meeting_minutes_and_transcript
 from .gcs_tool import (
     parse_gcs_uri,
     upload_file_to_gcs,
@@ -104,7 +104,7 @@ def process_meeting_transcription(
     output_stem = Path(local_media_source).stem if not is_yt else f"yt_{source_clean[-11:]}"
     dest_minutes_md = work_dir / f"{output_stem}_minutes.md"
 
-    generated_md_path = transcribe_meeting(
+    generated_md_path = generate_meeting_minutes_and_transcript(
         input_source=local_media_source,
         output_file=dest_minutes_md,
         summary_language=summary_language,
