@@ -57,6 +57,10 @@ CRITICAL FORMATTING RULES:
 
 ## 6. Full Verbatim Transcript
 - Format every dialogue turn as: `[MM:SS - MM:SS] **Role / Name**: Utterance` (use `[HH:MM:SS - HH:MM:SS]` for timestamps exceeding 1 hour)
+- **Paragraph-Level Turn Consolidation**:
+  - When the same speaker continues talking without interruption, do NOT fragment their speech into one turn per raw sentence/utterance, and do NOT collapse it into a single turn spanning the entire speech either.
+  - Regroup it into semantically coherent paragraph-length turns (a natural unit of thought, typically a few sentences), starting a new turn whenever the point/topic shifts or the floor changes to a different speaker.
+  - Each paragraph-level turn MUST keep its own accurate `[start - end]` timestamp spanning only that paragraph, and must repeat the `**Role / Name**` tag — every turn line is independently formatted; the interactive player handles the visual presentation of consecutive same-speaker turns.
 - **Role Validation Rules**:
   - Distinguish between meeting host/chair, presenters, and ad-hoc contributors based on context.
   - When simultaneous speech occurs, label accordingly: `[MM:SS - MM:SS] **Speaker A / Speaker B (Simultaneous)**: ...` (or `[HH:MM:SS - HH:MM:SS]`)

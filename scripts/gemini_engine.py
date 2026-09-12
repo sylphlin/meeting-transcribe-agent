@@ -358,7 +358,11 @@ You are an elite verbatim meeting transcription editor. Your mission is to trans
 1. {verbatim_speaker_instruction}
 2. Faithfully preserve all spoken dialogue turns, words, numbers, and chronological order without dropping or truncating sentences.
 3. {verbatim_lang_instruction}
-4. **Mandatory Timestamp Syntax Contract**:
+4. **Paragraph-Level Turn Consolidation**:
+   - When the same speaker continues talking without interruption, do NOT fragment their speech into one turn per raw sentence/utterance from the draft transcript.
+   - Instead, regroup it into semantically coherent paragraph-length turns (a natural unit of thought, typically a few sentences), starting a new turn whenever the point/topic shifts or the floor changes to a different speaker.
+   - Each paragraph-level turn MUST keep its own accurate `[start - end]` timestamp spanning only that paragraph. NEVER collapse an entire multi-minute speech into a single timestamp range spanning several unrelated paragraphs — every distinct paragraph is its own turn line with its own timestamps.
+5. **Mandatory Timestamp Syntax Contract**:
    - Every single dialogue turn MUST strictly preserve and begin with its exact time interval `[MM:SS - MM:SS]` (or `[HH:MM:SS - HH:MM:SS]` for recordings >= 1 hour).
    - STRICTLY FORBIDDEN to omit timestamps or produce plain script format without bracketed times.
    - Format: `[MM:SS - MM:SS] (or [HH:MM:SS - HH:MM:SS]) **Role / Name**: Spoken utterance`
@@ -461,10 +465,10 @@ def process_video_meeting_end_to_end(
 
 ## 6. Full Verbatim Transcript
 - Chronologically transcribe every dialogue turn.
-- Follow the **Contiguous Turn Consolidation** rule: each uninterrupted speech is a single turn spanning `[Start MM:SS - End MM:SS]` (or `[Start HH:MM:SS - End HH:MM:SS]` for meetings exceeding 1 hour).
+- Follow the **Paragraph-Level Turn Consolidation** rule: regroup an uninterrupted speech into semantically coherent paragraph-length turns, each with its own accurate `[Start MM:SS - End MM:SS]` (or `[Start HH:MM:SS - End HH:MM:SS]` for meetings exceeding 1 hour) spanning only that paragraph.
 - Map every speaker to their identified Role / Name based on video nameplates/titles.
 Format:
-[MM:SS - MM:SS] (or [HH:MM:SS - HH:MM:SS]) **Role / Name**: Spoken utterance (use natural paragraph breaks for long continuous speech)"""
+[MM:SS - MM:SS] (or [HH:MM:SS - HH:MM:SS]) **Role / Name**: Spoken utterance"""
 
     prompt = f"""# Role & Objective
 You are an elite, highly professional executive meeting secretary and transcription specialist.
@@ -476,11 +480,11 @@ Analyze this recorded meeting video (utilizing visual slides, on-screen speaker 
 {outline_injection}
 
 # Critical Speaker Consolidation & Transcript Rules
-1. **Contiguous Turn Consolidation**:
-   - When a participant gives an uninterrupted speech, presentation, report, or remarks, **MUST consolidate their continuous speech into a SINGLE dialogue turn**.
-   - The timestamp for that turn MUST span the entire continuous speech duration from start to finish: `[Start MM:SS - End MM:SS]` (or `[Start HH:MM:SS - End HH:MM:SS]` for recordings >= 1 hour).
-   - **STRICTLY FORBIDDEN** to slice continuous speech by the same speaker into fragmented micro-turns or slide-by-slide snippets.
-   - Within the same speaker's turn, organize lengthy content using natural paragraph breaks rather than repeating the speaker's nameplate.
+1. **Paragraph-Level Turn Consolidation**:
+   - When a participant gives an uninterrupted speech, presentation, report, or remarks, regroup it into semantically coherent paragraph-length turns (a natural unit of thought, typically a few sentences) — never one turn per raw sentence, and never one giant turn spanning the entire speech.
+   - Each paragraph-level turn MUST keep its own accurate timestamp: `[Start MM:SS - End MM:SS]` (or `[Start HH:MM:SS - End HH:MM:SS]` for recordings >= 1 hour) spanning only that paragraph. Do NOT collapse a multi-minute speech into a single timestamp range covering several unrelated paragraphs.
+   - **STRICTLY FORBIDDEN** to slice continuous speech by the same speaker into fragmented micro-turns (e.g. one turn per short sentence) or slide-by-slide snippets.
+   - Repeat the speaker's Role/Name nameplate on every paragraph-level turn line — every turn line must independently satisfy the timestamp/nameplate format below; the interactive player is responsible for the visual presentation of consecutive same-speaker turns.
 2. **Turn-Taking Transitions**:
    - Only start a new dialogue turn when the floor changes to a different participant (e.g. host introduces the next speaker, attendee asks a question, discussion transitions to another speaker).
 3. **Speaker Perspectives in Section 3**:

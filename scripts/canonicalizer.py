@@ -75,7 +75,12 @@ def parse_speaker_mapping_from_markdown(markdown_text: str) -> Dict[str, str]:
 
 def consolidate_verbatim_transcript(transcript_text: str, speaker_mapping: Dict[str, str] = None) -> str:
     """
-    Normalizes speaker names in transcript and merges consecutive turns from the same speaker.
+    Normalizes speaker names in transcript turns.
+    Each turn keeps its own original timestamp range and stays a separate line/turn;
+    turns are never merged into one another, so per-turn timing granularity (used by
+    the interactive player for click-to-seek) is never lost. Visually chaining
+    consecutive same-speaker turns together is a presentation concern handled by the
+    HTML/CSS player layer, not a data transformation here.
     """
     mapping = speaker_mapping or {}
     turn_regex = re.compile(r'^\s*\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*(?:\*\*([^*]+)\*\*[:：])?\s*(.*)', re.DOTALL)
@@ -113,41 +118,11 @@ def consolidate_verbatim_transcript(transcript_text: str, speaker_mapping: Dict[
     if not parsed_turns:
         return transcript_text
 
-    def to_sec(ts: str) -> float:
-        parts = [float(p) for p in ts.split(":")]
-        if len(parts) == 3:
-            return parts[0] * 3600 + parts[1] * 60 + parts[2]
-        return parts[0] * 60 + parts[1]
-
-    merged_turns: List[dict] = []
-    for turn in parsed_turns:
-        if not merged_turns:
-            merged_turns.append(turn)
-            continue
-
-        last = merged_turns[-1]
-        last_end_sec = to_sec(last["end"])
-        cur_start_sec = to_sec(turn["start"])
-        gap = cur_start_sec - last_end_sec
-
-        # Merge consecutive turns from the same speaker if the gap is small (<= 2.0s) and non-overlapping
-        is_same_spk = bool(last["speaker"] and last["speaker"] == turn["speaker"])
-        is_temporal_overlap = (cur_start_sec < last_end_sec)
-
-        if is_same_spk and not is_temporal_overlap and 0.0 <= gap <= 2.0:
-            last_text = last["content"]
-            needs_space = bool(last_text and last_text[-1].isalnum() and turn["content"] and turn["content"][0].isalnum())
-            sep = " " if needs_space else ""
-            last["content"] += sep + turn["content"]
-            last["end"] = turn["end"]
-        else:
-            merged_turns.append(turn)
-
     out_lines = []
     other_idx = 0
     total_others = len(other_lines)
 
-    for i, t in enumerate(merged_turns):
+    for i, t in enumerate(parsed_turns):
         while other_idx < total_others and other_lines[other_idx][0] <= i:
             out_lines.append(other_lines[other_idx][1])
             out_lines.append("")
