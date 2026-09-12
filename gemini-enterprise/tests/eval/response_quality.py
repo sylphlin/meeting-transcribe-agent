@@ -1,5 +1,6 @@
 """Local LLM-as-judge for `custom_response_quality` (see eval_config.yaml)."""
 
+import os
 import threading
 
 from google import genai
@@ -25,8 +26,10 @@ def _client() -> genai.Client:
     """
     client = getattr(_local, "client", None)
     if client is None:
-        # AI Studio (GEMINI_API_KEY) or Agent Platform (ADC).
-        client = _local.client = genai.Client()
+        # Vertex AI + Application Default Credentials only -- no AI Studio API key.
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT")
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION") or os.environ.get("GCP_REGION", "us-central1")
+        client = _local.client = genai.Client(vertexai=True, project=project, location=location)
     return client
 
 

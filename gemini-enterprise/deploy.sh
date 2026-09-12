@@ -199,13 +199,12 @@ echo "[*] Step 2: Deploying Agent to Vertex AI Agent Runtime..."
 
 DEPLOY_CMD=(agents-cli deploy -d agent_runtime --project "$PROJECT_ID" --region "$REGION")
 
-# Pass runtime environment variables to the deployed container
+# Pass runtime environment variables to the deployed container. Gemini calls
+# always use Vertex AI + the deployed agent's own service account credentials
+# -- there is no AI Studio API key to pass through.
 RUNTIME_ENV=()
 if [ -n "$BUCKET_NAME" ]; then
     RUNTIME_ENV+=("MEETING_STORAGE_BUCKET=gs://$BUCKET_NAME")
-fi
-if [ -n "${GEMINI_API_KEY:-}" ]; then
-    RUNTIME_ENV+=("GEMINI_API_KEY=$GEMINI_API_KEY")
 fi
 
 if [ ${#RUNTIME_ENV[@]} -gt 0 ]; then
