@@ -175,7 +175,7 @@ flowchart TD
         MD["📄 结构化会议纪要.md<br>(基本信息 / 摘要 / 决策 / 待办 / 逐字稿)"]:::outputStyle
         HTML["🌐 零依赖双栏交互播放器.html"]:::outputStyle
         YTDock["🎬 画中画 YouTube 浮窗<br>(精确点击跳转 & 卡拉 OK 同步)"]:::outputStyle
-        AudioPlayer["🎵 原生音频控制器<br>(波形时间戳跳转)"]:::outputStyle
+        AudioPlayer["🎵 原生音频控制器<br>(进度条时间戳跳转)"]:::outputStyle
 
         MD --> HTML
         HTML --> YTDock
