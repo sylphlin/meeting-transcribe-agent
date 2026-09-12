@@ -50,3 +50,11 @@ This document serves as the project memory and permanent operational guidelines 
   - `assets/audio_player_template.html`: 2-pane layout with bottom floating audio controller.
   - `assets/video_player_template.html`: 3-pane layout with YouTube IFrame API & native HTML5 video player.
 - **Summary-First Copy**: Default copy buttons in the player must target the Executive Meeting Summary, offering dropdown options for Full Record and Verbatim Transcript.
+
+---
+
+## 6. Commit & Attribution Policy (No AI Attribution)
+
+- **No AI/Assistant Branding**: Never include any AI assistant name (e.g., "Claude", "Gemini", "Copilot") in branch names, commit messages, PR titles/descriptions, code comments, or file contents.
+- **No Co-Authorship Trailers**: Never append `Co-Authored-By`, session links, or any other AI-attribution trailer to commit messages or PR descriptions.
+- **Human Authorship Only**: All commits must be authored as the repository owner (`sylphlin <sylph.lin@gmail.com>`), with no secondary author line.
