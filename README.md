@@ -78,7 +78,7 @@ In real-world meeting transcription, visual video feeds and pure audio streams c
 ### 1. Cloud-Native Turbo Mode (Default)
 * **Dual-Model Synergy**: Powered by **Google Gemini 3.5 Transcribe** (acoustic transcription & diarization) and **Gemini 3.8 Flash** (structured synthesis).
 * **Smart Audio Ingestion**: Probes audio bitrate automatically. Low-bitrate files pass through directly; high-bitrate audio is adaptively compressed to 16kHz mono.
-* **Dual-Track Concurrency**: Separates executive summaries and long verbatim transcription into concurrent tracks with zero thinking budget pre-warming for instant response.
+* **Dual-Track Concurrency with Unified Speaker Identity**: Resolves one authoritative speaker mapping first, then generates executive summaries and long verbatim transcription in concurrent tracks (zero thinking budget pre-warming) that both reuse the same resolved identities for instant, consistent response.
 * **Zero-Retention Privacy**: Media uploaded via Google Files API is automatically purged in `finally` blocks upon completion.
 
 ### 2. Local ASR Backup Mode (Whisper + Sherpa-ONNX)
@@ -200,7 +200,7 @@ The system categorizes processing into **Routing**, **Dual-Track Execution**, an
 2. **Single-Request End-to-End Analysis**:
    - **Default (Static Multimodal)**: Fast (~40-50s) synthesis aligning visual OCR (desk nameplates, slide text) with audio dialogue.
    - **Agentic Mode (`--agentic`)**: Dynamic multi-turn frame navigation for slide-dense or multi-hour videos.
-3. **Universal Plain-Text Formatting**: Emits 6 structured sections with canonical speaker names, contiguous turn consolidation, and timestamped verbatim turns. Headings and labels are dynamically translated into the target language with **zero emojis/icons**.
+3. **Universal Plain-Text Formatting**: Emits 6 structured sections with canonical speaker names, paragraph-level turn consolidation (each paragraph keeps its own accurate timestamp rather than being collapsed into one giant turn), and timestamped verbatim turns. Headings and labels are dynamically translated into the target language with **zero emojis/icons**.
 
 ---
 
@@ -211,7 +211,7 @@ The system categorizes processing into **Routing**, **Dual-Track Execution**, an
    - **Cloud Mode (Default)**: Calls `gemini-3.5-transcribe` for acoustic speaker separation and word-level timestamps.
    - **Local Mode (`--engine whisper`)**: Runs Whisper locally on Apple Silicon GPU or CPU with Sherpa-ONNX voiceprint clustering.
 4. **Universal Restructuring**:
-   - `gemini-3.8-flash` corrects homophones, merges contiguous speaker turns, and synthesizes executive minutes in the target language with clean, professional plain text headings.
+   - `gemini-3.8-flash` corrects homophones, regroups continuous speech into paragraph-level turns (each keeping its own accurate timestamp), and synthesizes executive minutes in the target language with clean, professional plain text headings.
 
 ---
 
