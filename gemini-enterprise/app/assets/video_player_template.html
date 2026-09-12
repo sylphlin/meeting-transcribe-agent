@@ -695,6 +695,16 @@
             color: var(--text-main);
         }
 
+        /* Visual grouping only: consecutive same-speaker turns are still separate
+           containers with their own timestamps, just rendered closer together and
+           without repeating the speaker tag on every line. */
+        .transcript-turn.turn-grouped {
+            margin-top: -6px;
+        }
+        .transcript-turn.turn-grouped .speaker-tag {
+            display: none;
+        }
+
         /* Speaker Colors */
         .spk-c1 { background: rgba(56, 189, 248, 0.18); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
         .spk-c2 { background: rgba(52, 211, 153, 0.18); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
@@ -1259,10 +1269,14 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                     break;
                 }
             }
-            // Fallback: look for Section 6 header if no timestamps found
+            // Fallback: look for Section 6 header if no timestamps found.
+            // Section 6 is always numbered with the literal digit "6" even when its
+            // heading text is translated, so detect it by that digit rather than by
+            // recognizing the word "Transcript" (or its translation) in a fixed set
+            // of languages.
             let sec6HeaderIdx = -1;
             for (let i = 0; i < lines.length; i++) {
-                if (/^\s*#+\s*(?:6[\.、\s\:]|.*(?:Transcript|逐字稿|全文|Verbatim|Protocol|Transcription|Transkript|Compte\s*rendu))/i.test(lines[i])) {
+                if (/^\s*#+\s*6[.\s、:：]/.test(lines[i])) {
                     sec6HeaderIdx = i;
                     break;
                 }
@@ -1315,6 +1329,12 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                 const frag = document.createDocumentFragment();
                 let currentCard = null;
                 let currentTextEl = null;
+                // Visual-grouping state: consecutive same-speaker turns with a small gap
+                // are rendered as visually chained cards (no repeated speaker tag), while
+                // remaining fully separate containers with their own timestamps.
+                const GROUP_GAP_SECONDS = 3;
+                let prevSpeakerKey = null;
+                let prevEndSec = null;
 
                 transcriptLines.forEach(line => {
                     const lineTrim = line.trim();
@@ -1347,9 +1367,15 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                         }
 
                         const spkClass = getSpeakerClass(speaker);
+                        const speakerKey = speaker || null;
+                        const isGrouped = !!(
+                            speakerKey && prevSpeakerKey && speakerKey === prevSpeakerKey &&
+                            startStr && prevEndSec !== null &&
+                            (sSec - prevEndSec) >= 0 && (sSec - prevEndSec) <= GROUP_GAP_SECONDS
+                        );
 
                         const card = document.createElement('div');
-                        card.className = 'transcript-turn';
+                        card.className = 'transcript-turn' + (isGrouped ? ' turn-grouped' : '');
                         if (startStr) {
                             card.dataset.start = sSec;
                             card.dataset.end = eSec;
@@ -1392,6 +1418,9 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                         frag.appendChild(card);
                         currentCard = card;
                         currentTextEl = textEl;
+
+                        prevSpeakerKey = speakerKey;
+                        if (startStr) prevEndSec = eSec;
                     } else if (/^\s*#+\s+/.test(lineTrim)) {
                         const h = document.createElement('h3');
                         h.className = 'transcript-subtitle';
@@ -1399,6 +1428,8 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                         frag.appendChild(h);
                         currentCard = null;
                         currentTextEl = null;
+                        prevSpeakerKey = null;
+                        prevEndSec = null;
                     } else if (currentTextEl) {
                         const p = document.createElement('p');
                         p.textContent = lineTrim;

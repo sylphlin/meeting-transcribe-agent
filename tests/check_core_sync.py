@@ -62,7 +62,37 @@ ASSET_PAIRS = [
 # before diffing, so the check only flags differences beyond these. Add to
 # this list only for a real, deliberate product difference - and say why -
 # never just to silence an unreviewed drift.
+# NOTE: order matters. The two block-level substitutions below must run
+# BEFORE the generic import-line substitution, since that generic rule would
+# otherwise partially rewrite the block text first and break the block match.
 KNOWN_DIVERGENCES = [
+    (
+        re.compile(
+            r"    try:\n"
+            r"        from scripts\.audio_utils import is_youtube_url, extract_youtube_id\n"
+            r"    except ModuleNotFoundError:\n"
+            r"        import sys\n"
+            r"        sys\.path\.insert\(0, str\(Path\(__file__\)\.resolve\(\)\.parent\.parent\)\)\n"
+            r"        from scripts\.audio_utils import is_youtube_url, extract_youtube_id\n"
+        ),
+        "    STANDALONE_IMPORT_FALLBACK_BLOCK\n",
+        "html_generator.py's `__main__` guard needs a different standalone-"
+        "import fallback per product: scripts/ adds the repo root to "
+        "sys.path so `python3 scripts/html_generator.py ...` works run "
+        "directly outside package context; gemini-enterprise's ADK package "
+        "instead falls back to a bare same-directory import matching how "
+        "agents-cli executes it. Bootstrapping difference only, not logic.",
+    ),
+    (
+        re.compile(
+            r"    try:\n"
+            r"        from \.audio_utils import is_youtube_url, extract_youtube_id\n"
+            r"    except \(ImportError, ModuleNotFoundError\):\n"
+            r"        from audio_utils import is_youtube_url, extract_youtube_id\n"
+        ),
+        "    STANDALONE_IMPORT_FALLBACK_BLOCK\n",
+        "See the scripts/-side entry above for why this differs.",
+    ),
     (
         re.compile(r"^(\s*)from \.(\w+) import", re.MULTILINE),
         r"\1from scripts.\2 import",
