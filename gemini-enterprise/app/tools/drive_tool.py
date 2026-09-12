@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 from google.cloud import storage
 
-from .gcs_tool import get_gcs_client
+from ..core.gcs_utils import get_gcs_client
 
 
 def extract_drive_file_id(drive_url_or_id: str) -> str:

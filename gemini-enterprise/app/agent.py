@@ -21,7 +21,7 @@ from google.adk.models import Gemini
 from google.genai import types
 
 from .tools.transcribe_tool import process_meeting_transcription
-from .tools.gcs_tool import generate_signed_download_url
+from .core.gcs_utils import generate_signed_download_url
 
 # Initialize GCP Environment for Vertex AI & GenAI SDK
 try:

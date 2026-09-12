@@ -12,7 +12,7 @@ import google.auth
 from ..core.audio_utils import is_youtube_url
 from ..core.html_generator import extract_meeting_title
 from ..core.meeting_transcribe import generate_meeting_minutes_and_transcript
-from .gcs_tool import (
+from ..core.gcs_utils import (
     upload_file_to_gcs,
     download_file_from_gcs,
     generate_signed_download_url,
@@ -103,6 +103,7 @@ def process_meeting_transcription(
     generated_md_path = generate_meeting_minutes_and_transcript(
         input_source=local_media_source,
         output_file=dest_minutes_md,
+        bucket_name=target_bucket,
         summary_language=summary_language,
         agentic=agentic,
         extract_audio=extract_audio,
