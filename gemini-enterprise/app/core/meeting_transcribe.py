@@ -2,8 +2,10 @@
 """
 scripts/meeting_transcribe.py - Main Pipeline Orchestrator for Meeting Transcribe Agent.
 Universal Cloud-Scale Intelligence (gemini-3.5-transcribe) with Offline Whisper Backup.
+Uses Vertex AI with Application Default Credentials exclusively -- no AI Studio API key.
 """
 
+import os
 import sys
 import time
 import argparse
@@ -48,7 +50,9 @@ def generate_meeting_minutes_and_transcript(
     clustering_threshold: float = 0.68,
     num_speakers: int = -1,
     embedding_type: str = "eres2net",
-    api_key: str = None,
+    project_id: str = None,
+    location: str = None,
+    bucket_name: str = None,
     transcribe_model: str = "gemini-3.5-transcribe",
     summary_model: str = "gemini-3.8-flash",
     outline: str = None,
@@ -67,11 +71,17 @@ def generate_meeting_minutes_and_transcript(
     """
     End-to-End Meeting Transcription & Intelligence Pipeline:
     - Pipeline 1 (Multimodal Video): Directly analyzes YouTube or local video via Gemini Vision with optional Agentic navigation.
-    - Pipeline 2 (Pure Audio): Gemini 3.5 Transcribe with ephemeral Files API auto-cleanup or Offline Whisper + Diarization.
+    - Pipeline 2 (Pure Audio): Gemini 3.5 Transcribe with ephemeral Cloud Storage upload cleanup or Offline Whisper + Diarization.
+
+    Media fed to Gemini (local audio/video, not YouTube URLs) is staged through the
+    bucket provisioned by terraform/ (bucket_name, or MEETING_STORAGE_BUCKET in the
+    environment) -- Vertex AI has no equivalent of the old Files API, so it reads
+    uploads via a gs:// URI instead.
     """
     source_str = str(input_source).strip()
     is_yt = is_youtube_url(source_str)
     is_vid = is_video_file(source_str) if not is_yt else False
+    resolved_bucket = (bucket_name or os.environ.get("MEETING_STORAGE_BUCKET", "")).removeprefix("gs://") or None
 
     # Dispatch to Multimodal Video Pipeline if YouTube or Video (and not forced audio extraction)
     if (is_yt or is_vid) and not extract_audio:
@@ -83,7 +93,7 @@ def generate_meeting_minutes_and_transcript(
         print(f"========================================================\n")
 
         t_total_start = time.time()
-        client = get_gemini_client(api_key=api_key)
+        client = get_gemini_client(project_id=project_id, location=location)
 
         if is_vid:
             video_p = Path(source_str).resolve()
@@ -106,6 +116,7 @@ def generate_meeting_minutes_and_transcript(
         final_markdown, video_time = process_video_meeting_end_to_end(
             client=client,
             video_source=source_str,
+            bucket_name=resolved_bucket,
             summary_model=summary_model,
             use_agentic=agentic,
             summary_language=summary_language,
@@ -171,7 +182,7 @@ def generate_meeting_minutes_and_transcript(
     if engine.lower() == "whisper":
         print(f"   [Offline Setup] Backend: {whisper_backend} | Model: {whisper_model} | Diarization: {enable_diarization}")
     else:
-        print(f"   [Cloud Setup] Model: {transcribe_model} (Zero-Persistence Files API)")
+        print(f"   [Cloud Setup] Model: {transcribe_model} (Ephemeral Cloud Storage upload, auto-cleaned)")
     print(f"========================================================\n")
 
     t_total_start = time.time()
@@ -179,7 +190,12 @@ def generate_meeting_minutes_and_transcript(
     # Step 0: Initialize Gemini Client (optional if running pure offline whisper)
     client = None
     try:
-        client = get_gemini_client(api_key=api_key)
+        client = get_gemini_client(project_id=project_id, location=location)
+        if engine.lower() == "gemini" and not resolved_bucket:
+            raise ValueError(
+                "A Cloud Storage bucket is required to feed audio to Gemini via Vertex AI. "
+                "Pass bucket_name / --bucket, or set MEETING_STORAGE_BUCKET (see terraform/)."
+            )
     except Exception as e:
         if engine.lower() == "gemini":
             raise e
@@ -194,6 +210,7 @@ def generate_meeting_minutes_and_transcript(
             global_glossary, _ = extract_global_consistency_glossary(
                 client=client,
                 audio_path=audio_path,
+                bucket_name=resolved_bucket,
                 outline_path=outline,
                 model=summary_model,
                 force=force_glossary,
@@ -224,6 +241,7 @@ def generate_meeting_minutes_and_transcript(
         raw_transcript_text, asr_time = transcribe_with_gemini_cloud(
             client=client,
             audio_path=audio_path,
+            bucket_name=resolved_bucket,
             model_name=transcribe_model,
             compress=compress,
             language=language
@@ -384,7 +402,18 @@ def main():
         default="eres2net",
         help="Sherpa-ONNX speaker embedding model architecture [default: eres2net]"
     )
-    parser.add_argument("--api-key", help="Gemini API key (default: reads GEMINI_API_KEY from environment or ~/.gemini/.env)")
+    parser.add_argument(
+        "--project",
+        help="Google Cloud project ID for Vertex AI (default: GOOGLE_CLOUD_PROJECT/GCP_PROJECT env var, or the ADC default project)"
+    )
+    parser.add_argument(
+        "--region",
+        help="Google Cloud region for Vertex AI (default: GOOGLE_CLOUD_LOCATION/GCP_REGION env var, or us-central1)"
+    )
+    parser.add_argument(
+        "--bucket",
+        help="GCS bucket name used to stage local audio/video for Gemini (default: MEETING_STORAGE_BUCKET env var; provision one with terraform/). Not needed for YouTube URLs or --engine whisper."
+    )
     parser.add_argument(
         "--transcribe-model",
         default="gemini-3.5-transcribe",
@@ -456,7 +485,9 @@ def main():
             clustering_threshold=args.clustering_threshold,
             num_speakers=args.num_speakers,
             embedding_type=args.embedding_type,
-            api_key=args.api_key,
+            project_id=args.project,
+            location=args.region,
+            bucket_name=args.bucket,
             transcribe_model=args.transcribe_model,
             summary_model=args.summary_model,
             outline=args.outline,
