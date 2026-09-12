@@ -13,9 +13,36 @@ from pathlib import Path
 
 
 def extract_meeting_title(markdown_content: str) -> str | None:
-    """Extract official meeting title from Markdown Section 1 metadata."""
+    """
+    Extract official meeting title from Markdown Section 1 metadata.
+
+    Primary strategy is structural and language-agnostic: the meeting schema always
+    numbers Section 1 with the literal digit "1" even when its heading text is
+    translated into the target meeting language, and Meeting Title is always the
+    first labeled field listed under that section. This locates the title without
+    needing to recognize the word "Title" (or its translation) in any language.
+    A keyword-based scan is kept only as a secondary fallback for non-standard output.
+    """
     if not markdown_content:
         return None
+
+    section1_header = re.search(r'^[ \t]*#+[ \t]*1[.\s、:：]', markdown_content, re.MULTILINE)
+    if section1_header:
+        rest = markdown_content[section1_header.end():]
+        next_header = re.search(r'^[ \t]*#+[ \t]', rest, re.MULTILINE)
+        section1_body = rest[:next_header.start()] if next_header else rest
+
+        bullet_match = re.search(
+            r'^[ \t]*[-*][ \t]*\*\*([^*]+)\*\*[ \t]*[:：][ \t]*([^\n\r]+)',
+            section1_body, re.MULTILINE
+        )
+        if bullet_match:
+            clean = bullet_match.group(2).strip().strip('*_`# ')
+            if clean:
+                return clean
+
+    # Secondary fallback: keyword matching for non-standard/legacy output where the
+    # structural scan above found no Section 1 header or no bullet fields under it.
     patterns = [
         r'[-*]\s*\*\*(?:會議名稱|會議主題|會議名|会議名|議題|Meeting Title|Title|Titre|Titel|Tema de la reunión)\*\*\s*[:：]\s*([^\n\r]+)',
         r'#+\s*(?:1\.\s*)?(?:會議名稱|Meeting Title|Title)\s*[:：]\s*([^\n\r]+)',
