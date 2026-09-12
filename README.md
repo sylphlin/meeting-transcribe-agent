@@ -79,7 +79,7 @@ In real-world meeting transcription, visual video feeds and pure audio streams c
 * **Dual-Model Synergy**: Powered by **Google Gemini 3.5 Transcribe** (acoustic transcription & diarization) and **Gemini 3.8 Flash** (structured synthesis).
 * **Smart Audio Ingestion**: Probes audio bitrate automatically. Low-bitrate files pass through directly; high-bitrate audio is adaptively compressed to 16kHz mono.
 * **Dual-Track Concurrency with Unified Speaker Identity**: Resolves one authoritative speaker mapping first, then generates executive summaries and long verbatim transcription in concurrent tracks (zero thinking budget pre-warming) that both reuse the same resolved identities for instant, consistent response.
-* **Zero-Retention Privacy**: Media uploaded via Google Files API is automatically purged in `finally` blocks upon completion.
+* **Zero-Retention Privacy**: Media staged via Cloud Storage (Vertex AI reads local files through a `gs://` URI) is deleted in `finally` blocks immediately after processing, with the bucket's own lifecycle rule as a backstop.
 
 ### 2. Local ASR Backup Mode (Whisper + Sherpa-ONNX)
 * **Local Acoustic Transcription**: Provides offline acoustic transcription and word-level timestamps when cloud ASR is unavailable.
@@ -196,7 +196,7 @@ The system categorizes processing into **Routing**, **Dual-Track Execution**, an
 #### Step 2A: Multimodal Video Pipeline (YouTube & Local Video)
 1. **Cloud Direct Streaming & Ingestion**:
    - **YouTube**: Streams URL directly into Gemini Multimodal API without downloading files or triggering YouTube 429 rate limits.
-   - **Local Video**: Compresses files >250MB to 720p H.264 before uploading to Google Files API (purged automatically in `finally` blocks).
+   - **Local Video**: Compresses files >250MB to 720p H.264 before uploading to Cloud Storage (deleted automatically in `finally` blocks after Gemini reads it via `gs://`).
 2. **Single-Request End-to-End Analysis**:
    - **Default (Static Multimodal)**: Fast (~40-50s) synthesis aligning visual OCR (desk nameplates, slide text) with audio dialogue.
    - **Agentic Mode (`--agentic`)**: Dynamic multi-turn frame navigation for slide-dense or multi-hour videos.
@@ -247,7 +247,7 @@ Used for audio probing and adaptive compression:
 
 **Cloud Default Mode**:
 ```bash
-pip install google-genai
+pip install google-genai google-cloud-storage
 ```
 
 **Local Offline Backup Mode (Optional)**:
@@ -259,19 +259,43 @@ pip install mlx-whisper sherpa-onnx soundfile numpy
 pip install faster-whisper sherpa-onnx soundfile numpy
 ```
 
+### 3. Google Cloud Storage Bucket (Cloud Default Mode)
+
+Gemini calls go through Vertex AI, which reads local audio/video via a `gs://` URI rather than a direct upload — so local files need a staging bucket (not needed for YouTube URLs or `--engine whisper`). Provision one with the included Terraform:
+
+```bash
+cd terraform
+terraform init
+terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
+```
+
+This also creates the ephemeral `raw/` lifecycle rule (auto-deletes uploads after ~2 days) and a dedicated service account.
+
 ---
 
 ## ⚙️ Environment Variables
 
-Configure your Gemini API key:
+Gemini calls use **Vertex AI with Application Default Credentials** — there is no AI Studio API key. Authenticate once:
+
+```bash
+gcloud auth application-default login
+```
+
+Then set your project, region, and the bucket from step 3 above:
 
 ```bash
 # macOS / Linux
-export GEMINI_API_KEY="your-gemini-api-key"
+export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
+export GOOGLE_CLOUD_LOCATION="us-central1"
+export MEETING_STORAGE_BUCKET="your-bucket-name"
 
 # Windows PowerShell
-$env:GEMINI_API_KEY="your-gemini-api-key"
+$env:GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
+$env:GOOGLE_CLOUD_LOCATION="us-central1"
+$env:MEETING_STORAGE_BUCKET="your-bucket-name"
 ```
+
+(Or copy `.env.example` to `.env` and fill it in — `--project`, `--region`, and `--bucket` CLI flags override these.)
 
 ---
 
@@ -308,7 +332,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 | Argument | Description | Default |
 | :--- | :--- | :--- |
 | `input_source` | Audio/video path (mp3, m4a, wav, mp4, mov) or YouTube URL | *(Required)* |
-| `-o, --output` | Custom markdown output path | `<filename>_會議記錄.md` |
+| `-o, --output` | Custom markdown output path | `<filename>_minutes.md` |
 | `--agentic` | Enable Agentic Video Understanding frame navigation (Video/YouTube) | `False` |
 | `--extract-audio` | Force extracting audio track to run pure audio pipeline | `False` |
 | `--engine` | Audio ASR engine: `gemini` (cloud default) or `whisper` (local backup) | `gemini` |
@@ -317,8 +341,10 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 | `--no-diarization` | Disable acoustic voiceprint diarization | `False` |
 | `--clustering-threshold` | Sherpa-ONNX clustering threshold | `0.68` |
 | `--num-speakers` | Exact speaker count (-1 for auto-detection) | `-1` |
-| `--embedding-type` | Sherpa-ONNX model (`eres2net`, `pyannote`, `cam++`) | `eres2net` |
-| `--api-key` | Explicit Gemini API Key (defaults to `GEMINI_API_KEY`) | `None` |
+| `--embedding-type` | Sherpa-ONNX model (`eres2net`, `cam++`) | `eres2net` |
+| `--project` | Google Cloud project for Vertex AI (defaults to `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT` or the ADC default project) | `None` |
+| `--region` | Google Cloud region for Vertex AI (defaults to `GOOGLE_CLOUD_LOCATION`/`GCP_REGION`) | `us-central1` |
+| `--bucket` | GCS bucket for staging local audio/video (defaults to `MEETING_STORAGE_BUCKET`) | `None` |
 | `--transcribe-model` | Cloud ASR model | `gemini-3.5-transcribe` |
 | `--summary-model` | Synthesis and vision model | `gemini-3.8-flash` |
 | `--outline` | Meeting agenda / outline file path (.txt / .md) | `None` |
