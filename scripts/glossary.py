@@ -5,9 +5,12 @@ Handles 1M Audio Pre-scan and Meeting Outline/Agenda Terminology Mining.
 
 import re
 import time
+import uuid
 from pathlib import Path
 from google import genai
+from google.genai import types
 from scripts.audio_utils import safe_ascii_upload_path
+from scripts.gcs_utils import upload_file_to_gcs, delete_gcs_blob, guess_mime_type
 
 
 def extract_keywords_from_glossary(glossary_text: str, max_keywords: int = 40) -> str:
@@ -67,6 +70,7 @@ def extract_keywords_from_glossary(glossary_text: str, max_keywords: int = 40) -
 def extract_global_consistency_glossary(
     client: genai.Client,
     audio_path: Path,
+    bucket_name: str,
     outline_path: str | None = None,
     model: str = "gemini-3.8-flash",
     force: bool = False,
@@ -125,7 +129,7 @@ Analyze this audio recording and extract an authoritative Global Consistency Glo
 """
 
     compressed_audio = None
-    uploaded_file = None
+    gcs_uri = None
     glossary_content = ""
 
     try:
@@ -133,26 +137,27 @@ Analyze this audio recording and extract an authoritative Global Consistency Glo
             compressed_audio = compress_fn(audio_path, bitrate="48k")
         else:
             compressed_audio = audio_path
-            
-        with safe_ascii_upload_path(compressed_audio) as safe_upload_path:
-            print(f"[*] Uploading lightweight audio to Gemini 1M context for entity discovery ({safe_upload_path.stat().st_size / (1024*1024):.1f} MB)...")
-            uploaded_file = client.files.upload(file=str(safe_upload_path))
-        
-        while uploaded_file.state.name == "PROCESSING":
-            time.sleep(1.5)
-            uploaded_file = client.files.get(name=uploaded_file.name)
-            
-        if uploaded_file.state.name == "FAILED":
-            raise RuntimeError(f"Audio file upload processing failed: {uploaded_file.error}")
 
+        mime_type = guess_mime_type(compressed_audio)
+        with safe_ascii_upload_path(compressed_audio) as safe_upload_path:
+            print(f"[*] Uploading lightweight audio to Cloud Storage for entity discovery ({safe_upload_path.stat().st_size / (1024*1024):.1f} MB)...")
+            blob_name = f"raw/{uuid.uuid4().hex[:12]}_{safe_upload_path.name}"
+            gcs_uri = upload_file_to_gcs(
+                local_path=safe_upload_path,
+                bucket_name=bucket_name,
+                destination_blob_name=blob_name,
+                content_type=mime_type,
+            )
+
+        file_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=mime_type)
         response = client.models.generate_content(
             model=model,
-            contents=[uploaded_file, prompt],
+            contents=[file_part, prompt],
         )
         glossary_content = response.text or ""
         duration = time.time() - t0
         print(f"[*] ✓ Global consistency glossary extracted in {duration:.1f}s ({len(glossary_content)} chars).")
-        
+
         glossary_file.write_text(glossary_content, encoding="utf-8")
         print(f"[*] 💾 Glossary cached to: {glossary_file}")
 
@@ -160,9 +165,9 @@ Analyze this audio recording and extract an authoritative Global Consistency Glo
         print(f"[!] Warning: Glossary mining encountered an issue ({e}), using default entity guide.")
         glossary_content = user_outline_text or "General meeting conversation with technical terms."
     finally:
-        if uploaded_file:
+        if gcs_uri:
             try:
-                client.files.delete(name=uploaded_file.name)
+                delete_gcs_blob(gcs_uri)
             except Exception:
                 pass
         if compressed_audio and compressed_audio != audio_path and compressed_audio.exists():
