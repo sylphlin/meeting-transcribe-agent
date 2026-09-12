@@ -175,7 +175,7 @@ flowchart TD
         MD["📄 結構化會議記錄.md<br>(基本資訊 / 摘要 / 決策 / 待辦 / 逐字稿)"]:::outputStyle
         HTML["🌐 零依賴雙欄互動播放器.html"]:::outputStyle
         YTDock["🎬 畫中畫 YouTube Dock<br>(精確點擊跳轉 & 卡拉 OK 同步)"]:::outputStyle
-        AudioPlayer["🎵 原生音訊控制器<br>(波形時間戳跳轉)"]:::outputStyle
+        AudioPlayer["🎵 原生音訊控制器<br>(進度條時間戳跳轉)"]:::outputStyle
 
         MD --> HTML
         HTML --> YTDock

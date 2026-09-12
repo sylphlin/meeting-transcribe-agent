@@ -173,7 +173,7 @@ flowchart TD
         MD["📄 構造化議事録.md<br>(基本情報 / 要約 / 決定事項 / ToDo / 逐字録)"]:::outputStyle
         HTML["🌐 単一完結インタラクティブプレイヤー.html"]:::outputStyle
         YTDock["🎬 YouTube PiP ウィンドウ<br>(正確なシーク＆カラオケ同期)"]:::outputStyle
-        AudioPlayer["🎵 ネイティブ音声プレイヤー<br>(波形・タイムスタンプジャンプ)"]:::outputStyle
+        AudioPlayer["🎵 ネイティブ音声プレイヤー<br>(プログレスバー・タイムスタンプジャンプ)"]:::outputStyle
 
         MD --> HTML
         HTML --> YTDock

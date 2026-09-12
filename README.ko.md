@@ -173,7 +173,7 @@ flowchart TD
         MD["📄 구조화 회의록.md<br>(기본 정보 / 요약 / 결정사항 / ToDo / 전사본)"]:::outputStyle
         HTML["🌐 독립형 대화형 플레이어.html"]:::outputStyle
         YTDock["🎬 PIP 지원 YouTube 도크<br>(정확한 클릭 이동 & 노래방 싱크)"]:::outputStyle
-        AudioPlayer["🎵 네이티브 오디오 플레이어<br>(파형 타임스탬프 이동)"]:::outputStyle
+        AudioPlayer["🎵 네이티브 오디오 플레이어<br>(진행 바 타임스탬프 이동)"]:::outputStyle
 
         MD --> HTML
         HTML --> YTDock

@@ -225,7 +225,7 @@ The system categorizes processing into **Routing**, **Dual-Track Execution**, an
    - *(Note: YouTube security policies require an HTTP/HTTPS referer; use `--serve` or `python3 -m http.server 8000` when streaming YouTube videos).*
 3. **Dedicated Audio Player (`<Meeting Title>_player.html`)**:
    - **2-Pane Workspace**: Left executive summary, right synchronized verbatim transcript.
-   - **Bottom Audio Controller**: Fixed floating player with keyboard shortcuts, volume slider, playback rate, and waveform seeking.
+   - **Bottom Audio Controller**: Fixed floating player with keyboard shortcuts, volume slider, playback rate, and progress-bar seeking.
    - **100% Offline Ready**: Fully functional when opened directly via local file protocol (`file:///...`) without any HTTP server.
 
 ### Generated Deliverables:
