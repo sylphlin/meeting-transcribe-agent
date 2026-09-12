@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""
+tests/check_core_sync.py - Drift guard between the Antigravity CLI's shared core
+(`scripts/`, `assets/`) and its duplicated copy inside the Gemini Enterprise agent
+package (`gemini-enterprise/app/core/`, `gemini-enterprise/app/assets/`).
+
+Why this exists: the Gemini Enterprise agent is deployed via `agents-cli`, whose
+Docker build context is scoped to `gemini-enterprise/` (see
+`gemini-enterprise/agents-cli-manifest.yaml` and `gemini-enterprise/Dockerfile`).
+That build cannot see anything outside that directory, so the shared logic cannot
+be symlinked in from `scripts/` / `assets/` - it has to exist as real, committed
+files inside `gemini-enterprise/`. Since both copies are hand-edited and a change
+can legitimately start on either side, this script does not try to auto-generate
+or auto-fix either copy. It just fails loudly, with a readable diff, whenever the
+two sides drift apart, whichever side changed.
+
+Usage:
+    python3 tests/check_core_sync.py
+
+Run this after editing anything under scripts/, assets/, gemini-enterprise/app/core/,
+or gemini-enterprise/app/assets/, and reconcile any reported diff:
+  - If the change is a genuine bug fix or behavior improvement, port it to the
+    other side too.
+  - If the two products genuinely need to diverge here on purpose, add a short,
+    justified entry to KNOWN_DIVERGENCES below instead of leaving the check red.
+"""
+
+import difflib
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = ROOT / "scripts"
+ASSETS_DIR = ROOT / "assets"
+ENTERPRISE_CORE = ROOT / "gemini-enterprise" / "app" / "core"
+ENTERPRISE_ASSETS = ROOT / "gemini-enterprise" / "app" / "assets"
+
+# Shared Python modules expected to exist as a near-identical pair.
+PYTHON_PAIRS = [
+    "__init__.py",
+    "audio_utils.py",
+    "canonicalizer.py",
+    "diarization.py",
+    "gemini_engine.py",
+    "glossary.py",
+    "html_generator.py",
+    "meeting_transcribe.py",
+]
+
+# Shared asset files expected to exist as a near-identical pair.
+# Each entry is (path relative to assets/, path relative to gemini-enterprise/app/assets/).
+ASSET_PAIRS = [
+    ("prompts/audio_glossary_prompt.md", "prompts/audio_glossary_prompt.md"),
+    ("prompts/minutes_prompt.md", "prompts/minutes_prompt.md"),
+    ("audio_player_template.html", "audio_player_template.html"),
+    ("video_player_template.html", "video_player_template.html"),
+]
+
+# Known, justified, mechanical differences between the two copies. Each entry
+# is a (pattern, replacement, reason) triple applied to BOTH sides' text
+# before diffing, so the check only flags differences beyond these. Add to
+# this list only for a real, deliberate product difference - and say why -
+# never just to silence an unreviewed drift.
+KNOWN_DIVERGENCES = [
+    (
+        re.compile(r"^(\s*)from \.(\w+) import", re.MULTILINE),
+        r"\1from scripts.\2 import",
+        "gemini-enterprise/app/core is an installable package using relative "
+        "imports; scripts/ is imported as an absolute package rooted at the "
+        "repo. Packaging necessity, not a behavior difference.",
+    ),
+]
+
+
+def _normalize(text: str) -> str:
+    for pattern, replacement, _reason in KNOWN_DIVERGENCES:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def _diff(a_path: Path, b_path: Path) -> str:
+    a_text = _normalize(a_path.read_text(encoding="utf-8"))
+    b_text = _normalize(b_path.read_text(encoding="utf-8"))
+    if a_text == b_text:
+        return ""
+    return "".join(difflib.unified_diff(
+        a_text.splitlines(keepends=True),
+        b_text.splitlines(keepends=True),
+        fromfile=str(a_path.relative_to(ROOT)),
+        tofile=str(b_path.relative_to(ROOT)),
+    ))
+
+
+def main() -> int:
+    failures = []
+
+    for filename in PYTHON_PAIRS:
+        a = SCRIPTS_DIR / filename
+        b = ENTERPRISE_CORE / filename
+        if not a.exists() or not b.exists():
+            failures.append(f"{a.relative_to(ROOT)} or {b.relative_to(ROOT)} is missing.")
+            continue
+        diff = _diff(a, b)
+        if diff:
+            failures.append(diff)
+
+    for rel_a, rel_b in ASSET_PAIRS:
+        a = ASSETS_DIR / rel_a
+        b = ENTERPRISE_ASSETS / rel_b
+        if not a.exists() or not b.exists():
+            failures.append(f"{a.relative_to(ROOT)} or {b.relative_to(ROOT)} is missing.")
+            continue
+        diff = _diff(a, b)
+        if diff:
+            failures.append(diff)
+
+    if failures:
+        print("[FAIL] scripts/assets and gemini-enterprise have drifted apart:\n")
+        print("\n".join(failures))
+        print(
+            "\nDecide which side is correct and port the change to the other, "
+            "or if this is a genuine intentional difference, document it in "
+            "KNOWN_DIVERGENCES / the normalizer in tests/check_core_sync.py."
+        )
+        return 1
+
+    print("[OK] scripts/assets and gemini-enterprise core are in sync.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
