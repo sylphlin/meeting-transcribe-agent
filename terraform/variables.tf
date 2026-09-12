@@ -21,14 +21,20 @@ variable "cors_max_age_seconds" {
   default     = 86400
 }
 
-variable "video_retention_days" {
+variable "raw_retention_days" {
   type        = number
-  description = "Number of days before raw video files in raw/videos/ are automatically purged"
+  description = "Number of days before raw media in raw/ (uploaded to feed Gemini, mirroring the old Files API's ephemeral upload) is automatically purged"
+  default     = 2
+}
+
+variable "output_retention_days" {
+  type        = number
+  description = "Number of days before generated deliverables in minutes/ and players/ are automatically purged"
   default     = 14
 }
 
-variable "audio_retention_days" {
-  type        = number
-  description = "Number of days before raw audio files in raw/audios/ are automatically purged"
-  default     = 30
+variable "bucket_editors" {
+  type        = list(string)
+  description = "Additional IAM members granted object-admin (create/read/delete) access on the bucket, in `user:`/`serviceAccount:`/`group:` form. The dedicated agent service account is always included; add your own identity here for local/personal use (e.g. \"user:you@example.com\") if your project role doesn't already cover it."
+  default     = []
 }
