@@ -227,13 +227,59 @@ Strictly adhere to the spelling, names, titles, organizations, and technical ter
     verbatim_lang_instruction = (
         "Faithfully preserve original spoken dialogue and language of each speaker without translation."
     )
+
+    def _call_gemini_track(prompt_content: str, label: str) -> str:
+        gen_kwargs = {"model": summary_model, "contents": prompt_content}
+        if hasattr(types, "ThinkingConfig"):
+            try:
+                gen_kwargs["config"] = types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_budget=0)
+                )
+            except Exception:
+                pass
+        print(f"[*] [Dual-Track Stage 2] Launching {label} with `{summary_model}` (thinking_budget=0)...")
+        resp = client.models.generate_content(**gen_kwargs)
+        return resp.text or ""
+
+    # Track A0: Resolve one authoritative Speaker Mapping Table before Sections 1-5 (Track A)
+    # and Section 6 (Track B) diverge into independent concurrent calls. Without this, each
+    # track may independently guess different names/roles for the same spk_X identifier.
+    speaker_table_block = ""
+    if prompt_template_path is None:
+        speaker_id_prompt = f"""# Role & Objective
+You are a speaker identification specialist. Read the draft transcript below and resolve every distinct speaker identifier (`spk_X`, `spk-X`, or `Speaker X`) to its most likely real name or role, using dialogue context (self-introductions, direct address, reporting hierarchies) and the glossary.
+
+{glossary_injection}
+
+---
+# Draft Transcript
+{raw_transcript_text}
+
+---
+# Output Format
+Output ONLY a markdown table with this exact structure, no other text or explanation:
+| Speaker ID | Role / Title | Name | Organization / Team |
+| :--- | :--- | :--- | :--- |
+"""
+        try:
+            speaker_table_block = _call_gemini_track(speaker_id_prompt, "Track A0 (Speaker Identity Resolution)").strip()
+        except Exception as e:
+            print(f"[!] Warning: Speaker identity pre-resolution failed ({e}); Tracks A and B will resolve speaker identities independently.")
+            speaker_table_block = ""
+
+    speaker_table_instruction = (
+        f"Use EXACTLY the following pre-determined Speaker Mapping Table (authoritative — do not alter names, roles, or add/remove rows):\n{speaker_table_block}"
+        if speaker_table_block else
+        "Cross-reference dialogue context and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role:"
+    )
+
     s1_s5_schema = f"""## 1. Meeting Metadata & Attendees
 - **Meeting Title**: Inferred or established title
 - **Audio Source**: `{audio_path.name}`
 - **Estimated Date / Time**: Inferred from context or agenda
 - **Chairperson / Host**: Identified meeting leader
 - **Speaker Mapping Table**:
-  Cross-reference dialogue context and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role:
+  {speaker_table_instruction}
   | Speaker ID | Role / Title | Name | Organization / Team |
   | :--- | :--- | :--- | :--- |
   | `spk_0, spk_1` | [Role/Title] | [Name or Inferred Name] | [Department / Org] |
@@ -256,19 +302,6 @@ Strictly adhere to the spelling, names, titles, organizations, and technical ter
   | # | Action Item / Task | Owner / Assignee | Due Date / Timeline | Status / Notes |
   | :--- | :--- | :--- | :--- | :--- |
   | 1 | [Clear, actionable task description] | [Name / Role] | [Timeline] | [Notes] |"""
-
-    def _call_gemini_track(prompt_content: str, label: str) -> str:
-        gen_kwargs = {"model": summary_model, "contents": prompt_content}
-        if hasattr(types, "ThinkingConfig"):
-            try:
-                gen_kwargs["config"] = types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(thinking_budget=0)
-                )
-            except Exception:
-                pass
-        print(f"[*] [Dual-Track Stage 2] Launching {label} with `{summary_model}` (thinking_budget=0)...")
-        resp = client.models.generate_content(**gen_kwargs)
-        return resp.text or ""
 
     if prompt_template_path is not None:
         template_text = Path(prompt_template_path).read_text(encoding="utf-8")
@@ -303,6 +336,14 @@ Output strictly and exclusively Sections 1 to 5 (DO NOT include any emojis or ic
 IMPORTANT: Stop immediately after Section 5. Do NOT output Section 6.
 """
 
+    verbatim_speaker_instruction = (
+        "Use EXACTLY the following pre-determined Speaker Mapping Table to substitute each speaker ID "
+        "with its Role/Name (do not invent alternate identities or spellings):\n" + speaker_table_block
+        if speaker_table_block else
+        "Map every speaker ID (`spk_X`, `spk-X`, or `Speaker X`) to their identified Role / Name based on "
+        "dialogue context (e.g. Chair, Host, Presenter, Department Head, or identified Name)."
+    )
+
     prompt_b = f"""# Role & Objective
 You are an elite verbatim meeting transcription editor. Your mission is to transform the draft transcript into Section 6 (Full Verbatim Transcript), localized appropriately into {target_lang}.
 
@@ -314,7 +355,7 @@ You are an elite verbatim meeting transcription editor. Your mission is to trans
 
 ---
 # Instructions
-1. Map every speaker ID (`spk_X`, `spk-X`, or `Speaker X`) to their identified Role / Name based on dialogue context (e.g. Chair, Host, Presenter, Department Head, or identified Name).
+1. {verbatim_speaker_instruction}
 2. Faithfully preserve all spoken dialogue turns, words, numbers, and chronological order without dropping or truncating sentences.
 3. {verbatim_lang_instruction}
 4. **Mandatory Timestamp Syntax Contract**:
