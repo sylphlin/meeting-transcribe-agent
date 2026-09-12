@@ -18,16 +18,28 @@ __pycache__/
 # Local test directory (audio files, benchmark transcripts)
 test/
 
-# Audio and media files
+# Audio and media files (mirrors AUDIO_EXTENSIONS / VIDEO_EXTENSIONS in scripts/audio_utils.py)
 *.mp3
 *.wav
 *.m4a
 *.aac
 *.flac
 *.ogg
+*.opus
+*.wma
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.webm
+*.flv
+*.wmv
+*.m4v
 
 # Generated outputs from ad-hoc runs (preserve repository clean state)
 *_會議記錄.md
+*_minutes.md
+*_transcript.md
 *_player.html
 *_glossary.md
 
