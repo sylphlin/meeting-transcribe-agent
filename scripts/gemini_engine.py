@@ -4,12 +4,14 @@ Handles Stage 1 Cloud ASR, Stage 2 Minutes Generation, Cloud Storage upload stag
 Uses Vertex AI with Application Default Credentials exclusively -- no AI Studio API key.
 """
 
+import json
 import os
 import time
 import uuid
 from pathlib import Path
 import concurrent.futures
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from scripts.audio_utils import (
@@ -95,6 +97,35 @@ def _parse_offset_to_seconds(val) -> float:
     return float(s) if s else 0.0
 
 
+def _extract_transcription_parts(parts, lines: list, raw_parts: list) -> bool:
+    """
+    Extract audio_transcription (diarized turn) or plain text parts from a Gemini
+    response's content parts, appending into `lines`/`raw_parts` in place. Shared by
+    both the streaming and non-streaming code paths so they format output identically.
+    Returns True if any audio_transcription part was found.
+    """
+    has_at = False
+    for part in parts:
+        if getattr(part, "audio_transcription", None):
+            has_at = True
+            at = part.audio_transcription
+            spk_raw = at.speaker_label or "spk:0"
+            spk_clean = spk_raw.replace(":", "_")
+            start_str = "00:00"
+            end_str = "00:00"
+            if at.words:
+                s_sec = _parse_offset_to_seconds(at.words[0].start_offset)
+                e_sec = _parse_offset_to_seconds(at.words[-1].end_offset)
+                start_str = format_offset(s_sec)
+                end_str = format_offset(e_sec)
+            text = (at.text or "").strip()
+            if text:
+                lines.append(f"[{start_str} - {end_str}] **{spk_clean}**: {text}")
+        elif part.text:
+            raw_parts.append(part.text)
+    return has_at
+
+
 def transcribe_with_gemini_cloud(
     client: genai.Client,
     audio_path: Path,
@@ -143,46 +174,42 @@ def transcribe_with_gemini_cloud(
             if language and language.lower() != "auto":
                 at_kwargs["language_codes"] = [language]
 
-            config = types.GenerateContentConfig(
-                audio_transcription_config=types.AudioTranscriptionConfig(**at_kwargs)
-            )
-            stream = client.models.generate_content_stream(
-                model=model_name,
-                contents=[file_part],
-                config=config
-            )
+            request_kwargs = {
+                "model": model_name,
+                "contents": [file_part],
+                "config": types.GenerateContentConfig(
+                    audio_transcription_config=types.AudioTranscriptionConfig(**at_kwargs)
+                ),
+            }
         else:
             prompt = (
                 "Transcribe this audio recording completely and accurately. "
                 "Include precise turn timestamps in [MM:SS - MM:SS] format for every utterance. "
                 "Faithfully preserve the original spoken language and words."
             )
-            stream = client.models.generate_content_stream(
-                model=model_name,
-                contents=[file_part, prompt],
-            )
+            request_kwargs = {"model": model_name, "contents": [file_part, prompt]}
 
-        for chunk in stream:
-            if not chunk.candidates or not chunk.candidates[0].content or not chunk.candidates[0].content.parts:
-                continue
-            for part in chunk.candidates[0].content.parts:
-                if getattr(part, "audio_transcription", None):
+        try:
+            stream = client.models.generate_content_stream(**request_kwargs)
+            for chunk in stream:
+                if not chunk.candidates or not chunk.candidates[0].content or not chunk.candidates[0].content.parts:
+                    continue
+                if _extract_transcription_parts(chunk.candidates[0].content.parts, lines, raw_parts):
                     has_at = True
-                    at = part.audio_transcription
-                    spk_raw = at.speaker_label or "spk:0"
-                    spk_clean = spk_raw.replace(":", "_")
-                    start_str = "00:00"
-                    end_str = "00:00"
-                    if at.words:
-                        s_sec = _parse_offset_to_seconds(at.words[0].start_offset)
-                        e_sec = _parse_offset_to_seconds(at.words[-1].end_offset)
-                        start_str = format_offset(s_sec)
-                        end_str = format_offset(e_sec)
-                    text = (at.text or "").strip()
-                    if text:
-                        lines.append(f"[{start_str} - {end_str}] **{spk_clean}**: {text}")
-                elif part.text:
-                    raw_parts.append(part.text)
+        except (genai_errors.UnknownApiResponseError, json.JSONDecodeError) as stream_err:
+            # The SDK's streaming (SSE) response parser can mis-split multi-byte UTF-8
+            # text (e.g. CJK transcripts) across chunk boundaries, corrupting the JSON
+            # payload mid-stream. A non-streaming call buffers the complete response
+            # before doing a single JSON parse, so it doesn't hit that code path.
+            print(f"[!] Streaming transcription failed ({stream_err}); retrying without streaming...")
+            lines = []
+            raw_parts = []
+            has_at = False
+            resp = client.models.generate_content(**request_kwargs)
+            if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
+                has_at = _extract_transcription_parts(resp.candidates[0].content.parts, lines, raw_parts)
+            elif resp.text:
+                raw_parts.append(resp.text)
 
         if has_at:
             raw_text = "\n\n".join(lines)
