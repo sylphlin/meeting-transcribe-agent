@@ -79,8 +79,7 @@ def get_gemini_client(project_id: str = None, location: str = None) -> genai.Cli
     region = (
         location
         or os.environ.get('GOOGLE_CLOUD_LOCATION')
-        or os.environ.get('GCP_REGION')
-        or 'us-central1'
+        or 'global'
     )
     return genai.Client(vertexai=True, project=project, location=region)
 

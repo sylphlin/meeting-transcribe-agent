@@ -7,25 +7,25 @@
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
-## 📖 プロジェクト概要 (Overview)
+## プロジェクト概要 (Overview)
 
 **Meeting Transcribe Agent** は、**Gemini 3.5 Transcribe** および **Gemini Agentic Video Understanding** を基盤に構築された、次世代の映像・音声会議録生成 AI エージェントです。「マルチモーダル動画処理（YouTube URL / ローカル動画）」と「高精度音声2層構造パイプライン」を兼ね備え、自治体の市政会議、多国籍チームの技術定例会、インタビューや法務証言録取など、「ミリ秒単位の正確なタイムスタンプ」「高精度な話者分離」「構造化された議事録作成」が求められる専門的な現場向けに設計されています。
 
 ### メディアに応じたインテリジェントな2系統パイプライン：
 
-1. **🎥 マルチモーダル動画パイプライン (YouTube リンク / ローカル動画ファイル)**：
+1. **マルチモーダル動画パイプライン (YouTube リンク / ローカル動画ファイル)**：
    - **単一リクエストによる圧倒的な処理効率**：**Gemini 3.8 Flash** によるエンドツーエンドの視覚・音声マルチモーダル分析。プレゼン資料（Slide OCR）、席札、ニュースのテロップ字幕を同時に読み取り、発言者の氏名・役職を100%の精度で特定。処理時間とトークン消費を50%削減（32分の動画を約44秒で処理）。
    - **Agentic Video Understanding (`--agentic`)**：動的なマルチターンフレーム探索とツール呼び出しにより、数時間に及ぶ長編動画や複雑な図表スライドを徹底的に分析。
    - **ピクチャー・イン・ピクチャー対応 YouTube プレイヤー**：生成される単一 HTML プレイヤーに YouTube IFrame コントローラーを内蔵。文字起こしテキストの秒数クリックによるシークとカラオケ風リアルタイムハイライトに対応。
 
-2. **🎙️ 高精度音声パイプライン (ボイスレコーダー / ポッドキャスト / 音声ファイル)**：
+2. **高精度音声パイプライン (ボイスレコーダー / ポッドキャスト / 音声ファイル)**：
    - **下層：音響文字起こし (Gemini 3.5 Transcribe)**：ミリ秒単位の「単語レベルタイムスタンプ (Word Timestamps)」と物理音響に基づく「話者ダイアライゼーション (Diarization)」を担当し、発言の聞き漏らしやスキップを完全に防止。
    - **上層：文脈的構造化 (Gemini 3.8 Flash)**：文脈理解による同音異義語・専門用語の補正、話者名の正規化、自然な言語表現への洗練を行い、決定事項やToDoリストを自動抽出。
    - **ローカルオフライン備え**：Apple Silicon GPU (MLX) / faster-whisper と Sherpa-ONNX 音響声紋クラスタリングによるローカル実行をサポート。
 
 ---
 
-### 💡 なぜ「動画（YouTube / ローカル動画）」と「純粋な音声」を分離するのか？
+### なぜ「動画（YouTube / ローカル動画）」と「純粋な音声」を分離するのか？
 
 会議の文字起こしにおいて、「映像がある状態」と「音声のみ」では情報密度に根本的な違いが存在します：
 
@@ -38,7 +38,7 @@
 
 ---
 
-### 📊 トークン消費量の目安（実測に基づく経験値）
+### トークン消費量の目安（実測に基づく経験値）
 
 > [!NOTE]
 > 実際のトークン消費量は、発言密度、画面の動き、スライドの細かさによって変動します。以下の倍率は、長編会議の実測に基づく参考値（経験則）です：
@@ -55,15 +55,15 @@
 
 ---
 
-## 🎯 主な機能と活用シーン
+## 主な機能と活用シーン
 
 ### コア機能
-- 📺 **YouTube リンク＆動画ファイルの直接サポート**：URL または動画パスを指定するだけで、構造化議事録と再生プレイヤーを一括生成。
-- 👁️ **視覚的なネームプレート＆スライド OCR 認識**：テロップ字幕やスライドから、登壇者の本名や公職名を自動特定。
-- 🎙️ **高精度な話者分離と発言タイムスタンプ**：発言者ごとの発言区間と名前を正確に整理。
-- ✍️ **文脈理解と自然な文章表現**：LLM の前後関係把握により、専門用語や同音異義語を自動補正し、自然な文章に整形。
-- 📋 **エグゼクティブ向け構造化議事録**：基本情報、エグゼクティブサマリー、重要決定事項、議題別分析、アクションアイテム（ToDo）を網羅。
-- 🌐 **外部依存ゼロのインタラクティブ HTML プレイヤー**：クリックで該当秒数へジャンプ、話者ごとの色分け、リアルタイム検索、多言語UI切り替えに対応した単一 HTML ファイルを出力。
+- **YouTube リンク＆動画ファイルの直接サポート**：URL または動画パスを指定するだけで、構造化議事録と再生プレイヤーを一括生成。
+- **視覚的なネームプレート＆スライド OCR 認識**：テロップ字幕やスライドから、登壇者の本名や公職名を自動特定。
+- **高精度な話者分離と発言タイムスタンプ**：発言者ごとの発言区間と名前を正確に整理。
+- **文脈理解と自然な文章表現**：LLM の前後関係把握により、専門用語や同音異義語を自動補正し、自然な文章に整形。
+- **エグゼクティブ向け構造化議事録**：基本情報、エグゼクティブサマリー、重要決定事項、議題別分析、アクションアイテム（ToDo）を網羅。
+- **外部依存ゼロのインタラクティブ HTML プレイヤー**：クリックで該当秒数へジャンプ、話者ごとの色分け、リアルタイム検索、多言語UI切り替えに対応した単一 HTML ファイルを出力。
 
 ### 活用シーン
 1. **自治体・官公庁の公開会議**：YouTube ライブ配信の市政会議などをダウンロード不要で直接読み込み、役職者の名札を認識して議事録化。
@@ -73,7 +73,7 @@
 
 ---
 
-## 🚀 デュアルエンジン設計 (Dual-Engine Architecture)
+## デュアルエンジン設計 (Dual-Engine Architecture)
 
 ### 1. クラウド高速モード（デフォルト）
 * **2段階モデル連携**：**Google Gemini 3.5 Transcribe**（音響認識・話者分離）＋ **Gemini 3.8 Flash**（構造化・議事録作成）。
@@ -89,36 +89,36 @@
 
 ---
 
-## 🤖 エージェント対話プロンプト集 (Prompt Guide)
+## エージェント対話プロンプト集 (Prompt Guide)
 
 本プロジェクトは **AI Agent Skill** としての利用を前提としています。複雑なコマンドを手動入力する必要はなく、エージェントへ自然言語で指示するだけで自動実行されます：
 
 ### よく使われるプロンプト例：
 
-1. **📺 YouTube 動画の会議書き起こし（名札・スライドの視覚認識）**：
+1. **YouTube 動画の会議書き起こし（名札・スライドの視覚認識）**：
    > 「YouTube の市政会議 `https://www.youtube.com/watch?v=VIDEO_ID` を文字起こしして、画面のネームプレートやスライドを参考に構造化議事録とプレイヤーを作成してください。」
 
-2. **🤖 YouTube 長編会議の深層探索（Agentic Video Understanding）**：
+2. **YouTube 長編会議の深層探索（Agentic Video Understanding）**：
    > 「この 3 時間の YouTube カンファレンス `https://www.youtube.com/watch?v=...` について、Agentic Video モードを使って重要なスライドを探索し、各スピーカーの結論をまとめてください。」
 
-3. **🎥 ローカル動画ファイルの処理（スライド内容の抽出）**：
+3. **ローカル動画ファイルの処理（スライド内容の抽出）**：
    > 「会議動画 `tech_summit.mp4` を文字起こししてください。スライド画面も確認して、専門用語と話者名を正しく反映してください。」
 
-4. **⚡ 動画から音声を抽出して高速処理（トークン節約）**：
+4. **動画から音声を抽出して高速処理（トークン節約）**：
    > 「この動画 `interview.mp4` は定点カメラなので、音声を抽出して純粋音声モードで処理し、トークンを節約して要約を作成してください。」
 
-5. **🎙️ 標準的な音声会議の文字起こし（クラウド高速処理）**：
+5. **標準的な音声会議の文字起こし（クラウド高速処理）**：
    > 「会議録音 `meeting.mp3` を文字起こしして、重要要約、決定事項、逐字録プレイヤーを生成してください。」
 
-6. **📑 アジェンダ／次第の事前読み込み（推奨：名前・専門用語の精度向上）**：
+6. **アジェンダ／次第の事前読み込み（推奨：名前・専門用語の精度向上）**：
    > 「技術会議の録音 `backend_sync.m4a` と次第 `agenda.md` です。参加者の役職や専門用語を照合しながら文字起こししてください。」
 
-7. **🌐 議事録出力言語の指定（多国籍チーム向け）**：
+7. **議事録出力言語の指定（多国籍チーム向け）**：
    > 「Please transcribe `executive_call.mp3`. Keep the verbatim transcript in original languages, but generate the executive summary and action items in Japanese.」
 
 ---
 
-## 🏗️ 処理パイプライン概要 (Pipeline Architecture)
+## 処理パイプライン概要 (Pipeline Architecture)
 
 ```mermaid
 flowchart TD
@@ -186,11 +186,11 @@ flowchart TD
     Restructure -. 音声を読み込み .-> AudioPlayer
 ```
 
-### 🔄 パイプラインの詳細ステップ
+### パイプラインの詳細ステップ (Pipeline Steps Explained)
 
 #### ステップ 1：入力メディアの自動判定 (Smart Router)
-- **YouTube URL** または **動画ファイル**（`.mp4`, `.mov`, `.mkv`）：**🎥 動画パイプライン**へ自動ルーティング。
-- **音声ファイル**（`.mp3`, `.m4a`, `.wav` 等）または `--extract-audio` 指定時：**🎙️ 音声パイプライン**へルーティング。
+- **YouTube URL** または **動画ファイル**（`.mp4`, `.mov`, `.mkv`）：**動画パイプライン**へ自動ルーティング。
+- **音声ファイル**（`.mp3`, `.m4a`, `.wav` 等）または `--extract-audio` 指定時：**音声パイプライン**へルーティング。
 
 #### ステップ 2A：動画マルチモーダル処理 (YouTube & ローカル動画)
 1. **クラウド直接解析 / 最適化**：
@@ -212,70 +212,146 @@ flowchart TD
 
 ---
 
-## 📦 インストールと環境構築
+## インストールとデプロイガイド (Installation & Deployment)
 
-### 1. システム依存関係 (FFmpeg)
-音声変換および動画圧縮に使用：
-- **macOS**: `brew install ffmpeg`
-- **Ubuntu/Debian**: `sudo apt update && sudo apt install ffmpeg`
-- **Windows**: `winget install Gyan.FFmpeg`
+Meeting Transcribe Agent は、2つの異なる実行・インストール形態をサポートしています：
 
-### 2. Python パッケージのインストール
+| 実行プラットフォーム | インストール・デプロイ方式 | 必須環境変数設定 | 主な操作インターフェース |
+| :--- | :--- | :--- | :--- |
+| **Google Antigravity** | AI Agent Skill として作業スペースにインストール | プロジェクト直下 `.env` 設定ファイル | Antigravity IDE / CLI 対話ウィンドウ（自然言語指示 `SKILL.md`） |
+| **Gemini Enterprise** | `deploy.sh` 経由で Vertex AI Agent Runtime へデプロイ | `deploy.sh` 引数または `gemini-enterprise/.env` | Gemini Enterprise 企業ポータル、Vertex AI Agent Engine、A2A プロトコル |
 
-**クラウド通常モード**：
-```bash
-pip install google-genai google-cloud-storage
-```
+---
 
-**ローカルオフライン備えモード（任意）**：
-```bash
-# Apple Silicon (M1/M2/M3/M4) GPU
-pip install mlx-whisper sherpa-onnx soundfile numpy
+### 前提条件 (Common Prerequisites)
 
-# Linux / Windows / Intel Mac
-pip install faster-whisper sherpa-onnx soundfile numpy
-```
+1. **FFmpeg**（音声・動画のメタデータ解析および最適圧縮）：
+   - **macOS**: `brew install ffmpeg`
+   - **Ubuntu/Debian**: `sudo apt update && sudo apt install ffmpeg`
+   - **Windows**: `winget install Gyan.FFmpeg`
 
-### 3. GCS ステージング Bucket の作成（クラウド通常モード）
+2. **Google Cloud 認証 (ADC)**：
+   Gemini API は Vertex AI および Application Default Credentials (ADC) を使用します：
+   ```bash
+   gcloud auth application-default login
+   ```
 
-Gemini 呼び出しは Vertex AI + Application Default Credentials（ADC）を使用します。AI Studio の API キーは不要です。まず ADC でログインします：
+3. **Cloud Storage 一時バケット (GCS Bucket)**（ローカル音声・動画ファイル用。YouTube URL は直接解析のため不要）：
+   ```bash
+   cd terraform
+   terraform init
+   terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
+   cd ..
+   ```
+   *（Terraform により `raw/` プレフィックスの自動ライフサイクルルールが構成され、アップロードから 2 日後に自動削除されます）。*
 
-```bash
-gcloud auth application-default login
-```
+---
 
-次に、ローカルの音声・動画ファイルを Gemini に渡すための一時ステージング用 GCS bucket を作成します（`raw/` は 2 日後に自動削除されます）：
+### 方法 1：Google Antigravity (AI Agent Skill インストール)
 
-```bash
-cd terraform
-terraform init
-terraform apply -var="project_id=your-gcp-project-id"
+AI Agent のローカルスキルとして Antigravity に導入し、IDE や CLI から自然言語で会議録を生成します：
+
+1. **Skill を Antigravity にインストール**：
+   - **グローバルスキル (Global Skill)**（すべての作業スペースで利用可能、推奨）：
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/skills/meeting-transcribe-agent
+     ```
+   - **ワークスペース専用スキル (Workspace Skill)**（現在の作業スペースのみ）：
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
+     ```
+
+2. **Python 依存パッケージのインストール**：
+   ```bash
+   pip install google-genai google-cloud-storage
+   ```
+   *（オフライン Whisper バックアップ利用時は `pip install mlx-whisper sherpa-onnx` または `pip install faster-whisper sherpa-onnx`）。*
+
+3. **環境変数の設定 (`.env`)**：
+   `.env.example` を `.env` にコピーし、モデル location を `global`、クラウドリソース region を `us-central1` に指定します：
+   ```bash
+   cp .env.example .env
+   ```
+   `.env` 設定例：
+   ```bash
+   GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+   GOOGLE_CLOUD_LOCATION=global
+   GCP_REGION=us-central1
+   MEETING_STORAGE_BUCKET=your-bucket-name
+   ```
+
+4. **Antigravity での利用**：
+   Antigravity が `SKILL.md` を自動検出します。チャット欄で自然言語で依頼するだけで完了します：
+   > 「役員定例会の録音 `meeting.mp3` を文字起こしして、重要要約、決定事項、逐字録プレイヤーを生成してください。」
+
+---
+
+### 方法 2：Gemini Enterprise (クラウドマネージド Agent デプロイ)
+
+Google ADK 2.0 および `agents-cli` を使用し、Vertex AI Agent Runtime（Agent Engine / Reasoning Engine）へ企業向けマネージドサービスとしてデプロイします：
+
+1. **デプロイ CLI ツールの導入 (`uv` および `google-agents-cli`)**：
+   ```bash
+   uv tool install google-agents-cli
+   ```
+
+2. **`deploy.sh` による自動ワンクリックデプロイ**：
+   内蔵のデプロイスクリプトが前提環境の検証、Terraform バケット作成、`agents-cli deploy` を全自動で処理します：
+   ```bash
+   cd gemini-enterprise
+   chmod +x deploy.sh
+
+   # 自動デプロイ（Terraform バケット自動作成含む）：
+   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1 --apply-terraform
+
+   # または対話モードで実行：
+   ./deploy.sh
+   ```
+
+3. **エンタープライズ統合と成果物共有**：
+   - **Web インターフェース**：Gemini Enterprise ポータルのエージェント一覧から選択して即座に利用可能。
+   - **Agent Engine**：Vertex AI Reasoning Engine API または Agent-to-Agent (A2A) プロトコル経由で他のエージェントと連携可能。
+   - **成果物の安全共有**：生成された Markdown 議事録と HTML プレイヤーは GCS に自動保存され、**24 時間有効な署名付き URL (Signed URLs)** が返却されます。ログイン不要で即座にブラウザで確認できます。
+
+---
+
+## プロジェクトディレクトリ構造
+
+```text
+meeting-transcribe-agent/
+├── SKILL.md                          # Agent Skill 運用マニュアル・引数定義
+├── README.md                         # 英語版プロジェクト概要・技術仕様
+├── README.ja.md                      # 日本語版プロジェクトドキュメント
+├── LICENSE                           # MIT ライセンス
+├── .gitignore                        # テストメディア・ローカルキャッシュの除外
+├── .env.example                      # Antigravity Skill 用環境変数サンプル
+├── meeting_transcribe.py             # ルート CLI エントリポイント
+├── scripts/                          # コアモジュール
+│   ├── __init__.py
+│   ├── meeting_transcribe.py         # パイプライン制御スクリプト
+│   ├── audio_utils.py                # 音声ビットレート検出・FFmpeg 前処理
+│   ├── gemini_engine.py              # Gemini 3.5 Transcribe 認識 & 3.8 Flash 再構成
+│   ├── diarization.py                # ローカル話者分離 (Sherpa-ONNX)
+│   ├── glossary.py                   # 専門用語・人名マイニング
+│   ├── canonicalizer.py              # 話者名の正規化・名寄せ
+│   └── html_generator.py             # 独立 HTML プレイヤー生成
+├── assets/                           # テンプレートおよびプロンプト
+│   ├── audio_player_template.html    # 音声用 2 ペインプレイヤーテンプレート
+│   ├── video_player_template.html    # 動画用 3 ペインプレイヤーテンプレート
+│   └── prompts/                      # プロンプトテンプレート群
+├── terraform/                        # GCS バケット・ライフサイクル設定
+└── gemini-enterprise/                # Gemini Enterprise (ADK 2.0 / Vertex AI) デプロイ一式
+    ├── deploy.sh                     # 自動デプロイスクリプト
+    ├── agents-cli-manifest.yaml      # agents-cli デプロイ定義
+    └── app/                          # エンタープライズエージェント実装
 ```
 
 ---
 
-## ⚙️ 環境変数の設定
+## 発展：開発者向けコマンドライン実行 (Developer & Headless CLI)
 
-```bash
-# macOS / Linux
-export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
-export GOOGLE_CLOUD_LOCATION="us-central1"
-export MEETING_STORAGE_BUCKET="your-bucket-name"
-
-# Windows PowerShell
-$env:GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
-$env:GOOGLE_CLOUD_LOCATION="us-central1"
-$env:MEETING_STORAGE_BUCKET="your-bucket-name"
-```
-
-`MEETING_STORAGE_BUCKET` はローカルの音声・動画ファイルを Gemini に渡す場合にのみ必要です（YouTube URL や `--engine whisper` の場合は不要）。
-
----
-
-## 💻 コマンドライン実行ガイド
-
-> [!NOTE]
-> AI Agent Skill として使用する場合、手動でコマンドを実行する必要はありません。チャットでエージェントに依頼するだけで完了します！
+> [!TIP]
+> **一般ユーザーの方へ**：AI Agent（Antigravity 等）経由で利用する場合、**手動でコマンドを入力する必要はありません**。エージェントが対話内容に応じて `SKILL.md` を参照し最適なパラメータを自動構成します。
 
 ### 基本的な実行（YouTube 動画）
 ```bash
@@ -309,9 +385,12 @@ python3 meeting_transcribe.py "meeting_record.mp3" --engine whisper --whisper-ba
 | `--no-diarization` | 話者分離を無効化 | `False` |
 | `--clustering-threshold` | Sherpa-ONNX クラスタリング閾値 | `0.68` |
 | `--num-speakers` | 参加人数（既知の場合指定、-1 は自動検出） | `-1` |
-| `--project` | Vertex AI 用 Google Cloud プロジェクト ID | `GOOGLE_CLOUD_PROJECT` 環境変数 |
-| `--region` | Vertex AI 用 Google Cloud リージョン | `GOOGLE_CLOUD_LOCATION` 環境変数、または `us-central1` |
+| `--embedding-type` | Sherpa-ONNX 声紋抽出モデル (`eres2net`, `cam++`) | `eres2net` |
+| `--project` | Vertex AI 用 Google Cloud プロジェクト ID | `None` (ADC/環境変数) |
+| `--region` | Vertex AI 用 Google Cloud リージョン | `global` |
 | `--bucket` | ローカル音声/動画のステージング用 GCS bucket 名 | `MEETING_STORAGE_BUCKET` 環境変数 |
+| `--transcribe-model` | クラウド音声認識モデル | `gemini-3.5-transcribe` |
+| `--summary-model` | 構造化議事録・視覚理解モデル | `gemini-3.8-flash` |
 | `--outline` | 会議通知・次第ファイルパス (.txt / .md) | `None` |
 | `--no-player` | インタラクティブ HTML プレイヤーの出力を無効化 | `False` |
 | `--summary-language` | 議事録の出力言語指定 (`auto`, `ja`, `en`, `zh-TW` 等) | `None` (auto) |
@@ -319,6 +398,6 @@ python3 meeting_transcribe.py "meeting_record.mp3" --engine whisper --whisper-ba
 
 ---
 
-## 📄 ライセンス
+## ライセンス (License)
 
 本プロジェクトは [MIT License](LICENSE) のもとで公開されています。

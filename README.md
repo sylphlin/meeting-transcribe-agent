@@ -7,25 +7,25 @@
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
-## 📖 Overview
+## Overview
 
 **Meeting Transcribe Agent** is an end-to-end multimedia meeting minutes generation agent built upon **Gemini 3.5 Transcribe** and **Gemini Agentic Video Understanding**, featuring native **Multimodal Video Processing (YouTube URLs & local video files)** and a **High-Precision Pure Audio Dual-Layer Pipeline**. Designed for municipal executive meetings, cross-border technical standups, and legal depositions requiring exact second-level timestamp precision, canonical speaker diarization, and structured executive minutes.
 
 ### Intelligent Bifurcated Pipelines:
 
-1. **🎥 Multimodal Video Pipeline (YouTube URLs / Local Video Files)**:
+1. **Multimodal Video Pipeline (YouTube URLs / Local Video Files)**:
    - **Single-Request Maximum Efficiency**: Direct end-to-end multimodal analysis powered by **Gemini 3.8 Flash**. Reads slide OCR, speaker desktop nameplates, and TV lower-third captions simultaneously to map speaker names with 100% accuracy, cutting 50% token overhead and latency (~44s for a 32-minute meeting).
    - **Agentic Video Understanding (`--agentic`)**: Dynamic multi-turn frame navigation and tool calling for deep visual exploration across multi-hour videos and intricate technical slides.
    - **Picture-in-Picture YouTube Dock Player**: Standalone zero-dependency HTML player with bidirectional synchronization, seeking, and real-time karaoke scrolling.
 
-2. **🎙️ Pure Audio High-Precision Pipeline (Voice Recorders / Podcasts / Audio Files)**:
+2. **Pure Audio High-Precision Pipeline (Voice Recorders / Podcasts / Audio Files)**:
    - **Acoustic Transcription (Gemini 3.5 Transcribe)**: Millisecond word-level timestamps and physical acoustic diarization, ensuring every spoken word is physically anchored.
    - **Semantic Restructuring (Gemini 3.8 Flash)**: Contextual homophone correction, speaker role convergence, and natural multilingual fluency, structuring executive summaries and action items.
    - **Local Offline Backup**: Apple Silicon GPU (MLX) / faster-whisper paired with Sherpa-ONNX acoustic speaker embeddings.
 
 ---
 
-### 💡 Why Bifurcate "Video (YouTube / Local Files)" and "Pure Audio"?
+### Why Bifurcate "Video (YouTube / Local Files)" and "Pure Audio"?
 
 In real-world meeting transcription, visual video feeds and pure audio streams carry fundamentally different information densities:
 
@@ -38,7 +38,7 @@ In real-world meeting transcription, visual video feeds and pure audio streams c
 
 ---
 
-### 📊 Token Consumption Estimates (Empirical Benchmarks)
+### Token Consumption Estimates (Empirical Benchmarks)
 
 > [!NOTE]
 > Actual token consumption varies based on speech density, visual movement, and slide detail. The multipliers below reflect empirical benchmarks from long-form executive meetings for architectural reference:
@@ -55,15 +55,15 @@ In real-world meeting transcription, visual video feeds and pure audio streams c
 
 ---
 
-## 🎯 Core Capabilities & Use Cases
+## Core Capabilities & Use Cases
 
 ### Key Features
-- 📺 **Direct YouTube URL & Video File Support**: Paste YouTube URLs or local video paths for one-click markdown minutes and interactive playback.
-- 👁️ **Visual Nameplate & Slide OCR Recognition**: Automatically derives real participant names and official titles from screen lower thirds, desk nameplates, and slides.
-- 🎙️ **Precise Speaker Diarization & Verbatim Transcription**: Distinctly maps each participant's speech interval and name.
-- ✍️ **Contextual Understanding & Natural Fluency**: Corrects homophone errors and terminology via LLM context awareness, producing naturally flowing text in the target language.
-- 📋 **Executive-Grade Structured Minutes**: Automatically generates meeting metadata, executive summaries, decision matrices, topic analyses, and actionable task tables.
-- 🌐 **Zero-Dependency Interactive HTML Player**: Generates a self-contained HTML file supporting click-to-seek playback, speaker color highlights, full-text instant search, and multilingual UI switching.
+- **Direct YouTube URL & Video File Support**: Paste YouTube URLs or local video paths for one-click markdown minutes and interactive playback.
+- **Visual Nameplate & Slide OCR Recognition**: Automatically derives real participant names and official titles from screen lower thirds, desk nameplates, and slides.
+- **Precise Speaker Diarization & Verbatim Transcription**: Distinctly maps each participant's speech interval and name.
+- **Contextual Understanding & Natural Fluency**: Corrects homophone errors and terminology via LLM context awareness, producing naturally flowing text in the target language.
+- **Executive-Grade Structured Minutes**: Automatically generates meeting metadata, executive summaries, decision matrices, topic analyses, and actionable task tables.
+- **Zero-Dependency Interactive HTML Player**: Generates a self-contained HTML file supporting click-to-seek playback, speaker color highlights, full-text instant search, and multilingual UI switching.
 
 ### Ideal Scenarios
 1. **Government & Public Municipal Meetings**: Process livestreamed council meetings directly from YouTube, auto-detecting officials' names without downloading files.
@@ -73,7 +73,7 @@ In real-world meeting transcription, visual video feeds and pure audio streams c
 
 ---
 
-## 🚀 Dual-Engine Architecture
+## Dual-Engine Architecture
 
 ### 1. Cloud-Native Turbo Mode (Default)
 * **Dual-Model Synergy**: Powered by **Google Gemini 3.5 Transcribe** (acoustic transcription & diarization) and **Gemini 3.8 Flash** (structured synthesis).
@@ -89,36 +89,36 @@ In real-world meeting transcription, visual video feeds and pure audio streams c
 
 ---
 
-## 🤖 Agent Dialogue & Prompt Guide
+## Agent Dialogue & Prompt Guide
 
 This project is primarily designed as an **AI Agent Skill**. You do not need to memorize CLI parameters—simply instruct your Agent in natural language:
 
 ### Recommended Prompts:
 
-1. **📺 YouTube Video Transcription (Visual Nameplate & Slide OCR)**:
+1. **YouTube Video Transcription (Visual Nameplate & Slide OCR)**:
    > "Please transcribe this municipal meeting on YouTube `https://www.youtube.com/watch?v=VIDEO_ID`, using the visual desk nameplates and slides to generate structured minutes and an interactive player."
 
-2. **🤖 YouTube Deep Dive (Agentic Video Understanding)**:
+2. **YouTube Deep Dive (Agentic Video Understanding)**:
    > "This 3-hour YouTube symposium `https://www.youtube.com/watch?v=...` has complex slides. Please use Agentic Video mode to navigate key frames and summarize architecture diagrams and discussion outcomes."
 
-3. **🎥 Local Video File Processing (Extract Slide Text)**:
+3. **Local Video File Processing (Extract Slide Text)**:
    > "Transcribe this conference recording `tech_summit.mp4`. Review the presentation slides on screen to verify speaker names and architecture terms."
 
-4. **⚡ Video Audio Extraction (Maximum Token Economy)**:
+4. **Video Audio Extraction (Maximum Token Economy)**:
    > "This recording `interview.mp4` has a static camera. Please extract the audio track directly and run the pure audio pipeline for maximum token economy."
 
-5. **🎙️ Standard Pure Audio Transcription**:
+5. **Standard Pure Audio Transcription**:
    > "Please transcribe this meeting audio `meeting.mp3`, and provide an executive summary, action items, and an interactive transcript player."
 
-6. **📑 Ingesting Meeting Agendas / Outlines (Recommended for Exact Names)**:
+6. **Ingesting Meeting Agendas / Outlines (Recommended for Exact Names)**:
    > "Here is today's technical meeting audio `backend_sync.m4a` along with the agenda `agenda.md`. Please transcribe it and cross-reference participant titles and technical terms."
 
-7. **🌐 Specifying Summary Language (Multilingual Teams)**:
+7. **Specifying Summary Language (Multilingual Teams)**:
    > "Please transcribe `executive_call.mp3`. Keep the verbatim transcript in original languages, but generate the executive summary and action items in English."
 
 ---
 
-## 🏗️ Pipeline Architecture
+## Pipeline Architecture
 
 ```mermaid
 flowchart TD
@@ -182,7 +182,7 @@ flowchart TD
     Restructure --> APlayer
 ```
 
-### 🔄 Pipeline Steps Explained
+### Pipeline Steps Explained
 
 The system categorizes processing into **Routing**, **Dual-Track Execution**, and **Delivery**:
 
@@ -235,74 +235,113 @@ The system categorizes processing into **Routing**, **Dual-Track Execution**, an
 
 ---
 
-## 📦 Installation & Setup
+## Installation & Deployment
 
-### 1. System Dependency (FFmpeg)
-Used for audio probing and adaptive compression:
-- **macOS**: `brew install ffmpeg`
-- **Ubuntu/Debian**: `sudo apt update && sudo apt install ffmpeg`
-- **Windows**: `winget install Gyan.FFmpeg`
+Meeting Transcribe Agent supports two primary operational workflows:
 
-### 2. Python Packages
-
-**Cloud Default Mode**:
-```bash
-pip install google-genai google-cloud-storage
-```
-
-**Local Offline Backup Mode (Optional)**:
-```bash
-# Apple Silicon (M1/M2/M3/M4) GPU Acceleration
-pip install mlx-whisper sherpa-onnx soundfile numpy
-
-# Linux / Windows / Intel Mac
-pip install faster-whisper sherpa-onnx soundfile numpy
-```
-
-### 3. Google Cloud Storage Bucket (Cloud Default Mode)
-
-Gemini calls go through Vertex AI, which reads local audio/video via a `gs://` URI rather than a direct upload — so local files need a staging bucket (not needed for YouTube URLs or `--engine whisper`). Provision one with the included Terraform:
-
-```bash
-cd terraform
-terraform init
-terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
-```
-
-This also creates the ephemeral `raw/` lifecycle rule (auto-deletes uploads after ~2 days) and a dedicated service account.
+| Platform | Setup Method | Configuration | Primary Interface |
+| :--- | :--- | :--- | :--- |
+| **Google Antigravity** | Installed as an AI Agent Skill | Root `.env` file | Natural language conversation in Antigravity IDE / CLI |
+| **Gemini Enterprise** | Deployed via `deploy.sh` to Vertex AI Agent Runtime | `deploy.sh` parameters or `gemini-enterprise/.env` | Gemini Enterprise Web UI, Vertex AI Agent Engine, A2A |
 
 ---
 
-## ⚙️ Environment Variables
+### Common System Prerequisites
 
-Gemini calls use **Vertex AI with Application Default Credentials** — there is no AI Studio API key. Authenticate once:
+1. **FFmpeg** (Required for audio probing, duration analysis, and adaptive compression):
+   - **macOS**: `brew install ffmpeg`
+   - **Ubuntu/Debian**: `sudo apt update && sudo apt install ffmpeg`
+   - **Windows**: `winget install Gyan.FFmpeg`
 
-```bash
-gcloud auth application-default login
-```
+2. **Google Cloud Authentication**:
+   Gemini API calls strictly use Vertex AI with Application Default Credentials (ADC):
+   ```bash
+   gcloud auth application-default login
+   ```
 
-Then set your project, region, and the bucket from step 3 above:
-
-```bash
-# macOS / Linux
-export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
-export GOOGLE_CLOUD_LOCATION="us-central1"
-export MEETING_STORAGE_BUCKET="your-bucket-name"
-
-# Windows PowerShell
-$env:GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
-$env:GOOGLE_CLOUD_LOCATION="us-central1"
-$env:MEETING_STORAGE_BUCKET="your-bucket-name"
-```
-
-(Or copy `.env.example` to `.env` and fill it in — `--project`, `--region`, and `--bucket` CLI flags override these.)
+3. **Cloud Storage Staging Bucket** (Required for local audio/video file processing; YouTube URLs stream directly):
+   ```bash
+   cd terraform
+   terraform init
+   terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
+   cd ..
+   ```
+   *(This also establishes an automated lifecycle rule that purges ephemeral `raw/` uploads after 2 days).*
 
 ---
 
-## 💻 Command-Line Usage
+### Option 1: Google Antigravity (AI Agent Skill Setup)
+
+Install directly into Google Antigravity as an Agent Skill for conversational meeting transcription in your IDE or CLI:
+
+1. **Install Skill into Antigravity**:
+   - **Global Skill** (available across all projects and workspaces):
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/skills/meeting-transcribe-agent
+     ```
+   - **Workspace Skill** (scoped to current workspace):
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
+     ```
+
+2. **Install Python Dependencies**:
+   ```bash
+   pip install google-genai google-cloud-storage
+   ```
+   *(Optional offline Whisper backup: `pip install mlx-whisper sherpa-onnx` on Apple Silicon, or `pip install faster-whisper sherpa-onnx` on Linux/Windows).*
+
+3. **Configure Environment Variables (`.env`)**:
+   Copy `.env.example` to `.env` in the skill root. Specify the Vertex AI model endpoint as `global` and cloud infrastructure resources as `us-central1`:
+   ```bash
+   cp .env.example .env
+   ```
+   Example `.env`:
+   ```bash
+   GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+   GOOGLE_CLOUD_LOCATION=global
+   GCP_REGION=us-central1
+   MEETING_STORAGE_BUCKET=your-bucket-name
+   ```
+
+4. **Usage in Antigravity**:
+   Antigravity automatically discovers and loads `SKILL.md`. Simply instruct the agent in the chat:
+   > "Please transcribe this meeting recording `meeting.mp3` and generate executive minutes and the interactive player."
+
+---
+
+### Option 2: Gemini Enterprise (Cloud Agent Deployment)
+
+Deploy as an enterprise managed service on Google Cloud Vertex AI Agent Runtime (Agent Engine / Reasoning Engine) powered by Google ADK 2.0 and `agents-cli`:
+
+1. **Install Deployment Tooling (`uv` and `google-agents-cli`)**:
+   ```bash
+   uv tool install google-agents-cli
+   ```
+
+2. **Deploy Using `deploy.sh`**:
+   The automated deployment script handles prerequisite validation, optional Terraform storage provisioning, and `agents-cli deploy`:
+   ```bash
+   cd gemini-enterprise
+   chmod +x deploy.sh
+
+   # Automated deployment with Terraform storage provisioning:
+   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1 --apply-terraform
+
+   # Or run interactively (prompts for project and settings):
+   ./deploy.sh
+   ```
+
+3. **Enterprise Capabilities & Delivery**:
+   - **Web Interface**: Discoverable directly within Gemini Enterprise under registered Agent extensions.
+   - **Cloud Agent Engine**: Accessible via standard Vertex AI Reasoning Engine SDK endpoints and Agent-to-Agent (A2A) protocol.
+   - **Cloud Deliverables**: Executive minutes (`.md`) and interactive HTML playback players (`.html`) are uploaded to GCS and returned with **24-hour signed URLs** for instant browser review.
+
+---
+
+## Command-Line Usage (Standalone CLI)
 
 > [!NOTE]
-> When used inside Antigravity as an AI Agent Skill, you do not need to run commands manually—simply instruct the agent in the chat!
+> When used inside Antigravity as an AI Agent Skill or via Gemini Enterprise, you do not need to run commands manually—simply instruct the agent in the chat!
 
 ### Basic Execution (YouTube Video)
 ```bash
@@ -343,7 +382,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 | `--num-speakers` | Exact speaker count (-1 for auto-detection) | `-1` |
 | `--embedding-type` | Sherpa-ONNX model (`eres2net`, `cam++`) | `eres2net` |
 | `--project` | Google Cloud project for Vertex AI (defaults to `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT` or the ADC default project) | `None` |
-| `--region` | Google Cloud region for Vertex AI (defaults to `GOOGLE_CLOUD_LOCATION`/`GCP_REGION`) | `us-central1` |
+| `--region` | Google Cloud region for Vertex AI (defaults to `GOOGLE_CLOUD_LOCATION` or `global`) | `global` |
 | `--bucket` | GCS bucket for staging local audio/video (defaults to `MEETING_STORAGE_BUCKET`) | `None` |
 | `--transcribe-model` | Cloud ASR model | `gemini-3.5-transcribe` |
 | `--summary-model` | Synthesis and vision model | `gemini-3.8-flash` |
@@ -359,6 +398,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).
+

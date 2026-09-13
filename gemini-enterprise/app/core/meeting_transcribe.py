@@ -408,7 +408,7 @@ def main():
     )
     parser.add_argument(
         "--region",
-        help="Google Cloud region for Vertex AI (default: GOOGLE_CLOUD_LOCATION/GCP_REGION env var, or us-central1)"
+        help="Google Cloud region for Vertex AI (default: GOOGLE_CLOUD_LOCATION env var, or global)"
     )
     parser.add_argument(
         "--bucket",

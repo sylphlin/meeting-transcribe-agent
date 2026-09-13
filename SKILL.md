@@ -146,7 +146,7 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 | `--num-speakers` | Exact number of speakers if known, otherwise -1 for auto-detect | `-1` |
 | `--embedding-type` | Sherpa-ONNX embedding architecture (`eres2net`, `cam++`) | `eres2net` |
 | `--project` | Google Cloud project ID for Vertex AI | `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT` env var, or ADC default project |
-| `--region` | Google Cloud region for Vertex AI | `GOOGLE_CLOUD_LOCATION`/`GCP_REGION` env var, or `us-central1` |
+| `--region` | Google Cloud region for Vertex AI | `GOOGLE_CLOUD_LOCATION` env var, or `global` |
 | `--bucket` | GCS bucket used to stage local audio/video for Gemini | `MEETING_STORAGE_BUCKET` env var |
 | `--transcribe-model` | Gemini cloud speech transcription model | `gemini-3.5-transcribe` |
 | `--summary-model` | Gemini executive summary and vision model | `gemini-3.8-flash` |

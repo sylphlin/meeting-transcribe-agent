@@ -695,14 +695,10 @@
             color: var(--text-main);
         }
 
-        /* Visual grouping only: consecutive same-speaker turns are still separate
-           containers with their own timestamps, just rendered closer together and
-           without repeating the speaker tag on every line. */
+        /* Visual grouping: consecutive same-speaker turns are rendered slightly closer together,
+           while retaining full speaker badge and timestamp metadata on every chunk. */
         .transcript-turn.turn-grouped {
-            margin-top: -6px;
-        }
-        .transcript-turn.turn-grouped .speaker-tag {
-            display: none;
+            margin-top: -4px;
         }
 
         /* Speaker Colors */

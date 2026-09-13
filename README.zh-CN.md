@@ -7,25 +7,25 @@
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
-## 📖 项目概述 (Overview)
+## 项目概述 (Overview)
 
 **Meeting Transcribe Agent** 是一套基于 **Gemini 3.5 Transcribe** 与 **Gemini Agentic Video Understanding** 打造的全方位音视频会议记录生成 Agent，具备“多模态视频处理（YouTube / 本地视频）”与“纯音频高精度双层架构”。专为政务市政主管会议、跨国技术周会以及访谈法务存证等高度要求“时间戳绝对精准”、“发言人切分”与“结构化决策记录”的专业场景打造。
 
 ### 依据媒介分流的双轨智能流水线：
 
-1. **🎥 多模态视频管线 (YouTube 链接 / 本地视频文件)**：
+1. **多模态视频管线 (YouTube 链接 / 本地视频文件)**：
    - **单次 Request 极致效能**：直接由 **Gemini 3.8 Flash** 进行视觉多模态端到端分析，同步阅读演示幻灯片（Slide OCR）与现场领导桌牌／电视字幕，精确对应讲者姓名职务，节省 50% Token 消耗与等待时间（32 分钟视频仅需 ~44 秒）。
    - **Agentic Video Understanding (`--agentic`)**：支持动态多轮视频帧导航与工具调用，针对长达数小时的长视频或复杂图表进行深层视觉探索。
    - **画中画 YouTube 浮动播放器**：生成的独立 HTML 播放器内置 YouTube IFrame 控制器，支持即时点击时间轴跳转视频与卡拉 OK 歌词式精准同步。
 
-2. **🎙️ 纯音频高精度管线 (录音笔 / 播客 / 语音音频)**：
+2. **纯音频高精度管线 (录音笔 / 播客 / 语音音频)**：
    - **底层声学转录 (Gemini 3.5 Transcribe)**：专职毫秒级“词级时间戳 (Word Timestamps)”与物理声学“发言人分离 (Diarization)”，确保每一句话皆有真实声波物理锚定，绝不跳漏。
    - **上层语义重构 (Gemini 3.8 Flash)**：前后文脉络理解、同音专有名词校正、发言人身份收敛与自然语意流畅化，提炼决策摘要与待办追踪。
    - **本地离线备用**：支持本地 Apple Silicon GPU (MLX) / faster-whisper 搭配 Sherpa-ONNX 声纹切分。
 
 ---
 
-### 💡 为什么将“视频（YouTube / 本地视频）”与“纯音频”分流处理？
+### 为什么将“视频（YouTube / 本地视频）”与“纯音频”分流处理？
 
 在会议转录的真实场景中，“有画面”与“纯声音”所承载的信息密度具有根本性差异：
 
@@ -38,7 +38,7 @@
 
 ---
 
-### 📊 运行模式与 Token 消耗量估算（经验分享）
+### 运行模式与 Token 消耗量估算（经验分享）
 
 > [!NOTE]
 > 实际 Token 消耗会因会议发言密度、画面变动幅度与演示细节而异。以下倍率为内部实测长篇会议之估算经验分享，非绝对标准，供架构选型时参考：
@@ -55,15 +55,15 @@
 
 ---
 
-## 🎯 核心功能与适用场景
+## 核心功能与适用场景
 
 ### 核心亮点
-- 📺 **直接支持 YouTube 链接与视频文件**：粘贴 YouTube 网址或视频路径即可一键输出完整会议记录与交互播放器。
-- 👁️ **视觉名牌与幻灯片辅助识别**：利用视频画面上的字卡、背板、演示标题，全自动推导真实人名与职务。
-- 🎙️ **高精度发言人区分与逐字转录**：清楚标记每位与会者的发言起止与真实姓名职务。
-- ✍️ **前后文理解与语意流畅化**：超越死板字典转换，通过 LLM 前后文理解自动校正同音错字（如专有名词、头衔），并使转录内容符合自然语意表达。
-- 📋 **高管级结构化会议纪要**：自动提取会议基本信息、执行摘要、重大决策事项表、讨论议题分析与具体待办追踪清单（Action Items）。
-- 🌐 **零外部依赖交互式 HTML 播放器**：生成单文件轻量 HTML，支持点击字句即时跳转音频或视频、发言人色彩标记、关键字即时搜索与多语言界面切换。
+- **直接支持 YouTube 链接与视频文件**：粘贴 YouTube 网址或视频路径即可一键输出完整会议记录与交互播放器。
+- **视觉名牌与幻灯片辅助识别**：利用视频画面上的字卡、背板、演示标题，全自动推导真实人名与职务。
+- **高精度发言人区分与逐字转录**：清楚标记每位与会者的发言起止与真实姓名职务。
+- **前后文理解与语意流畅化**：超越死板字典转换，通过 LLM 前后文理解自动校正同音错字（如专有名词、头衔），并使转录内容符合自然语意表达。
+- **高管级结构化会议纪要**：自动提取会议基本信息、执行摘要、重大决策事项表、讨论议题分析与具体待办追踪清单（Action Items）。
+- **零外部依赖交互式 HTML 播放器**：生成单文件轻量 HTML，支持点击字句即时跳转音频或视频、发言人色彩标记、关键字即时搜索与多语言界面切换。
 
 ### 适用场景
 1. **市政与政务公开会议**：许多公开会议直接在 YouTube 直播，系统可直接输入链接自动识别市长、各部门领导名牌字幕，免下载免抽音轨。
@@ -73,7 +73,7 @@
 
 ---
 
-## 🚀 双引擎架构 (Dual-Engine Architecture)
+## 双引擎架构 (Dual-Engine Architecture)
 
 ### 1. 全云端极速模式（默认核心）
 * **双模型架构**：采用 **Google Gemini 3.5 Transcribe**（多模态语音识别与声学切分）搭配 **Gemini 3.8 Flash**（结构化会议重构与摘要）。
@@ -91,36 +91,36 @@
 
 ---
 
-## 🤖 Agent 对话使用指南 (推荐情境与 Prompt 范例)
+## Agent 对话使用指南 (推荐情境与 Prompt 范例)
 
 本项目主要作为 **AI Agent Skill** 使用。您**不需要**手动输入复杂的命令行参数，只需在对话框中向 Agent 提出需求：
 
 ### 常用情境与对话范例：
 
-1. **📺 YouTube 视频会议转录（极速视觉识别名牌与演示幻灯片）**：
+1. **YouTube 视频会议转录（极速视觉识别名牌与演示幻灯片）**：
    > “请帮我转录这场 YouTube 上的市政会议 `https://www.youtube.com/watch?v=VIDEO_ID`，利用画面上的领导名牌和幻灯片生成完整会议记录与交互播放器。”
 
-2. **🤖 YouTube 长篇会议深度探索（启用 Agentic Video Understanding）**：
+2. **YouTube 长篇会议深度探索（启用 Agentic Video Understanding）**：
    > “这部 YouTube 研讨会长达 3 小时 `https://www.youtube.com/watch?v=...`，请使用 Agentic Video 模式帮我做深度视频帧导航，重点提炼各讲者的架构图和讨论结论。”
 
-3. **🎥 本地视频文件转录（同步提取幻灯片内容）**：
+3. **本地视频文件转录（同步提取幻灯片内容）**：
    > “请转录这份会议视频 `tech_summit.mp4`，请一并参考演示文稿画面，校对讲者姓名与架构术语。”
 
-4. **⚡ 视频强制抽音轨（追求极致节省 Token）**：
+4. **视频强制抽音轨（追求极致节省 Token）**：
    > “这份视频文件 `interview.mp4` 画面只是固定镜头，请直接帮我抽取音轨跑纯音频流程，以最省 Token 的方式生成摘要。”
 
-5. **🎙️ 标准纯音频会议转录（全自动云端极速处理）**：
+5. **标准纯音频会议转录（全自动云端极速处理）**：
    > “请帮我转录这场会议录音 `meeting.mp3`，整理出重点摘要、决策事项与逐字稿播放器。”
 
-6. **📑 搭配会议大纲／通知文件（强烈推荐：人名与术语最精准）**：
+6. **搭配会议大纲／通知文件（强烈推荐：人名与术语最精准）**：
    > “这是今天技术会议的录音 `backend_sync.m4a`，旁边附有会议通知 `agenda.md`。请帮我转录并校对人名职务与专有名词。”
 
-7. **🌐 指定会议摘要语言（如跨国团队需英文记录）**：
+7. **指定会议摘要语言（如跨国团队需英文记录）**：
    > “Please transcribe `executive_call.mp3`. Keep the verbatim transcript in original languages, but generate the executive summary and action items in English.”
 
 ---
 
-## 🏗️ 核心处理流水线 (Pipeline Architecture)
+## 核心处理流水线 (Pipeline Architecture)
 
 ```mermaid
 flowchart TD
@@ -188,13 +188,13 @@ flowchart TD
     Restructure -. 载入音频 .-> AudioPlayer
 ```
 
-### 🔄 处理管线详细步骤说明 (Pipeline Steps Explained)
+### 处理管线详细步骤说明 (Pipeline Steps Explained)
 
 系统在接收到输入后，依据媒体属性分为 **“分流决策”**、**“双轨处理”** 与 **“成果发布”** 三大阶段：
 
 #### 步骤 1：输入媒体检测与智能分流 (Smart Router)
-- **YouTube 网址**（包含 `youtube.com/watch`, `youtu.be/`, Shorts 与 Live 录像）或 **本地视频**（`.mp4`, `.mov`, `.mkv`, `.webm`）：自动分流至 **🎥 视频多模态管线**。
-- **纯语音文件**（`.mp3`, `.m4a`, `.wav`, `.aac`, `.flac`）或加入 `--extract-audio` 标志者：自动分流至 **🎙️ 纯音频双层管线**。
+- **YouTube 网址**（包含 `youtube.com/watch`, `youtu.be/`, Shorts 与 Live 录像）或 **本地视频**（`.mp4`, `.mov`, `.mkv`, `.webm`）：自动分流至 **视频多模态管线**。
+- **纯语音文件**（`.mp3`, `.m4a`, `.wav`, `.aac`, `.flac`）或加入 `--extract-audio` 标志者：自动分流至 **纯音频双层管线**。
 
 ---
 
@@ -227,74 +227,153 @@ flowchart TD
    - **音频/本地视频**：底栏内置原生音频控制器，支持进度条拖曳、倍速调整与卡拉 OK 歌词式发言人即时高亮。
 
 ### 产出成果文件：
-1. **📄 `<文件名>_會議記錄.md`**：完整结构化会议记录。
-2. **🌐 `<文件名>_player.html`**：独立零外部依赖的**双栏交互式审阅播放器**。
-3. **📚 `<文件名>_glossary.md`**：**全局权威术语与人员对照表**（若有启用探勘）。
+1. **`<文件名>_會議記錄.md`**：完整结构化会议记录。
+2. **`<文件名>_player.html`**：独立零外部依赖的**双栏交互式审阅播放器**。
+3. **`<文件名>_glossary.md`**：**全局权威术语与人员对照表**（若有启用探勘）。
 
 ---
 
-## 📦 安装与环境配置 (Quick Setup)
+## 安装与部署指南 (Installation & Deployment)
 
-### 1. 系统依赖 (FFmpeg)
-用于音频格式探测与预压缩：
-- **macOS**: `brew install ffmpeg`
-- **Ubuntu/Debian**: `sudo apt update && sudo apt install ffmpeg`
-- **Windows**: `winget install Gyan.FFmpeg`
+Meeting Transcribe Agent 支持两种不同的运作与安装部署流程：
 
-### 2. 安装 Python 依赖包
-
-**云端默认模式**：
-```bash
-pip install google-genai google-cloud-storage
-```
-
-**本地离线备用模式（可选）**：
-```bash
-# Apple Silicon (M1/M2/M3/M4) GPU 加速
-pip install mlx-whisper sherpa-onnx soundfile numpy
-
-# Linux / Windows / Intel Mac
-pip install faster-whisper sherpa-onnx soundfile numpy
-```
-
-### 3. 创建 GCS 暂存 Bucket
-
-Gemini 调用统一改用 **Vertex AI + Application Default Credentials**，不再支持 AI Studio API Key。本地音频/视频需要先暂存到 GCS，才能以 `gs://` URI 提供给 Gemini（YouTube 链接与 `--engine whisper` 不需要）：
-
-```bash
-gcloud auth application-default login
-
-cd terraform
-terraform init
-terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
-```
-
-这会一并创建 `raw/` 前缀的生命周期规则（上传后约 2 天自动删除）与一个专属服务账号。
+| 运行平台 | 安装部署方式 | 必要环境变量配置 | 主要使用交互界面 |
+| :--- | :--- | :--- | :--- |
+| **Google Antigravity** | 以 AI Agent Skill 形式安装至工作区 | 项目根目录 `.env` 配置文件 | Antigravity IDE / CLI 对话窗口自然语言调度 (`SKILL.md`) |
+| **Gemini Enterprise** | 通过 `deploy.sh` 部署至 Vertex AI Agent Runtime | `deploy.sh` 参数或 `gemini-enterprise/.env` | Gemini Enterprise 企业网页界面、Vertex AI Agent Engine、A2A 协议 |
 
 ---
 
-## ⚙️ 环境变量配置
+### 基础环境要求 (Common Prerequisites)
 
-配置您的 GCP 项目、区域与 Bucket（或复制 `.env.example` 为 `.env` 填写）：
+1. **FFmpeg**（用于音频探测、时长分析与自适应预压缩）：
+   - **macOS**: `brew install ffmpeg`
+   - **Ubuntu/Debian**: `sudo apt update && sudo apt install ffmpeg`
+   - **Windows**: `winget install Gyan.FFmpeg`
 
-```bash
-# macOS / Linux
-export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
-export GOOGLE_CLOUD_LOCATION="us-central1"
-export MEETING_STORAGE_BUCKET="your-bucket-name"
+2. **Google Cloud 认证 (ADC)**：
+   Gemini API 全面采用 Vertex AI 与 Application Default Credentials (ADC) 进行验证：
+   ```bash
+   gcloud auth application-default login
+   ```
 
-# Windows PowerShell
-$env:GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
-$env:GOOGLE_CLOUD_LOCATION="us-central1"
-$env:MEETING_STORAGE_BUCKET="your-bucket-name"
+3. **Cloud Storage 暂存存储桶 (GCS Bucket)**（处理本地音频/视频时需要，YouTube 链接直接流式传输免暂存）：
+   ```bash
+   cd terraform
+   terraform init
+   terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
+   cd ..
+   ```
+   *（Terraform 会自动创建生命周期规则，暂存于 `raw/` 下的文件在 2 天后自动销毁）。*
+
+---
+
+### 方式一：Google Antigravity (AI Agent Skill 安装)
+
+直接将项目作为 Agent 技能安装至 Antigravity，在 IDE 开发环境或命令行中通过自然语言对话进行会议记录转录：
+
+1. **安装 Skill 至 Antigravity**：
+   - **全局技能 (Global Skill)**（所有项目工作区均可调用，推荐）：
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/skills/meeting-transcribe-agent
+     ```
+   - **工作区专属技能 (Workspace Skill)**（仅当前项目工作区生效）：
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
+     ```
+
+2. **安装 Python 运行环境依赖**：
+   ```bash
+   pip install google-genai google-cloud-storage
+   ```
+   *（可选离线 Whisper 备用：Apple Silicon 请安装 `pip install mlx-whisper sherpa-onnx`，Linux/Windows 请安装 `pip install faster-whisper sherpa-onnx`）。*
+
+3. **配置环境变量 (`.env`)**：
+   复制项目根目录的 `.env.example` 为 `.env`，并将模型 location 设为 `global`、云端基础设施 region 设为 `us-central1`：
+   ```bash
+   cp .env.example .env
+   ```
+   `.env` 内容示例：
+   ```bash
+   GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+   GOOGLE_CLOUD_LOCATION=global
+   GCP_REGION=us-central1
+   MEETING_STORAGE_BUCKET=your-bucket-name
+   ```
+
+4. **在 Antigravity 中使用**：
+   Antigravity 会自动索引并读取 `SKILL.md`，您只需在对话窗口中提出需求：
+   > “请帮我转录这份主管会议录音 `meeting.mp3`，生成重点摘要、决策事项与逐字稿播放器。”
+
+---
+
+### 方式二：Gemini Enterprise (云端托管 Agent 部署)
+
+通过 Google ADK 2.0 与 `agents-cli`，将转录 Agent 部署至 Google Cloud Vertex AI Agent Runtime（Agent Engine / Reasoning Engine）作为企业级托管服务：
+
+1. **安装部署工具 (`uv` 与 `google-agents-cli`)**：
+   ```bash
+   uv tool install google-agents-cli
+   ```
+
+2. **通过 `deploy.sh` 快速自动部署**：
+   项目内置的一键部署脚本会自动检查环境依赖、执行 Terraform 创建存储桶并调用 `agents-cli deploy`：
+   ```bash
+   cd gemini-enterprise
+   chmod +x deploy.sh
+
+   # 自动化部署（包含创建 Terraform 存储桶）：
+   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1 --apply-terraform
+
+   # 或运行交互模式（将提示输入项目 ID 与各项参数）：
+   ./deploy.sh
+   ```
+
+3. **企业集成与成果交付**：
+   - **网页操作界面**：部署后可直接在 Gemini Enterprise 官方网页的 Agent 扩展列表中调用。
+   - **云端 Agent 引擎**：可通过 Vertex AI Reasoning Engine SDK 或 Agent-to-Agent (A2A) 跨 Agent 通信协议调用。
+   - **企业成果交付**：生成的结构化 Markdown 会议记录与交互播放器 HTML 将自动上传至 GCS，并返回 **24 小时有效的安全签名链接 (Signed URLs)**，免登录点击即可在浏览器中审阅。
+
+---
+
+## 项目目录结构
+
+```text
+meeting-transcribe-agent/
+├── SKILL.md                          # Agent Skill 专用作业手册与参数架构
+├── README.md                         # 项目介绍、使用场景与技术架构 (英文)
+├── README.zh-CN.md                   # 简体中文项目文档
+├── README.zh-TW.md                   # 繁体中文项目文档
+├── LICENSE                           # MIT 开源授权
+├── .gitignore                        # 忽略测试媒体与本地缓存
+├── .env.example                      # Antigravity Skill 环境变量示例
+├── meeting_transcribe.py             # 根目录命令行入口
+├── scripts/                          # 核心模块
+│   ├── __init__.py
+│   ├── meeting_transcribe.py         # 主流程调度器 (支持双引擎)
+│   ├── audio_utils.py                # 智能码率探测与 FFmpeg 预压缩
+│   ├── gemini_engine.py              # Gemini 3.5 Transcribe 转录与 3.8 Flash 双轨重构
+│   ├── diarization.py                # 本地声学切分 (Sherpa-ONNX) 与滑动窗口对齐
+│   ├── glossary.py                   # 双轨专有名词探勘
+│   ├── canonicalizer.py              # 声学分群收敛与发言人正规化
+│   └── html_generator.py             # 现代独立 HTML 播放器生成器
+├── assets/                           # 播放器模板与提示词
+│   ├── audio_player_template.html    # 独立离线双栏音频审阅播放器模板
+│   ├── video_player_template.html    # 三栏式多模态视频审阅播放器模板
+│   └── prompts/                      # 提示词模板目录
+├── terraform/                        # GCS 存储桶与生命周期管理配置
+└── gemini-enterprise/                # Gemini Enterprise (ADK 2.0 / Vertex AI) 部署包
+    ├── deploy.sh                     # 一键自动化部署脚本
+    ├── agents-cli-manifest.yaml      # agents-cli 部署配置文件
+    └── app/                          # 企业 Agent 模块与工具
 ```
 
 ---
 
-## 💻 命令行执行指南
+## 进阶：开发者与命令行调用 (Developer & Headless CLI)
 
-> [!NOTE]
-> 作为 AI Agent Skill 使用时，您无需手动执行任何终端命令，直接在对话框中向 Agent 提出需求即可！
+> [!TIP]
+> **普通用户注意**：如果您是通过 AI Agent（如 Antigravity / Claude Code）使用本系统，您**不需要手动输入这些命令**！Agent 会根据对话自动阅读 `SKILL.md` 并配置最佳参数。
 
 ### 基本执行（YouTube 视频）
 ```bash
@@ -308,15 +387,15 @@ python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agent
 ### 基本执行（音频与本地文件）
 ```bash
 # 云端纯音频默认模式
-python3 meeting_transcribe.py "会议录音.mp3"
+python3 meeting_transcribe.py "meeting_record.mp3"
 
 # 本地离线备用执行（Apple Silicon GPU / Sherpa-ONNX）
-python3 meeting_transcribe.py "会议录音.mp3" --engine whisper --whisper-backend auto
+python3 meeting_transcribe.py "meeting_record.mp3" --engine whisper --whisper-backend auto
 ```
 
 ### 包含会议大纲与指定摘要语言
 ```bash
-python3 meeting_transcribe.py "会议录音.mp3" --outline "agenda.txt" --summary-language en
+python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summary-language en
 ```
 
 ### 完整参数手册
@@ -335,7 +414,7 @@ python3 meeting_transcribe.py "会议录音.mp3" --outline "agenda.txt" --summar
 | `--num-speakers` | 精确参会发言人数（已知时填写，-1 为自动探测） | `-1` |
 | `--embedding-type` | Sherpa-ONNX 声纹特征抽取模型 (`eres2net`, `cam++`) | `eres2net` |
 | `--project` | Vertex AI 的 GCP 项目 (默认读取 `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT`，或 ADC 默认项目) | `None` |
-| `--region` | Vertex AI 的 GCP 区域 (默认读取 `GOOGLE_CLOUD_LOCATION`/`GCP_REGION`) | `us-central1` |
+| `--region` | Vertex AI 的 GCP 区域 (默认读取 `GOOGLE_CLOUD_LOCATION` 或 `global`) | `global` |
 | `--bucket` | 暂存本地音频/视频的 GCS bucket (默认读取 `MEETING_STORAGE_BUCKET`) | `None` |
 | `--transcribe-model` | 云端转录语音识别模型 | `gemini-3.5-transcribe` |
 | `--summary-model` | 结构化会议纪要与视觉模型 | `gemini-3.8-flash` |
@@ -351,6 +430,6 @@ python3 meeting_transcribe.py "会议录音.mp3" --outline "agenda.txt" --summar
 
 ---
 
-## 📄 开源许可证
+## 开源许可证 (License)
 
 本项目采用 [MIT License](LICENSE) 开源授权。
