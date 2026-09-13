@@ -6,6 +6,7 @@ Uses Vertex AI with Application Default Credentials exclusively -- no AI Studio 
 
 import json
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -124,6 +125,53 @@ def _extract_transcription_parts(parts, lines: list, raw_parts: list) -> bool:
         elif part.text:
             raw_parts.append(part.text)
     return has_at
+
+
+_DURATION_UNIT_TOKEN_RE = re.compile(r'(\d+)\s*(ms|h|m|s)', re.IGNORECASE)
+_DURATION_TOKEN = r'\d+\s*(?:ms|h|m|s)\s*'
+_BRACKET_UNIT_PAIR_RE = re.compile(
+    rf'\[\s*((?:{_DURATION_TOKEN}){{1,4}})-\s*((?:{_DURATION_TOKEN}){{1,4}})\]',
+    re.IGNORECASE,
+)
+
+
+def _unit_duration_to_seconds(token: str) -> float | None:
+    """Parse an 'XhYmZsWms'-style duration token (any subset of components) into seconds."""
+    matches = _DURATION_UNIT_TOKEN_RE.findall(token)
+    if not matches:
+        return None
+    total = 0.0
+    for value, unit in matches:
+        value = int(value)
+        unit = unit.lower()
+        if unit == 'h':
+            total += value * 3600
+        elif unit == 'm':
+            total += value * 60
+        elif unit == 's':
+            total += value
+        elif unit == 'ms':
+            total += value / 1000.0
+    return total
+
+
+def normalize_verbatim_timestamps(text: str) -> str:
+    """
+    Self-healing pass over generated meeting minutes: models occasionally ignore the
+    `[MM:SS - MM:SS]` timestamp contract (see prompt_b / video prompt below) and invent
+    an alternate duration notation like `[0m0s962ms - 0m3s242ms]` instead. That breaks
+    the interactive player's strict bracket parser, collapsing the whole transcript into
+    one unparsed block. Rewrite any such pair back into the canonical bracket format the
+    player and prompt contract expect; well-formed `[MM:SS - MM:SS]` pairs (no letter
+    units) are left untouched.
+    """
+    def _replace(m: "re.Match[str]") -> str:
+        start_sec = _unit_duration_to_seconds(m.group(1))
+        end_sec = _unit_duration_to_seconds(m.group(2))
+        if start_sec is None or end_sec is None:
+            return m.group(0)
+        return f"[{format_offset(start_sec)} - {format_offset(end_sec)}]"
+    return _BRACKET_UNIT_PAIR_RE.sub(_replace, text)
 
 
 def transcribe_with_gemini_cloud(
@@ -263,7 +311,7 @@ Strictly adhere to the spelling, names, titles, organizations, and technical ter
         f"- **Sections 1 to 5 (Metadata, Summary, Discussion Topics, Decisions, Action Items)**:\n"
         f"  Must be written in fluent, native, professional {target_lang}.\n"
         f"- **Universal Language Adaptation (CRITICAL)**:\n"
-        f"  1. Translate and adapt all section headings (1 to 6), metadata field labels, and table column headers naturally into {target_lang}.\n"
+        f"  1. Translate and adapt all section headings (1 to 6), metadata field labels, and table column headers naturally into {target_lang}. This template's English labels (\"Meeting Metadata & Attendees\", \"Executive Summary\", \"Key Discussion Topics\", etc.) are placeholders describing what belongs in each section -- they are NOT literal heading text to copy verbatim. Leaving any heading in English when {target_lang} is not English is a critical error.\n"
         f"  2. **STRICTLY FORBIDDEN to include ANY emojis or icons** (e.g. no 📌, 🎯, 💡, ⚖️, 📋, 🎙️) in any section headings, sub-headings, or table headers. Use clean, plain text markdown headings only (e.g. `## 1. `, `## 2. `)."
     )
     verbatim_lang_instruction = (
@@ -352,7 +400,7 @@ Output ONLY a markdown table with this exact structure, no other text or explana
         prompt = prompt.replace("{raw_transcript_text}", raw_transcript_text)
         prompt = prompt.replace("{summary_language_instruction}", summary_lang_instruction)
         print(f"[*] Invoking Gemini model `{summary_model}` for custom-templated meeting minutes structuring...")
-        final_text = _call_gemini_track(prompt, "Custom Single-Prompt Template")
+        final_text = normalize_verbatim_timestamps(_call_gemini_track(prompt, "Custom Single-Prompt Template"))
         duration = time.time() - t0
         return final_text, duration
 
@@ -405,9 +453,11 @@ You are an elite verbatim meeting transcription editor. Your mission is to trans
    - Instead, regroup it into semantically coherent paragraph-length turns (a natural unit of thought, typically a few sentences), starting a new turn whenever the point/topic shifts or the floor changes to a different speaker.
    - Each paragraph-level turn MUST keep its own accurate `[start - end]` timestamp spanning only that paragraph. NEVER collapse an entire multi-minute speech into a single timestamp range spanning several unrelated paragraphs — every distinct paragraph is its own turn line with its own timestamps.
 5. **Mandatory Timestamp Syntax Contract**:
-   - Every single dialogue turn MUST strictly preserve and begin with its exact time interval `[MM:SS - MM:SS]` (or `[HH:MM:SS - HH:MM:SS]` for recordings >= 1 hour).
-   - STRICTLY FORBIDDEN to omit timestamps or produce plain script format without bracketed times.
+   - Every single dialogue turn MUST strictly preserve and begin with its exact time interval `[MM:SS - MM:SS]` (or `[HH:MM:SS - HH:MM:SS]` for recordings >= 1 hour), using plain colon-separated digits ONLY.
+   - STRICTLY FORBIDDEN to omit timestamps, produce plain script format without bracketed times, or invent any alternate duration notation (e.g. `0m0s962ms`, `1h2m3s`) -- an automated parser downstream matches this exact bracket syntax and will corrupt the interactive transcript player if it deviates.
    - Format: `[MM:SS - MM:SS] (or [HH:MM:SS - HH:MM:SS]) **Role / Name**: Spoken utterance`
+   - Valid: `[01:15 - 01:45] **Alex Smith (Chair)**: Good morning everyone, let us begin the session.`
+   - Invalid: `[0m1s15ms - 0m1s45ms] **Alex Smith**: ...` (wrong notation) or `**Alex Smith**: Good morning...` (missing timestamp).
 
 ---
 # Output Format
@@ -423,7 +473,7 @@ Output strictly and exclusively Section 6 (translate heading to {target_lang}, D
             fut_b = executor.submit(_call_gemini_track, prompt_b, "Track B (Verbatim Transcript Localization)")
             
             text_a = fut_a.result()
-            text_b = fut_b.result()
+            text_b = normalize_verbatim_timestamps(fut_b.result())
 
         final_text = f"{text_a.strip()}\n\n---\n\n{text_b.strip()}\n"
         duration = time.time() - t0
@@ -433,7 +483,7 @@ Output strictly and exclusively Section 6 (translate heading to {target_lang}, D
     except Exception as e:
         print(f"[!] Dual-track concurrent generation encountered error ({e}). Falling back to single-prompt execution...")
         single_prompt = f"{prompt_a}\n\n---\n\n{prompt_b}"
-        final_text = _call_gemini_track(single_prompt, "Fallback Single-Prompt")
+        final_text = normalize_verbatim_timestamps(_call_gemini_track(single_prompt, "Fallback Single-Prompt"))
         duration = time.time() - t0
         return final_text, duration
 
@@ -476,7 +526,7 @@ def process_video_meeting_end_to_end(
         f"- **Sections 1 to 5 (Metadata, Summary, Discussion Topics, Decisions, Action Items)**:\n"
         f"  Must be written in fluent, native, professional {target_lang}.\n"
         f"- **Universal Language Adaptation (CRITICAL)**:\n"
-        f"  1. Translate and adapt all section headings (1 to 6), metadata field labels, and table column headers naturally into {target_lang}.\n"
+        f"  1. Translate and adapt all section headings (1 to 6), metadata field labels, and table column headers naturally into {target_lang}. This template's English labels (\"Meeting Metadata & Attendees\", \"Executive Summary\", \"Key Discussion Topics\", etc.) are placeholders describing what belongs in each section -- they are NOT literal heading text to copy verbatim. Leaving any heading in English when {target_lang} is not English is a critical error.\n"
         f"  2. **STRICTLY FORBIDDEN to include ANY emojis or icons** (e.g. no 📌, 🎯, 💡, ⚖️, 📋, 🎙️) in any section headings, sub-headings, or table headers. Use clean, plain text markdown headings only (e.g. `## 1. `, `## 2. `).\n"
         f"- **Section 6 (Full Verbatim Transcript)**:\n"
         f"  MUST faithfully preserve original spoken dialogue and language of each speaker without translation."
@@ -535,8 +585,8 @@ Analyze this recorded meeting video (utilizing visual slides, on-screen speaker 
      - **【Role / Name】**: Key points, metrics, proposals, or directives presented by this speaker.
 4. **Acoustic Grounding & Strict Timestamp Contract (CRITICAL)**:
    - **Real-Time Acoustic Grounding & Anti-Recitation**: You are transcribing the real-time audio and visual stream of this specific recorded session. Do NOT recite or reproduce text from external knowledge bases, web pages, or pre-training memory. Every dialogue turn MUST strictly represent real-time utterances synchronized with the media player timeline.
-   - **Mandatory Timestamp Syntax Contract**: EVERY dialogue turn in Section 6 MUST begin with an exact bracketed time interval `[Start MM:SS - End MM:SS]` (or `[Start HH:MM:SS - End HH:MM:SS]` for recordings >= 1 hour) matching the recording clock.
-   - **NEVER OMIT TIMESTAMPS**: Outputting dialogue in plain script format (`**Speaker**: text` without timestamps) is STRICTLY PROHIBITED.
+   - **Mandatory Timestamp Syntax Contract**: EVERY dialogue turn in Section 6 MUST begin with an exact bracketed time interval `[Start MM:SS - End MM:SS]` (or `[Start HH:MM:SS - End HH:MM:SS]` for recordings >= 1 hour) matching the recording clock, using plain colon-separated digits ONLY.
+   - **NEVER OMIT TIMESTAMPS**: Outputting dialogue in plain script format (`**Speaker**: text` without timestamps) is STRICTLY PROHIBITED. Inventing an alternate duration notation (e.g. `0m0s962ms`, `1h2m3s`) instead of the colon-separated format is likewise STRICTLY PROHIBITED -- an automated parser downstream matches this exact bracket syntax and will corrupt the interactive transcript player if it deviates.
    - Valid turn examples:
      `[01:15 - 01:45] **Alex Smith (Chair)**: Good morning everyone, let us begin the session.`
      `[01:15:30 - 01:25:40] **Maria Garcia (Engineering)**: In the second hour of our review, our cloud migration is on schedule...`
@@ -619,6 +669,8 @@ Output strictly the following 6 sections in Markdown (DO NOT include any emojis 
         if not output_text.strip():
             finish_reason = getattr(resp.candidates[0], "finish_reason", "UNKNOWN") if resp.candidates else "NO_CANDIDATE"
             raise RuntimeError(f"Video analysis model returned no text content (finish_reason: {finish_reason})")
+
+        output_text = normalize_verbatim_timestamps(output_text)
 
         # Print token usage accounting
         if hasattr(resp, "usage_metadata") and resp.usage_metadata:

@@ -1258,8 +1258,8 @@ if(__exports != exports)module.exports = exports;return module.exports}));
             const markdown = data.markdown || '';
             fullRawMarkdown = markdown;
 
-            const turnRegexRange = /^\s*(?:[-*]\s*)?\[(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\]\s*(?:(?:\*{1,2})?([^*:：\n\r]+?)(?:\*{1,2})?[:：])?\s*(.*)/;
-            const turnRegexSingle = /^\s*(?:[-*]\s*)?\[(\d+:\d+(?::\d+)?)\]\s*(?:(?:\*{1,2})?([^*:：\n\r]+?)(?:\*{1,2})?[:：])?\s*(.*)/;
+            const turnRegexRange = /^\s*(?:[-*]\s*)?\[\s*(\d+:\d+(?::\d+)?)\s*-\s*(\d+:\d+(?::\d+)?)\s*\]\s*(?:(?:\*{1,2})?([^*:：\n\r]+?)(?:\*{1,2})?[:：])?\s*(.*)/;
+            const turnRegexSingle = /^\s*(?:[-*]\s*)?\[\s*(\d+:\d+(?::\d+)?)\s*\]\s*(?:(?:\*{1,2})?([^*:：\n\r]+?)(?:\*{1,2})?[:：])?\s*(.*)/;
             const turnRegexSpeakerOnly = /^\s*(?:[-*]\s*)?(?:\*{1,2})?([^*:：\n\r]{2,30}?)(?:\*{1,2})?[:：]\s*(.*)/;
             const lines = markdown.split('\n');
             let firstTurnIdx = -1;
