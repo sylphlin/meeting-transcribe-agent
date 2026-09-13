@@ -384,7 +384,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 | `--project` | Google Cloud project for Vertex AI (defaults to `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT` or the ADC default project) | `None` |
 | `--region` | Google Cloud region for Vertex AI (defaults to `GOOGLE_CLOUD_LOCATION` or `global`) | `global` |
 | `--bucket` | GCS bucket for staging local audio/video (defaults to `MEETING_STORAGE_BUCKET`) | `None` |
-| `--transcribe-model` | Cloud ASR model | `gemini-3.5-transcribe` |
+| `--transcribe-model` | Cloud ASR model | `gemini-3.5-transcribe-preview` |
 | `--summary-model` | Synthesis and vision model | `gemini-3.8-flash` |
 | `--outline` | Meeting agenda / outline file path (.txt / .md) | `None` |
 | `--force-glossary` | Force re-extracting global glossary | `False` |

@@ -389,7 +389,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --engine whisper --whisper-ba
 | `--project` | Vertex AI 用 Google Cloud プロジェクト ID | `None` (ADC/環境変数) |
 | `--region` | Vertex AI 用 Google Cloud リージョン | `global` |
 | `--bucket` | ローカル音声/動画のステージング用 GCS bucket 名 | `MEETING_STORAGE_BUCKET` 環境変数 |
-| `--transcribe-model` | クラウド音声認識モデル | `gemini-3.5-transcribe` |
+| `--transcribe-model` | クラウド音声認識モデル | `gemini-3.5-transcribe-preview` |
 | `--summary-model` | 構造化議事録・視覚理解モデル | `gemini-3.8-flash` |
 | `--outline` | 会議通知・次第ファイルパス (.txt / .md) | `None` |
 | `--no-player` | インタラクティブ HTML プレイヤーの出力を無効化 | `False` |

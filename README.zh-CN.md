@@ -416,7 +416,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 | `--project` | Vertex AI 的 GCP 项目 (默认读取 `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT`，或 ADC 默认项目) | `None` |
 | `--region` | Vertex AI 的 GCP 区域 (默认读取 `GOOGLE_CLOUD_LOCATION` 或 `global`) | `global` |
 | `--bucket` | 暂存本地音频/视频的 GCS bucket (默认读取 `MEETING_STORAGE_BUCKET`) | `None` |
-| `--transcribe-model` | 云端转录语音识别模型 | `gemini-3.5-transcribe` |
+| `--transcribe-model` | 云端转录语音识别模型 | `gemini-3.5-transcribe-preview` |
 | `--summary-model` | 结构化会议纪要与视觉模型 | `gemini-3.8-flash` |
 | `--outline` | 外部会议通知、大纲或议程文件路径 (.txt / .md) | `None` |
 | `--force-glossary` | 强制重新提取全局术语对照表 (覆盖缓存) | `False` |

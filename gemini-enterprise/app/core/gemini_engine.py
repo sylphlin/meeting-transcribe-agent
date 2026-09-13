@@ -177,7 +177,7 @@ def transcribe_with_gemini_cloud(
     client: genai.Client,
     audio_path: Path,
     bucket_name: str,
-    model_name: str = "gemini-3.5-transcribe",
+    model_name: str = "gemini-3.5-transcribe-preview",
     compress: bool = True,
     language: str = "auto"
 ) -> tuple[str, float]:

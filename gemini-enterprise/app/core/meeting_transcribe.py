@@ -53,7 +53,7 @@ def generate_meeting_minutes_and_transcript(
     project_id: str = None,
     location: str = None,
     bucket_name: str = None,
-    transcribe_model: str = "gemini-3.5-transcribe",
+    transcribe_model: str = "gemini-3.5-transcribe-preview",
     summary_model: str = "gemini-3.8-flash",
     outline: str = None,
     force_glossary: bool = False,
@@ -416,8 +416,8 @@ def main():
     )
     parser.add_argument(
         "--transcribe-model",
-        default="gemini-3.5-transcribe",
-        help="Gemini cloud transcription model [default: gemini-3.5-transcribe]"
+        default="gemini-3.5-transcribe-preview",
+        help="Gemini cloud transcription model [default: gemini-3.5-transcribe-preview]"
     )
     parser.add_argument(
         "--summary-model",
