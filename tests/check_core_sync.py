@@ -123,22 +123,46 @@ def _diff(a_path: Path, b_path: Path) -> str:
     ))
 
 
+def get_designated_models() -> set[str]:
+    """Parse approved designated models from .env.example as the baseline specification."""
+    env_example = ROOT / ".env.example"
+    models = set()
+    if env_example.exists():
+        for line in env_example.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("TRANSCRIBE_MODEL=") or line.startswith("SUMMARY_MODEL="):
+                val = line.split("=", 1)[1].strip()
+                if val:
+                    models.add(val)
+    return models
+
+
 def check_model_invariants() -> list[str]:
-    """Ensure no code or documentation mistakenly strips '-preview' from Vertex AI transcribe model."""
-    invalid_pattern = re.compile(r"gemini-3\.5-transcribe(?!-preview)")
+    """
+    Ensure no code mistakenly introduces or falls back to models outside the designated models
+    configured in .env.example.
+    Prevents the agent from autonomously switching, inventing, or downgrading to non-designated models.
+    """
+    designated_models = get_designated_models()
     errors = []
     
-    # Check all python files and markdown assets
-    check_dirs = [SCRIPTS_DIR, ENTERPRISE_CORE, ASSETS_DIR, ENTERPRISE_ASSETS]
+    # Matches any gemini model string (e.g. gemini-3.5-transcribe, gemini-1.5-flash, etc.)
+    model_pattern = re.compile(r"gemini-[0-9]+(?:\.[0-9]+)?-[a-z0-9\-]+")
+
+    # Scan python source code and evaluation scripts
+    check_dirs = [SCRIPTS_DIR, ENTERPRISE_CORE, ROOT / "gemini-enterprise" / "app", ROOT / "gemini-enterprise" / "tests"]
     for d in check_dirs:
-        for p in d.rglob("*"):
-            if p.is_file() and p.suffix in (".py", ".md", ".html"):
-                text = p.read_text(encoding="utf-8")
-                matches = list(invalid_pattern.finditer(text))
-                if matches:
+        if not d.exists():
+            continue
+        for p in d.rglob("*.py"):
+            text = p.read_text(encoding="utf-8")
+            for match in model_pattern.finditer(text):
+                found_model = match.group(0)
+                if found_model not in designated_models:
                     errors.append(
-                        f"[INVALID MODEL ID] {p.relative_to(ROOT)}: Found truncated 'gemini-3.5-transcribe'. "
-                        f"Vertex AI speech endpoint requires 'gemini-3.5-transcribe-preview'. Never strip '-preview'."
+                        f"[UNAPPROVED MODEL] {p.relative_to(ROOT)}: Found non-designated model '{found_model}'. "
+                        f"Only designated models ({', '.join(sorted(designated_models))}) are allowed. "
+                        f"Never use models outside the designated configurations."
                     )
     return errors
 
@@ -149,11 +173,13 @@ def main() -> int:
     # 1. Model invariant validation
     model_errors = check_model_invariants()
     if model_errors:
+        designated = get_designated_models()
         print("[FAIL] Model Invariant Check Failed:\n")
         print("\n".join(model_errors))
         print(
-            "\n[RULE] Vertex AI speech transcription requires 'gemini-3.5-transcribe-preview'. "
-            "Never downgrade or strip '-preview'. Configure overrides via TRANSCRIBE_MODEL in .env.\n"
+            f"\n[RULE] Only designated models ({', '.join(sorted(designated))}) may be used. "
+            "Never invent, substitute, or downgrade to non-designated models. "
+            "To upgrade or change models, update .env / .env.example.\n"
         )
         return 1
 

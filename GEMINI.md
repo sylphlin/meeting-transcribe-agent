@@ -61,17 +61,18 @@ This document serves as the project memory and permanent operational guidelines 
 
 ---
 
-## 7. Model Version Invariants & Single Source of Truth
+## 7. Model Invariants & Single Source of Truth
 
 - **Upstream Source of Truth**:
   - `scripts/` and `assets/` are the canonical upstream source of truth for all transcription, summarization, and UI logic.
   - `gemini-enterprise/app/core/` and `gemini-enterprise/app/assets/` are downstream mirrors required by `agents-cli` Docker scoping.
   - When reconciling drifts between `scripts/` and `gemini-enterprise/`, NEVER downgrade or overwrite upstream `scripts/` with stale downstream files. Always port upstream changes down to `gemini-enterprise/`.
-- **Strict Prohibition on Downgrading Model IDs**:
-  - Vertex AI speech model strictly requires the `-preview` suffix (`gemini-3.5-transcribe-preview`). Never strip `-preview` or downgrade model IDs to non-existent endpoints (e.g., never use `gemini-3.5-transcribe`).
-  - Executive summary and multimodal vision model defaults to `gemini-3.8-flash`.
+- **Strict Prohibition on Using Non-Designated Models**:
+  - The agent is strictly prohibited from altering, substituting, downgrading, or introducing any model identifiers outside the designated models specified in `.env` / `.env.example`.
+  - Never autonomously switch or fallback to non-designated or invented model IDs (e.g. attempting to "fix" an error or sync divergence by picking another model).
+  - When models transition in the future (e.g., from preview to GA, or to newer model generations), changes must be governed exclusively via `.env` / `.env.example` configurations or explicit user instructions, never by agent speculation.
 - **Dynamic Configuration via Environment Variables**:
   - Models must always be loaded dynamically from environment variables:
-    - Speech transcription model: `TRANSCRIBE_MODEL` (fallback: `gemini-3.5-transcribe-preview`)
-    - Executive summary / multimodal vision model: `SUMMARY_MODEL` (fallback: `gemini-3.8-flash`)
-  - Never hardcode ad-hoc model names across the codebase; configure them in `.env`.
+    - Speech transcription model: `TRANSCRIBE_MODEL` (fallback: approved designated model from `.env.example`)
+    - Executive summary / multimodal vision model: `SUMMARY_MODEL` (fallback: approved designated model from `.env.example`)
+  - Never hardcode ad-hoc or unapproved model names across the codebase; configure them in `.env`.
