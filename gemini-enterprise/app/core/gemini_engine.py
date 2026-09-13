@@ -44,7 +44,8 @@ def load_env_file():
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:
                         k, v = line.split("=", 1)
-                        k, v = k.strip(), v.strip().strip("\"'")
+                        k = k.strip()
+                        v = v.split("#")[0].strip().strip("\"'")
                         if k and v and k not in os.environ:
                             os.environ[k] = v
         except Exception:
@@ -230,6 +231,14 @@ def transcribe_with_gemini_cloud(
                     audio_transcription_config=types.AudioTranscriptionConfig(**at_kwargs)
                 ),
             }
+            # Dedicated transcribe models produce dense multi-byte CJK audio transcription tokens
+            # which can get split across SSE chunk boundaries in the Python SDK, causing JSONDecodeError.
+            # Directly use non-streaming generate_content to guarantee reliable single-pass execution.
+            resp = client.models.generate_content(**request_kwargs)
+            if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
+                has_at = _extract_transcription_parts(resp.candidates[0].content.parts, lines, raw_parts)
+            elif resp.text:
+                raw_parts.append(resp.text)
         else:
             prompt = (
                 "Transcribe this audio recording completely and accurately. "
@@ -238,27 +247,27 @@ def transcribe_with_gemini_cloud(
             )
             request_kwargs = {"model": model_name, "contents": [file_part, prompt]}
 
-        try:
-            stream = client.models.generate_content_stream(**request_kwargs)
-            for chunk in stream:
-                if not chunk.candidates or not chunk.candidates[0].content or not chunk.candidates[0].content.parts:
-                    continue
-                if _extract_transcription_parts(chunk.candidates[0].content.parts, lines, raw_parts):
-                    has_at = True
-        except (genai_errors.UnknownApiResponseError, json.JSONDecodeError) as stream_err:
-            # The SDK's streaming (SSE) response parser can mis-split multi-byte UTF-8
-            # text (e.g. CJK transcripts) across chunk boundaries, corrupting the JSON
-            # payload mid-stream. A non-streaming call buffers the complete response
-            # before doing a single JSON parse, so it doesn't hit that code path.
-            print(f"[!] Streaming transcription failed ({stream_err}); retrying without streaming...")
-            lines = []
-            raw_parts = []
-            has_at = False
-            resp = client.models.generate_content(**request_kwargs)
-            if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
-                has_at = _extract_transcription_parts(resp.candidates[0].content.parts, lines, raw_parts)
-            elif resp.text:
-                raw_parts.append(resp.text)
+            try:
+                stream = client.models.generate_content_stream(**request_kwargs)
+                for chunk in stream:
+                    if not chunk.candidates or not chunk.candidates[0].content or not chunk.candidates[0].content.parts:
+                        continue
+                    if _extract_transcription_parts(chunk.candidates[0].content.parts, lines, raw_parts):
+                        has_at = True
+            except (genai_errors.UnknownApiResponseError, json.JSONDecodeError) as stream_err:
+                # The SDK's streaming (SSE) response parser can mis-split multi-byte UTF-8
+                # text (e.g. CJK transcripts) across chunk boundaries, corrupting the JSON
+                # payload mid-stream. A non-streaming call buffers the complete response
+                # before doing a single JSON parse, so it doesn't hit that code path.
+                print(f"[!] Streaming transcription failed ({stream_err}); retrying without streaming...")
+                lines = []
+                raw_parts = []
+                has_at = False
+                resp = client.models.generate_content(**request_kwargs)
+                if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
+                    has_at = _extract_transcription_parts(resp.candidates[0].content.parts, lines, raw_parts)
+                elif resp.text:
+                    raw_parts.append(resp.text)
 
         if has_at:
             raw_text = "\n\n".join(lines)
