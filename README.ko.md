@@ -278,6 +278,8 @@ AI Agent의 로컬 스킬로 Antigravity에 설치하여 IDE나 CLI 환경에서
    GOOGLE_CLOUD_LOCATION=global
    GCP_REGION=us-central1
    MEETING_STORAGE_BUCKET=your-bucket-name
+   TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
+   SUMMARY_MODEL=gemini-3.8-flash
    ```
 
 4. **Antigravity에서 사용하기**:
@@ -389,8 +391,8 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 | `--project` | Vertex AI용 Google Cloud 프로젝트 ID | `None` (ADC/환경 변수) |
 | `--region` | Vertex AI용 Google Cloud 리전 | `global` |
 | `--bucket` | 로컬 오디오/영상 스테이징용 GCS 버킷 이름 | `MEETING_STORAGE_BUCKET` 환경 변수 |
-| `--transcribe-model` | 클라우드 음향 음성인식 모델 | `gemini-3.5-transcribe-preview` |
-| `--summary-model` | 구조화 회의록 및 시각 모델 | `gemini-3.8-flash` |
+| `--transcribe-model` | 클라우드 음향 음성인식 모델 (기본값: `TRANSCRIBE_MODEL`) | `gemini-3.5-transcribe-preview` |
+| `--summary-model` | 구조화 회의록 및 시각 모델 (기본값: `SUMMARY_MODEL`) | `gemini-3.8-flash` |
 | `--outline` | 회의 안건/식순 파일 경로 (.txt / .md) | `None` |
 | `--no-player` | 대화형 HTML 플레이어 생성 비활성화 | `False` |
 | `--summary-language` | 회의록 생성 언어 지정 (`auto`, `ko`, `en`, `zh-TW` 등) | `None` (auto) |

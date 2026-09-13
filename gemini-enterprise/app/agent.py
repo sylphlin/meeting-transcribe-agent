@@ -55,7 +55,7 @@ Capabilities & Invariant Guidelines:
 root_agent = Agent(
     name="meeting_transcribe_agent",
     model=Gemini(
-        model="gemini-3.8-flash",
+        model=os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash",
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=AGENT_INSTRUCTION,

@@ -297,10 +297,12 @@ Install directly into Google Antigravity as an Agent Skill for conversational me
    ```
    Example `.env`:
    ```bash
-   GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-   GOOGLE_CLOUD_LOCATION=global
-   GCP_REGION=us-central1
-   MEETING_STORAGE_BUCKET=your-bucket-name
+    GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+    GOOGLE_CLOUD_LOCATION=global
+    GCP_REGION=us-central1
+    MEETING_STORAGE_BUCKET=your-bucket-name
+    TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
+    SUMMARY_MODEL=gemini-3.8-flash
    ```
 
 4. **Usage in Antigravity**:
@@ -384,8 +386,8 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 | `--project` | Google Cloud project for Vertex AI (defaults to `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT` or the ADC default project) | `None` |
 | `--region` | Google Cloud region for Vertex AI (defaults to `GOOGLE_CLOUD_LOCATION` or `global`) | `global` |
 | `--bucket` | GCS bucket for staging local audio/video (defaults to `MEETING_STORAGE_BUCKET`) | `None` |
-| `--transcribe-model` | Cloud ASR model | `gemini-3.5-transcribe-preview` |
-| `--summary-model` | Synthesis and vision model | `gemini-3.8-flash` |
+| `--transcribe-model` | Cloud ASR model (defaults to `TRANSCRIBE_MODEL`) | `gemini-3.5-transcribe-preview` |
+| `--summary-model` | Synthesis and vision model (defaults to `SUMMARY_MODEL`) | `gemini-3.8-flash` |
 | `--outline` | Meeting agenda / outline file path (.txt / .md) | `None` |
 | `--force-glossary` | Force re-extracting global glossary | `False` |
 | `--no-glossary` | Skip glossary extraction | `False` |

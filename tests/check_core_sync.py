@@ -123,9 +123,41 @@ def _diff(a_path: Path, b_path: Path) -> str:
     ))
 
 
+def check_model_invariants() -> list[str]:
+    """Ensure no code or documentation mistakenly strips '-preview' from Vertex AI transcribe model."""
+    invalid_pattern = re.compile(r"gemini-3\.5-transcribe(?!-preview)")
+    errors = []
+    
+    # Check all python files and markdown assets
+    check_dirs = [SCRIPTS_DIR, ENTERPRISE_CORE, ASSETS_DIR, ENTERPRISE_ASSETS]
+    for d in check_dirs:
+        for p in d.rglob("*"):
+            if p.is_file() and p.suffix in (".py", ".md", ".html"):
+                text = p.read_text(encoding="utf-8")
+                matches = list(invalid_pattern.finditer(text))
+                if matches:
+                    errors.append(
+                        f"[INVALID MODEL ID] {p.relative_to(ROOT)}: Found truncated 'gemini-3.5-transcribe'. "
+                        f"Vertex AI speech endpoint requires 'gemini-3.5-transcribe-preview'. Never strip '-preview'."
+                    )
+    return errors
+
+
 def main() -> int:
     failures = []
 
+    # 1. Model invariant validation
+    model_errors = check_model_invariants()
+    if model_errors:
+        print("[FAIL] Model Invariant Check Failed:\n")
+        print("\n".join(model_errors))
+        print(
+            "\n[RULE] Vertex AI speech transcription requires 'gemini-3.5-transcribe-preview'. "
+            "Never downgrade or strip '-preview'. Configure overrides via TRANSCRIBE_MODEL in .env.\n"
+        )
+        return 1
+
+    # 2. Dual-copy sync validation
     for filename in PYTHON_PAIRS:
         a = SCRIPTS_DIR / filename
         b = ENTERPRISE_CORE / filename
@@ -150,13 +182,16 @@ def main() -> int:
         print("[FAIL] scripts/assets and gemini-enterprise have drifted apart:\n")
         print("\n".join(failures))
         print(
-            "\nDecide which side is correct and port the change to the other, "
-            "or if this is a genuine intentional difference, document it in "
-            "KNOWN_DIVERGENCES / the normalizer in tests/check_core_sync.py."
+            "\n[CANONICAL SOURCE OF TRUTH]\n"
+            "  'scripts/' and 'assets/' are the primary upstream source of truth.\n"
+            "  'gemini-enterprise/app/core/' and 'app/assets/' are downstream sync mirrors.\n"
+            "  NEVER downgrade or edit 'scripts/' to match stale downstream copies.\n"
+            "  Always port upstream improvements from 'scripts/' to 'gemini-enterprise/',\n"
+            "  and never strip '-preview' from Vertex AI model IDs.\n"
         )
         return 1
 
-    print("[OK] scripts/assets and gemini-enterprise core are in sync.")
+    print("[OK] scripts/assets and gemini-enterprise core are in sync and model invariants hold.")
     return 0
 
 

@@ -72,7 +72,7 @@ def extract_global_consistency_glossary(
     audio_path: Path,
     bucket_name: str,
     outline_path: str | None = None,
-    model: str = "gemini-3.8-flash",
+    model: str = None,
     force: bool = False,
     prompt_template_path: Path = None,
     compress_fn = None
@@ -83,6 +83,7 @@ def extract_global_consistency_glossary(
     Track 2: Parsing optional user-provided agenda/outline document.
     Returns: (full_glossary_markdown, prompt_keywords)
     """
+    model = model or os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash"
     glossary_file = audio_path.parent / f"glossary_{audio_path.stem}.md"
     alt_glossary = audio_path.parent / f"{audio_path.stem}_glossary.md"
     target_cache = glossary_file if glossary_file.exists() else alt_glossary

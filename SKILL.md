@@ -148,8 +148,8 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 | `--project` | Google Cloud project ID for Vertex AI | `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT` env var, or ADC default project |
 | `--region` | Google Cloud region for Vertex AI | `GOOGLE_CLOUD_LOCATION` env var, or `global` |
 | `--bucket` | GCS bucket used to stage local audio/video for Gemini | `MEETING_STORAGE_BUCKET` env var |
-| `--transcribe-model` | Gemini cloud speech transcription model | `gemini-3.5-transcribe-preview` |
-| `--summary-model` | Gemini executive summary and vision model | `gemini-3.8-flash` |
+| `--transcribe-model` | Gemini cloud speech transcription model | `TRANSCRIBE_MODEL` env var, or `gemini-3.5-transcribe-preview` |
+| `--summary-model` | Gemini executive summary and vision model | `SUMMARY_MODEL` env var, or `gemini-3.8-flash` |
 | `--outline` | Path to external meeting notice, outline, or agenda document | `None` |
 | `--force-glossary` | Force re-extraction of global consistency glossary (bypassing cache) | `False` |
 | `--no-glossary` | Skip global consistency glossary extraction | `False` |

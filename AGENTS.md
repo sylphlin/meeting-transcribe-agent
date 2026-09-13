@@ -58,3 +58,20 @@ This document serves as the project memory and permanent operational guidelines 
 - **No AI/Assistant Branding**: Never include any AI assistant name (e.g., "Claude", "Gemini", "Copilot") in branch names, commit messages, PR titles/descriptions, code comments, or file contents.
 - **No Co-Authorship Trailers**: Never append `Co-Authored-By`, session links, or any other AI-attribution trailer to commit messages or PR descriptions.
 - **Human Authorship Only**: All commits must be authored as the repository owner (`sylphlin <sylph.lin@gmail.com>`), with no secondary author line.
+
+---
+
+## 7. Model Version Invariants & Single Source of Truth
+
+- **Upstream Source of Truth**:
+  - `scripts/` and `assets/` are the canonical upstream source of truth for all transcription, summarization, and UI logic.
+  - `gemini-enterprise/app/core/` and `gemini-enterprise/app/assets/` are downstream mirrors required by `agents-cli` Docker scoping.
+  - When reconciling drifts between `scripts/` and `gemini-enterprise/`, NEVER downgrade or overwrite upstream `scripts/` with stale downstream files. Always port upstream changes down to `gemini-enterprise/`.
+- **Strict Prohibition on Downgrading Model IDs**:
+  - Vertex AI speech model strictly requires the `-preview` suffix (`gemini-3.5-transcribe-preview`). Never strip `-preview` or downgrade model IDs to non-existent endpoints (e.g., never use `gemini-3.5-transcribe`).
+  - Executive summary and multimodal vision model defaults to `gemini-3.8-flash`.
+- **Dynamic Configuration via Environment Variables**:
+  - Models must always be loaded dynamically from environment variables:
+    - Speech transcription model: `TRANSCRIBE_MODEL` (fallback: `gemini-3.5-transcribe-preview`)
+    - Executive summary / multimodal vision model: `SUMMARY_MODEL` (fallback: `gemini-3.8-flash`)
+  - Never hardcode ad-hoc model names across the codebase; configure them in `.env`.

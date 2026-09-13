@@ -177,11 +177,13 @@ def transcribe_with_gemini_cloud(
     client: genai.Client,
     audio_path: Path,
     bucket_name: str,
-    model_name: str = "gemini-3.5-transcribe-preview",
+    model_name: str = None,
     compress: bool = True,
     language: str = "auto"
 ) -> tuple[str, float]:
     """Upload audio to Cloud Storage and run cloud transcription via Vertex AI."""
+    load_env_file()
+    model_name = model_name or os.environ.get("TRANSCRIBE_MODEL") or "gemini-3.5-transcribe-preview"
     t0 = time.time()
     upload_file_path = audio_path
     temp_compressed = None
@@ -282,7 +284,7 @@ def generate_minutes_with_gemini(
     audio_path: Path,
     raw_transcript_text: str,
     global_glossary: str,
-    summary_model: str = "gemini-3.8-flash",
+    summary_model: str = None,
     prompt_template_path: Path = None,
     summary_language: str = None
 ) -> tuple[str, float]:
@@ -291,6 +293,8 @@ def generate_minutes_with_gemini(
     Uses Dual-Track Concurrency (Track A: Sections 1-5; Track B: Section 6 verbatim localization)
     to minimize wall-clock latency while preserving 100% transcript quality.
     """
+    load_env_file()
+    summary_model = summary_model or os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash"
     t0 = time.time()
     
     glossary_injection = f"""
@@ -491,7 +495,7 @@ def process_video_meeting_end_to_end(
     client: genai.Client,
     video_source: str | Path,
     bucket_name: str = None,
-    summary_model: str = "gemini-3.8-flash",
+    summary_model: str = None,
     use_agentic: bool = False,
     summary_language: str = None,
     outline_path: Path = None,
@@ -501,6 +505,8 @@ def process_video_meeting_end_to_end(
     Produces complete 6 sections (Metadata & Speaker Table, Executive Summary, Topics, Decisions, Action Items, Full Verbatim Transcript)
     in a single request with optional Agentic Video Understanding.
     """
+    load_env_file()
+    summary_model = summary_model or os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash"
     t0 = time.time()
     source_str = str(video_source).strip()
     is_yt = is_youtube_url(source_str)

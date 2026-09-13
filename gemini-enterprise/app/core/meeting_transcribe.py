@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 scripts/meeting_transcribe.py - Main Pipeline Orchestrator for Meeting Transcribe Agent.
-Universal Cloud-Scale Intelligence (gemini-3.5-transcribe) with Offline Whisper Backup.
+Universal Cloud-Scale Intelligence (gemini-3.5-transcribe-preview) with Offline Whisper Backup.
 Uses Vertex AI with Application Default Credentials exclusively -- no AI Studio API key.
 """
 
@@ -28,6 +28,7 @@ from .audio_utils import (
 from .diarization import transcribe_with_local_whisper_and_diarization
 from .gemini_engine import (
     get_gemini_client,
+    load_env_file,
     transcribe_with_gemini_cloud,
     generate_minutes_with_gemini,
     process_video_meeting_end_to_end,
@@ -53,8 +54,8 @@ def generate_meeting_minutes_and_transcript(
     project_id: str = None,
     location: str = None,
     bucket_name: str = None,
-    transcribe_model: str = "gemini-3.5-transcribe-preview",
-    summary_model: str = "gemini-3.8-flash",
+    transcribe_model: str = None,
+    summary_model: str = None,
     outline: str = None,
     force_glossary: bool = False,
     no_glossary: bool = False,
@@ -78,6 +79,9 @@ def generate_meeting_minutes_and_transcript(
     environment) -- Vertex AI has no equivalent of the old Files API, so it reads
     uploads via a gs:// URI instead.
     """
+    load_env_file()
+    transcribe_model = transcribe_model or os.environ.get("TRANSCRIBE_MODEL") or "gemini-3.5-transcribe-preview"
+    summary_model = summary_model or os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash"
     source_str = str(input_source).strip()
     is_yt = is_youtube_url(source_str)
     is_vid = is_video_file(source_str) if not is_yt else False
@@ -346,6 +350,7 @@ def generate_meeting_minutes_and_transcript(
 
 
 def main():
+    load_env_file()
     parser = argparse.ArgumentParser(
         description="Meeting Transcribe Agent - Universal Cloud-Scale Intelligence & Offline Whisper Backup Suite"
     )
@@ -416,13 +421,13 @@ def main():
     )
     parser.add_argument(
         "--transcribe-model",
-        default="gemini-3.5-transcribe-preview",
-        help="Gemini cloud transcription model [default: gemini-3.5-transcribe-preview]"
+        default=os.environ.get("TRANSCRIBE_MODEL") or "gemini-3.5-transcribe-preview",
+        help="Gemini cloud transcription model (default: TRANSCRIBE_MODEL env var, or gemini-3.5-transcribe-preview)"
     )
     parser.add_argument(
         "--summary-model",
-        default="gemini-3.8-flash",
-        help="Gemini executive summary and vision model [default: gemini-3.8-flash]"
+        default=os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash",
+        help="Gemini executive summary and vision model (default: SUMMARY_MODEL env var, or gemini-3.8-flash)"
     )
     parser.add_argument(
         "--outline",

@@ -300,6 +300,8 @@ Meeting Transcribe Agent 支援兩種不同的運作與安裝部屬流程：
    GOOGLE_CLOUD_LOCATION=global
    GCP_REGION=us-central1
    MEETING_STORAGE_BUCKET=your-bucket-name
+   TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
+   SUMMARY_MODEL=gemini-3.8-flash
    ```
 
 4. **於 Antigravity 中使用**：
@@ -416,8 +418,8 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 | `--project` | Vertex AI 的 GCP 專案 (預設讀取 `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT`，或 ADC 預設專案) | `None` |
 | `--region` | Vertex AI 的 GCP 區域 (預設讀取 `GOOGLE_CLOUD_LOCATION` 或 `global`) | `global` |
 | `--bucket` | 暫存本機音訊/影片的 GCS bucket (預設讀取 `MEETING_STORAGE_BUCKET`) | `None` |
-| `--transcribe-model` | 雲端轉譯語音辨識模型 | `gemini-3.5-transcribe-preview` |
-| `--summary-model` | 結構化會議記錄與視覺模型 | `gemini-3.8-flash` |
+| `--transcribe-model` | 雲端轉譯語音辨識模型 (預設讀取 `TRANSCRIBE_MODEL`) | `gemini-3.5-transcribe-preview` |
+| `--summary-model` | 結構化會議記錄與視覺模型 (預設讀取 `SUMMARY_MODEL`) | `gemini-3.8-flash` |
 | `--outline` | 外部會議通知、大綱或議程檔案路徑 (.txt / .md) | `None` |
 | `--force-glossary` | 強制重新提取全域術語對照表 (覆蓋快取) | `False` |
 | `--no-glossary` | 跳過全域術語對照表提取 | `False` |

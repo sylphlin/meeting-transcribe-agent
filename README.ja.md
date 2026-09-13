@@ -278,6 +278,8 @@ AI Agent のローカルスキルとして Antigravity に導入し、IDE や CL
    GOOGLE_CLOUD_LOCATION=global
    GCP_REGION=us-central1
    MEETING_STORAGE_BUCKET=your-bucket-name
+   TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
+   SUMMARY_MODEL=gemini-3.8-flash
    ```
 
 4. **Antigravity での利用**：
@@ -389,8 +391,8 @@ python3 meeting_transcribe.py "meeting_record.mp3" --engine whisper --whisper-ba
 | `--project` | Vertex AI 用 Google Cloud プロジェクト ID | `None` (ADC/環境変数) |
 | `--region` | Vertex AI 用 Google Cloud リージョン | `global` |
 | `--bucket` | ローカル音声/動画のステージング用 GCS bucket 名 | `MEETING_STORAGE_BUCKET` 環境変数 |
-| `--transcribe-model` | クラウド音声認識モデル | `gemini-3.5-transcribe-preview` |
-| `--summary-model` | 構造化議事録・視覚理解モデル | `gemini-3.8-flash` |
+| `--transcribe-model` | クラウド音声認識モデル (デフォルト: `TRANSCRIBE_MODEL`) | `gemini-3.5-transcribe-preview` |
+| `--summary-model` | 構造化議事録・視覚理解モデル (デフォルト: `SUMMARY_MODEL`) | `gemini-3.8-flash` |
 | `--outline` | 会議通知・次第ファイルパス (.txt / .md) | `None` |
 | `--no-player` | インタラクティブ HTML プレイヤーの出力を無効化 | `False` |
 | `--summary-language` | 議事録の出力言語指定 (`auto`, `ja`, `en`, `zh-TW` 等) | `None` (auto) |
