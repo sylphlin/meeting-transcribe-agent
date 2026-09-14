@@ -383,32 +383,6 @@
             gap: 6px;
         }
 
-        .panel-header-actions {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .panel-quick-btn {
-            background: transparent;
-            border: 1px solid var(--border-color);
-            color: var(--text-muted);
-            border-radius: 5px;
-            padding: 2px 7px;
-            font-size: 0.74rem;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            cursor: pointer;
-            transition: all 0.15s;
-        }
-        .panel-quick-btn:hover {
-            color: var(--text-main);
-            border-color: var(--primary);
-            background: var(--surface-hover);
-        }
-
         .summary-body {
             flex: 1;
             min-height: 0;
@@ -545,9 +519,13 @@
             min-height: 0;
             overflow-y: auto;
             padding: 10px 14px;
+        }
+
+        #transcript-stream {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
+            width: 100%;
         }
 
         /* Transcript Turn Card */
@@ -606,12 +584,6 @@
             border-radius: 4px;
             background: rgba(148, 163, 184, 0.15);
             color: var(--text-main);
-        }
-
-        /* Visual grouping: consecutive same-speaker turns are rendered slightly closer together,
-           while retaining full speaker badge and timestamp metadata on every chunk. */
-        .transcript-turn.turn-grouped {
-            margin-top: -4px;
         }
 
         /* Speaker Colors */
@@ -1051,14 +1023,6 @@
                     <span>📋</span>
                     <span id="summary-title-text" data-i18n="summary_title">會議摘要</span>
                 </div>
-                <div class="panel-header-actions">
-                    <button class="panel-quick-btn" onclick="copyContent('summary', 'gdoc')" title="複製摘要至 Google 文件">
-                        <span>📄</span> GDoc
-                    </button>
-                    <button class="panel-quick-btn" onclick="copyContent('summary', 'markdown')" title="複製摘要 Markdown">
-                        <span>📋</span> MD
-                    </button>
-                </div>
             </div>
             <div id="summary-content" class="summary-body">
                 <!-- Summary rendered dynamically via marked.js -->
@@ -1076,9 +1040,6 @@
                     <button id="search-next-btn" class="search-nav-btn" onclick="navigateSearch(1)" title="下一個 (Enter)" disabled>▼</button>
                     <button id="search-clear-btn" class="search-nav-btn" onclick="clearSearch()" title="清除搜尋" style="display: none;">✕</button>
                 </div>
-                <button class="panel-quick-btn" onclick="copyContent('transcript', 'markdown')" title="僅複製逐字稿 Markdown">
-                    <span>📋</span> <span data-i18n="quick_copy_transcript">複製逐字稿</span>
-                </button>
             </div>
             <div id="transcript-container" class="transcript-stream-wrap">
                 <div id="transcript-stream">
@@ -1658,7 +1619,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                         );
 
                         const card = document.createElement('div');
-                        card.className = 'transcript-turn' + (isGrouped ? ' turn-grouped' : '');
+                        card.className = 'transcript-turn';
                         if (startStr) {
                             card.dataset.start = sSec;
                             card.dataset.end = eSec;
