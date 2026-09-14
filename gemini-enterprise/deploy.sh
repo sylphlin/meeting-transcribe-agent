@@ -29,8 +29,11 @@ fi
 
 # Fallback & Default assignments
 PROJECT_ID="${GCP_PROJECT:-${GOOGLE_CLOUD_PROJECT:-}}"
+PROJECT_NUMBER="${GCP_PROJECT_NUMBER:-${PROJECT_NUMBER:-}}"
 REGION="${GCP_REGION:-us-central1}"
 BUCKET_NAME="${MEETING_STORAGE_BUCKET:-}"
+GE_APP="${GEMINI_ENTERPRISE_APP_ID:-}"
+GE_LOCATION="${GEMINI_ENTERPRISE_LOCATION:-global}"
 APPLY_TERRAFORM=false
 DRY_RUN=false
 
@@ -44,19 +47,24 @@ Environment Variables (.env or shell):
   GCP_PROJECT / GOOGLE_CLOUD_PROJECT  Target GCP Project ID
   GCP_REGION                          Target GCP Region (default: us-central1)
   MEETING_STORAGE_BUCKET              GCS bucket name for meeting media & minutes
+  GEMINI_ENTERPRISE_APP_ID            Gemini Enterprise App ID / Resource name
+  GEMINI_ENTERPRISE_LOCATION          Gemini Enterprise Location (default: global)
 
 Options:
   -p, --project PROJECT_ID     Google Cloud Project ID (overrides .env)
   -r, --region REGION          Google Cloud Region (default: us-central1)
       --apply-terraform        Automatically apply Terraform storage configuration
   -b, --bucket BUCKET_NAME     Custom GCS bucket name for meeting data
+      --ge APP_ID              Gemini Enterprise App ID or full resource name (overrides .env)
+      --ge-location LOCATION   Gemini Enterprise location (default: global)
   -n, --dry-run                Preview deployment commands without executing
   -h, --help                   Show this help message and exit
 
 Examples:
   ./deploy.sh                                          # Reads from .env or prompts
+  ./deploy.sh --ge my-ge-app                           # Deploys and registers to Gemini Enterprise
   ./deploy.sh --apply-terraform                        # Reads from .env and applies Terraform
-  ./deploy.sh --project my-gcp-project --region us-central1 --apply-terraform
+  ./deploy.sh --project my-gcp-project --region us-central1 --ge my-ge-app
   ./deploy.sh --dry-run
 EOF
     exit 0
@@ -81,6 +89,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         -b|--bucket)
             BUCKET_NAME="$2"
+            shift 2
+            ;;
+        --ge)
+            GE_APP="$2"
+            shift 2
+            ;;
+        --ge-location)
+            GE_LOCATION="$2"
             shift 2
             ;;
         -n|--dry-run)
@@ -224,6 +240,79 @@ fi
 
 echo ""
 echo "=================================================================="
-echo "✅ Deployment complete!"
+echo "✅ Vertex AI Agent Runtime Deployment Complete!"
 echo "👉 Vertex AI Reasoning Engines: https://console.cloud.google.com/vertex-ai/reasoning-engines?project=$PROJECT_ID"
 echo "=================================================================="
+
+# ------------------------------------------------------------------------------
+# 6. Step 3: Gemini Enterprise Registration (Optional / Automatic)
+# ------------------------------------------------------------------------------
+# Interactive prompt if GE_APP not specified and running in interactive terminal
+if [ -z "$GE_APP" ] && [ -t 0 ] && [ "$DRY_RUN" = false ]; then
+    echo ""
+    read -rp "Do you want to link this agent to Gemini Enterprise now? (y/N): " PROMPT_GE
+    if [[ "$PROMPT_GE" =~ ^[Yy]$ ]]; then
+        echo "[*] Listing available Gemini Enterprise apps in project $PROJECT_ID..."
+        agents-cli publish gemini-enterprise --list --project "$PROJECT_ID" 2>/dev/null || true
+        echo ""
+        read -rp "Enter Gemini Enterprise App ID or Engine ID: " INPUT_GE
+        if [ -n "$INPUT_GE" ]; then
+            GE_APP="$INPUT_GE"
+        fi
+    fi
+fi
+
+if [ -n "$GE_APP" ]; then
+    echo ""
+    echo "[*] Step 3: Registering Agent to Gemini Enterprise..."
+
+    # If short Engine ID provided (does not start with 'projects/'), construct full resource name
+    if [[ "$GE_APP" != projects/* ]]; then
+        if [ -z "$PROJECT_NUMBER" ] && command -v gcloud &> /dev/null; then
+            PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)" 2>/dev/null || true)"
+        fi
+        if [ -n "$PROJECT_NUMBER" ]; then
+            GE_APP="projects/${PROJECT_NUMBER}/locations/${GE_LOCATION}/collections/default_collection/engines/${GE_APP}"
+        else
+            echo "[!] Warning: Could not resolve project number. Passing '$GE_APP' directly."
+        fi
+    fi
+
+    echo "    Target GE App: $GE_APP"
+
+    GE_DISPLAY_NAME="${GEMINI_DISPLAY_NAME:-Meeting Transcribe Agent}"
+    GE_DESCRIPTION="${GEMINI_DESCRIPTION:-Universal meeting intelligence and interactive verbatim transcription suite.}"
+    GE_TOOL_DESCRIPTION="${GEMINI_TOOL_DESCRIPTION:-Transcribes meeting audio/video, generates structured executive minutes, action items, and interactive verbatim transcripts.}"
+
+    PUBLISH_CMD=(
+        agents-cli publish gemini-enterprise
+        --gemini-enterprise-app-id "$GE_APP"
+        --registration-type adk
+        --display-name "$GE_DISPLAY_NAME"
+        --description "$GE_DESCRIPTION"
+        --tool-description "$GE_TOOL_DESCRIPTION"
+    )
+
+    if [ -n "$PROJECT_ID" ]; then
+        PUBLISH_CMD+=(--project-id "$PROJECT_ID")
+    fi
+    if [ -n "$PROJECT_NUMBER" ]; then
+        PUBLISH_CMD+=(--project-number "$PROJECT_NUMBER")
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        echo "[Dry-Run] Executing: ${PUBLISH_CMD[*]}"
+    else
+        echo "    Command: ${PUBLISH_CMD[*]}"
+        "${PUBLISH_CMD[@]}"
+        echo ""
+        echo "=================================================================="
+        echo "🎉 Successfully linked Meeting Transcribe Agent to Gemini Enterprise!"
+        echo "=================================================================="
+    fi
+else
+    echo ""
+    echo "ℹ️  Tip: To register this agent with Gemini Enterprise, run:"
+    echo "   ./deploy.sh --ge <APP_ID_OR_FULL_RESOURCE_NAME>"
+    echo "   or set GEMINI_ENTERPRISE_APP_ID in .env"
+fi
