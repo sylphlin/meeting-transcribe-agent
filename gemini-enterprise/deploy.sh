@@ -197,7 +197,8 @@ fi
 echo ""
 echo "[*] Step 2: Deploying Agent to Vertex AI Agent Runtime..."
 
-DEPLOY_CMD=(agents-cli deploy -d agent_runtime --project "$PROJECT_ID" --region "$REGION")
+SERVICE_NAME="${SERVICE_NAME:-meeting-transcribe-agent}"
+DEPLOY_CMD=(agents-cli deploy -d agent_runtime --project "$PROJECT_ID" --region "$REGION" --service-name "$SERVICE_NAME")
 
 # Pass runtime environment variables to the deployed container. Gemini calls
 # always use Vertex AI + the deployed agent's own service account credentials

@@ -1,5 +1,5 @@
 [project]
-name = "gemini-enterprise"
+name = "meeting-transcribe-agent"
 version = "0.1.0"
 description = ""
 authors = [
