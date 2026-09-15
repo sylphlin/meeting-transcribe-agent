@@ -29,27 +29,21 @@ gemini-enterprise/
 │   │   └── gcs_tool.py           # GCS storage and 24h signed URL generator
 │   ├── core/                     # Transcription and diarization engines
 │   └── assets/                   # Offline audio and multimodal video player templates
-├── deploy.sh                     # Unified shell deployment script
-├── agents-cli-manifest.yaml      # agents-cli project manifest (deployment target: agent_runtime)
+├── deploy.sh                     # Forwarder to root deploy.sh
+├── agents-cli-manifest.yaml      # agents-cli deployment manifest (target: agent_runtime)
 └── pyproject.toml                # Dependencies (google-adk, google-genai, google-cloud-storage)
-
-../terraform/                     # Shared GCS storage provisioning (repo root; also used by the Antigravity CLI)
-├── main.tf                       # GCS bucket with 24h CORS & lifecycle rules
-├── variables.tf                  # GCP project, region, and retention policies
-├── outputs.tf                    # Bucket name and IAM service account email
-└── terraform.tfvars.example      # Configuration template
 ```
 
 ---
 
 ## Storage & 24-Hour CORS Configuration
 
-The generated meeting storage bucket enforces enterprise lifecycle rules and cross-origin browser access:
+The storage bucket (`gs://${GCP_PROJECT}-meeting-transcribe`) enforces enterprise lifecycle rules and cross-origin browser access:
 
 * **24-Hour CORS (`max_age_seconds = 86400`)**: Allows web browsers to stream audio/video media directly from Cloud Storage signed URLs within the interactive player.
 * **Tiered Lifecycle Policies**:
-  * `raw/`: Media staged here purely to feed Gemini (Vertex AI has no Files API of its own, so this mirrors its old ~48h ephemeral-upload behavior) is automatically deleted after 2 days.
-  * `minutes/` and `players/`: Generated executive minutes and player HTML deliverables are automatically deleted after 14 days.
+  * `raw/`: Ephemeral media staged for Gemini transcription is automatically deleted after 2 days.
+  * `minutes/` and `players/`: Generated executive minutes and interactive player deliverables are automatically deleted after 30 days.
 
 ---
 
@@ -68,37 +62,20 @@ The generated meeting storage bucket enforces enterprise lifecycle rules and cro
 
 ### Quick Start: One-Click Shell Script
 
-The unified [`deploy.sh`](../deploy.sh) script located at the repository root handles prerequisite validation, default Terraform storage & least-privilege IAM provisioning (`roles/storage.objectUser`), `agents-cli deploy`, and automated Gemini Enterprise registration:
+The unified [`deploy.sh`](../deploy.sh) script located at the repository root handles prerequisite validation, 100% native `gcloud` storage bucket creation with CORS & lifecycle rules, dedicated least-privilege service account setup (`roles/storage.objectUser`), `agents-cli deploy`, and automated Gemini Enterprise registration:
 
 ```bash
 chmod +x deploy.sh
 
-# Standard automated deployment (reads .env, applies Terraform, deploys, and links to Gemini Enterprise):
+# Standard automated deployment (reads .env, provisions storage via gcloud, deploys, and links to Gemini Enterprise):
 ./deploy.sh
 
 # Explicit project/region with custom storage bucket:
 ./deploy.sh --project YOUR_PROJECT_ID --region us-central1 --bucket YOUR_BUCKET
 
-# Skip Terraform infrastructure step if already provisioned:
-./deploy.sh --skip-terraform
-
 # Preview execution without making cloud changes:
 ./deploy.sh --dry-run
 ```
-
-### Manual CLI Deployment (Alternative)
-
-1. Provision Storage:
-   ```bash
-   cd ../terraform
-   terraform init
-   terraform apply -var="project_id=YOUR_PROJECT_ID" -var="region=us-central1"
-   cd -
-   ```
-2. Deploy Agent:
-   ```bash
-   agents-cli deploy -d agent_runtime --project YOUR_PROJECT_ID --region us-central1
-   ```
 
 ---
 

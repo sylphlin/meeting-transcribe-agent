@@ -237,12 +237,14 @@ The system categorizes processing into **Routing**, **Dual-Track Execution**, an
 
 ## Installation & Deployment
 
-Meeting Transcribe Agent supports two primary operational workflows:
+## Installation & Deployment
 
-| Platform | Setup Method | Configuration | Primary Interface |
+Meeting Transcribe Agent provides two installation and deployment methods:
+
+| Method | Target Environment | Setup Vehicle | Primary Interface |
 | :--- | :--- | :--- | :--- |
-| **Google Antigravity** | Installed as an AI Agent Skill | Root `.env` file | Natural language conversation in Antigravity IDE / CLI |
-| **Gemini Enterprise** | Deployed via `deploy.sh` to Vertex AI Agent Runtime | `deploy.sh` parameters or `gemini-enterprise/.env` | Gemini Enterprise Web UI, Vertex AI Agent Engine, A2A |
+| **Method 1: Google Antigravity** | Local IDE / CLI / Agent Skill | Python environment (`pip` / `uv`) & `.env` | Conversational chat in Antigravity IDE / CLI |
+| **Method 2: Gemini Enterprise** | Cloud Vertex AI Agent Runtime | 100% native `gcloud` one-click `./deploy.sh` | Gemini Enterprise Web UI, Vertex AI Agent Engine, A2A |
 
 ---
 
@@ -259,20 +261,11 @@ Meeting Transcribe Agent supports two primary operational workflows:
    gcloud auth application-default login
    ```
 
-3. **Cloud Storage Staging Bucket** (Required for local audio/video file processing; YouTube URLs stream directly):
-   ```bash
-   cd terraform
-   terraform init
-   terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
-   cd ..
-   ```
-   *(This also establishes an automated lifecycle rule that purges ephemeral `raw/` uploads after 2 days).*
-
 ---
 
-### Option 1: Google Antigravity (AI Agent Skill Setup)
+### Method 1: Google Antigravity Installation (Local AI Agent Skill & CLI)
 
-Install directly into Google Antigravity as an Agent Skill for conversational meeting transcription in your IDE or CLI:
+Install directly into Google Antigravity as an Agent Skill for conversational meeting transcription in your IDE, or run standalone via Python CLI:
 
 1. **Install Skill into Antigravity**:
    - **Global Skill** (available across all projects and workspaces):
@@ -291,19 +284,20 @@ Install directly into Google Antigravity as an Agent Skill for conversational me
    *(Optional offline Whisper backup: `pip install mlx-whisper sherpa-onnx` on Apple Silicon, or `pip install faster-whisper sherpa-onnx` on Linux/Windows).*
 
 3. **Configure Environment Variables (`.env`)**:
-   Copy `.env.example` to `.env` in the skill root. Specify the Vertex AI model endpoint as `global` and cloud infrastructure resources as `us-central1`:
+   Copy `.env.example` to `.env` in the repository or skill root:
    ```bash
    cp .env.example .env
    ```
    Example `.env`:
    ```bash
-    GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-    GOOGLE_CLOUD_LOCATION=global
-    GCP_REGION=us-central1
-    MEETING_STORAGE_BUCKET=your-bucket-name
-    TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
-    SUMMARY_MODEL=gemini-3.8-flash
+   GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+   GOOGLE_CLOUD_LOCATION=global
+   GCP_REGION=us-central1
+   MEETING_STORAGE_BUCKET=your-gcp-project-id-meeting-transcribe
+   TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
+   SUMMARY_MODEL=gemini-3.8-flash
    ```
+   *(If processing local files with cloud Gemini, create your bucket via: `gcloud storage buckets create gs://your-gcp-project-id-meeting-transcribe --location=us-central1`).*
 
 4. **Usage in Antigravity**:
    Antigravity automatically discovers and loads `SKILL.md`. Simply instruct the agent in the chat:
@@ -311,25 +305,35 @@ Install directly into Google Antigravity as an Agent Skill for conversational me
 
 ---
 
-### Option 2: Gemini Enterprise (Cloud Agent Deployment)
+### Method 2: Gemini Enterprise Installation (Cloud Vertex AI Agent Runtime)
 
-Deploy as an enterprise managed service on Google Cloud Vertex AI Agent Runtime (Agent Engine / Reasoning Engine) powered by Google ADK 2.0 and `agents-cli`:
+Deploy as an enterprise managed service on Google Cloud Vertex AI Agent Runtime (Agent Engine / Reasoning Engine) powered by Google ADK 2.0 and `agents-cli`.
+
+This deployment is **100% native `gcloud`**—requiring zero external tools (no Terraform), making it fully compatible with Google Cloud Shell out-of-the-box:
 
 1. **Install Deployment Tooling (`uv` and `google-agents-cli`)**:
    ```bash
    uv tool install google-agents-cli
    ```
 
-2. **Deploy Using `deploy.sh`**:
-   The automated deployment script handles prerequisite validation, default Terraform storage & least-privilege IAM provisioning (`roles/storage.objectUser`), `agents-cli deploy`, and automated Gemini Enterprise registration:
+2. **One-Click Automated Deployment (`./deploy.sh`)**:
+   The automated deployment script handles the entire lifecycle end-to-end:
+   - Provisions/verifies GCS bucket `gs://${PROJECT_ID}-meeting-transcribe` with 24-hour CORS and automated lifecycle deletion rules (2 days for `raw/` ephemeral uploads, 30 days for minutes and interactive players).
+   - Creates dedicated service account `meeting-transcribe-sa` with least-privilege IAM bindings (`roles/storage.objectUser`, `roles/aiplatform.user`, `roles/logging.logWriter`).
+   - Packages and deploys code to Vertex AI Agent Runtime via `agents-cli deploy`.
+   - Automatically registers and binds the extension into Gemini Enterprise.
+
    ```bash
    chmod +x deploy.sh
 
-   # Automated deployment (reads .env, provisions storage via Terraform, deploys, and links to Gemini Enterprise):
+   # Automated deployment (reads .env, provisions cloud resources via gcloud, deploys, and links to Gemini Enterprise):
    ./deploy.sh
 
    # Or specify explicit project and region:
    ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
+
+   # Dry-run preview:
+   ./deploy.sh --dry-run
    ```
 
 3. **Enterprise Capabilities & Delivery**:

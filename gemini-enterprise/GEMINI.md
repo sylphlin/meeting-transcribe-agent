@@ -43,7 +43,6 @@ Ask the user: Option A (simple single-project) or Option B (full CI/CD pipeline 
 | `agents-cli eval metric list` | List built-in metrics available in the SDK |
 | `agents-cli eval optimize` | Auto-tune agent prompts using eval data |
 | `agents-cli lint` | Check code quality |
-| `agents-cli infra single-project` | Set up project infrastructure (Terraform) |
 | `agents-cli deploy` | Deploy to dev |
 | `agents-cli scaffold enhance` | Add deployment target or CI/CD to project |
 | `agents-cli scaffold upgrade` | Upgrade project to latest version |
@@ -58,4 +57,3 @@ Ask the user: Option A (simple single-project) or Option B (full CI/CD pipeline 
 - **ADK tool imports**: Import the tool instance, not the module: `from google.adk.tools.load_web_page import load_web_page`
 - **Run Python with `uv`**: `uv run python script.py`. Run `agents-cli install` first.
 - **Stop on repeated errors**: If the same error appears 3+ times, fix the root cause instead of retrying.
-- **Terraform conflicts** (Error 409): Use `terraform import` instead of retrying creation.

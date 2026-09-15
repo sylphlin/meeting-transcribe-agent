@@ -258,20 +258,11 @@ Meeting Transcribe Agent 支援兩種不同的運作與安裝部屬流程：
    gcloud auth application-default login
    ```
 
-3. **Cloud Storage 暫存儲存桶 (GCS Bucket)**（處理本機音訊/影片時需要，YouTube 網址直接串流免暫存）：
-   ```bash
-   cd terraform
-   terraform init
-   terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
-   cd ..
-   ```
-   *（Terraform 會自動建立生命週期規則，暫存於 `raw/` 下的檔案於 2 天後自動銷毀）。*
-
 ---
 
-### 方式一：Google Antigravity (AI Agent Skill 安裝)
+### 方式一：Google Antigravity 安裝 (本機 AI Agent 技能與命令列)
 
-直接將專案作為 Agent 技能安裝至 Antigravity，在 IDE 開發環境或命令列中透過自然語言對話進行會議記錄轉譯：
+直接將專案作為 Agent 技能安裝至 Antigravity，在 IDE 開發環境中透過自然語言對話進行會議記錄轉譯，或透過 Python 命令列獨立執行：
 
 1. **安裝 Skill 至 Antigravity**：
    - **全域技能 (Global Skill)**（所有專案工作區皆可調用，推薦）：
@@ -299,10 +290,11 @@ Meeting Transcribe Agent 支援兩種不同的運作與安裝部屬流程：
    GOOGLE_CLOUD_PROJECT=your-gcp-project-id
    GOOGLE_CLOUD_LOCATION=global
    GCP_REGION=us-central1
-   MEETING_STORAGE_BUCKET=your-bucket-name
+   MEETING_STORAGE_BUCKET=your-gcp-project-id-meeting-transcribe
    TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
    SUMMARY_MODEL=gemini-3.8-flash
    ```
+   *（如需使用雲端 Gemini 處理本機檔案，可直接透過指令建立儲存桶：`gcloud storage buckets create gs://your-gcp-project-id-meeting-transcribe --location=us-central1`）。*
 
 4. **於 Antigravity 中使用**：
    Antigravity 會自動探索並讀取 `SKILL.md`，您只需在對話視窗中提出需求：
@@ -310,25 +302,35 @@ Meeting Transcribe Agent 支援兩種不同的運作與安裝部屬流程：
 
 ---
 
-### 方式二：Gemini Enterprise (雲端託管 Agent 部屬)
+### 方式二：Gemini Enterprise 安裝 (雲端 Vertex AI Agent Runtime 部屬)
 
-透過 Google ADK 2.0 與 `agents-cli`，將轉譯 Agent 部屬至 Google Cloud Vertex AI Agent Runtime（Agent Engine / Reasoning Engine）作為企業級託管服務：
+透過 Google ADK 2.0 與 `agents-cli`，將轉譯 Agent 部屬至 Google Cloud Vertex AI Agent Runtime（Agent Engine / Reasoning Engine）作為企業級託管服務。
+
+本部屬流程採用 **100% 純原生 `gcloud`** 進行資源建立，不依賴 Terraform 等任何第三方工具，在 Google Cloud Shell 中即可直接一鍵執行：
 
 1. **安裝部屬命令列工具 (`uv` 與 `google-agents-cli`)**：
    ```bash
    uv tool install google-agents-cli
    ```
 
-2. **透過 `deploy.sh` 快速自動部屬**：
-   專案內建的一鍵部屬腳本會自動檢查相依環境、預設執行 Terraform 建立/檢驗儲存桶與最小權限 (`roles/storage.objectUser`)、調用 `agents-cli deploy` 並自動連結至 Gemini Enterprise：
+2. **透過 `./deploy.sh` 一鍵自動部屬**：
+   專案內建的一鍵部屬腳本會全自動處理端到端部屬流程：
+   - 建立並檢驗 GCS 儲存桶 `gs://${PROJECT_ID}-meeting-transcribe`，自動套用 24 小時 CORS 與生命週期規則（`raw/` 暫存檔 2 天自動銷毀，會議記錄與播放器保存 30 天）。
+   - 建立專屬服務帳戶 `meeting-transcribe-sa` 並配置最小權限 (`roles/storage.objectUser`, `roles/aiplatform.user`, `roles/logging.logWriter`)。
+   - 調用 `agents-cli deploy` 打包程式碼並部屬至 Vertex AI Agent Runtime。
+   - 自動探索並將 Agent 註冊關聯至企業的 Gemini Enterprise 擴充功能中。
+
    ```bash
    chmod +x deploy.sh
 
-   # 自動化部屬（讀取 .env，透過 Terraform 建立/驗證儲存桶並自動連結 Gemini Enterprise）：
+   # 自動化部屬（讀取 .env，透過 gcloud 全自動建立雲端資源、部屬並自動關聯 Gemini Enterprise）：
    ./deploy.sh
 
    # 或指定專案與區域：
    ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
+
+   # 模擬執行（Dry-Run）：
+   ./deploy.sh --dry-run
    ```
 
 3. **企業整合與成果發布**：
@@ -349,6 +351,7 @@ meeting-transcribe-agent/
 ├── .gitignore                        # 忽略測試音訊與本機快取
 ├── .env.example                      # Antigravity Skill 環境變數範例
 ├── meeting_transcribe.py             # 根目錄命令列入口
+├── deploy.sh                         # 100% 原生 gcloud 一鍵部屬腳本 (支援 Cloud Shell)
 ├── scripts/                          # 核心模組
 │   ├── __init__.py
 │   ├── meeting_transcribe.py         # 主流程調度器 (支援雙引擎)
@@ -362,9 +365,8 @@ meeting-transcribe-agent/
 │   ├── audio_player_template.html    # 獨立離線雙欄音訊審閱播放器模板
 │   ├── video_player_template.html    # 三欄式多模態視訊審閱播放器模板
 │   └── prompts/                      # 提示詞模板目錄
-├── terraform/                        # GCS 儲存桶與生命週期管理設定
 └── gemini-enterprise/                # Gemini Enterprise (ADK 2.0 / Vertex AI) 部屬包
-    ├── deploy.sh                     # 一鍵自動化部屬腳本
+    ├── deploy.sh                     # 轉發至根目錄 deploy.sh
     ├── agents-cli-manifest.yaml      # agents-cli 部屬設定檔
     └── app/                          # 企業 Agent 模組與工具
 ```

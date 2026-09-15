@@ -236,20 +236,11 @@ Meeting Transcribe Agent는 두 가지 서로 다른 실행 및 설치/배포 �
    gcloud auth application-default login
    ```
 
-3. **Cloud Storage 임시 버킷 (GCS Bucket)** (로컬 오디오/영상 파일용. YouTube URL은 직접 분석하므로 불필요):
-   ```bash
-   cd terraform
-   terraform init
-   terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
-   cd ..
-   ```
-   *(Terraform이 `raw/` 하위 파일에 대해 업로드 2일 후 자동 삭제 수명 주기 규칙을 구성합니다).*
-
 ---
 
-### 방식 1: Google Antigravity (AI Agent Skill 설치)
+### 방식 1: Google Antigravity 설치 (로컬 AI Agent 스킬 & CLI)
 
-AI Agent의 로컬 스킬로 Antigravity에 설치하여 IDE나 CLI 환경에서 대화형으로 회의록을 생성합니다:
+AI Agent의 로컬 스킬로 Antigravity에 설치하여 IDE 환경에서 대화형으로 회의록을 생성하거나 Python CLI로 독립 실행합니다:
 
 1. **Skill을 Antigravity에 설치**:
    - **글로벌 스킬 (Global Skill)** (모든 작업 공간에서 사용 가능, 권장):
@@ -277,10 +268,11 @@ AI Agent의 로컬 스킬로 Antigravity에 설치하여 IDE나 CLI 환경에서
    GOOGLE_CLOUD_PROJECT=your-gcp-project-id
    GOOGLE_CLOUD_LOCATION=global
    GCP_REGION=us-central1
-   MEETING_STORAGE_BUCKET=your-bucket-name
+   MEETING_STORAGE_BUCKET=your-gcp-project-id-meeting-transcribe
    TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
    SUMMARY_MODEL=gemini-3.8-flash
    ```
+   *(클라우드 Gemini로 로컬 파일을 처리할 경우 사전에 버킷을 생성할 수 있습니다: `gcloud storage buckets create gs://your-gcp-project-id-meeting-transcribe --location=us-central1`).*
 
 4. **Antigravity에서 사용하기**:
    Antigravity가 `SKILL.md`를 자동으로 색인합니다. 대화창에서 자연어로 요청하기만 하면 됩니다:
@@ -288,25 +280,35 @@ AI Agent의 로컬 스킬로 Antigravity에 설치하여 IDE나 CLI 환경에서
 
 ---
 
-### 방식 2: Gemini Enterprise (클라우드 매니지드 Agent 배포)
+### 방식 2: Gemini Enterprise 설치 (클라우드 Vertex AI Agent Runtime 배포)
 
-Google ADK 2.0 및 `agents-cli`를 사용하여 Vertex AI Agent Runtime(Agent Engine / Reasoning Engine)에 엔터프라이즈 매니지드 서비스로 배포합니다:
+Google ADK 2.0 및 `agents-cli`를 사용하여 Vertex AI Agent Runtime(Agent Engine / Reasoning Engine)에 엔터프라이즈 매니지드 서비스로 배포합니다.
+
+본 배포 프로세스는 **100% 네이티브 `gcloud`** 명령어로 리소스를 프로비저닝하므로 Terraform 등 외부 도구 의존성이 없으며, Google Cloud Shell에서 바로 원클릭 배포할 수 있습니다:
 
 1. **배포 CLI 도구 설치 (`uv` 및 `google-agents-cli`)**:
    ```bash
    uv tool install google-agents-cli
    ```
 
-2. **`deploy.sh`를 통한 원클릭 자동 배포**:
-   내장된 배포 스크립트가 사전 요구사항 검증, Terraform 기반 최소 권한 버킷(`roles/storage.objectUser`) 생성/검증, `agents-cli deploy`, Gemini Enterprise 자동 등록을 원스톱으로 처리합니다:
+2. **`./deploy.sh`를 통한 원클릭 자동 배포**:
+   내장된 배포 스크립트가 엔드투엔드 배포 라이프사이클을 전자동으로 처리합니다:
+   - GCS 버킷 `gs://${PROJECT_ID}-meeting-transcribe` 생성/검증, 24시간 CORS 설정 및 자동 수명 주기 삭제 규칙 적용(`raw/` 임시 파일은 2일 후 자동 파기, 회의록 및 플레이어는 30일 보존).
+   - 전용 서비스 계정 `meeting-transcribe-sa` 생성 및 최소 권한 부여 (`roles/storage.objectUser`, `roles/aiplatform.user`, `roles/logging.logWriter`).
+   - `agents-cli deploy`를 통한 코드 패키징 및 Vertex AI Agent Runtime 배포.
+   - 기업 Gemini Enterprise 확장에 에이전트 자동 등록 및 연결.
+
    ```bash
    chmod +x deploy.sh
 
-   # 자동 배포 (.env 로드, Terraform 버킷 생성/검증, 배포 및 Gemini Enterprise 연동 일괄 실행):
+   # 자동 배포 (.env 로드, gcloud 기반 클라우드 리소스 전자동 생성, 배포 및 Gemini Enterprise 연동 일괄 실행):
    ./deploy.sh
 
    # 또는 프로젝트 및 리전 지정:
    ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
+
+   # 시뮬레이션 실행 (Dry-Run):
+   ./deploy.sh --dry-run
    ```
 
 3. **엔터프라이즈 연동 및 산출물 공유**:
@@ -327,6 +329,7 @@ meeting-transcribe-agent/
 ├── .gitignore                        # 테스트 미디어 및 로컬 캐시 제외 설정
 ├── .env.example                      # Antigravity Skill용 환경 변수 샘플
 ├── meeting_transcribe.py             # 루트 CLI 엔트리포인트
+├── deploy.sh                         # 100% 네이티브 gcloud 원클릭 배포 스크립트 (Cloud Shell 지원)
 ├── scripts/                          # 핵심 모듈
 │   ├── __init__.py
 │   ├── meeting_transcribe.py         # 메인 파이프라인 컨트롤러
@@ -340,9 +343,8 @@ meeting-transcribe-agent/
 │   ├── audio_player_template.html    # 오디오 2패널 플레이어 템플릿
 │   ├── video_player_template.html    # 영상 3패널 플레이어 템플릿
 │   └── prompts/                      # 프롬프트 템플릿 디렉터리
-├── terraform/                        # GCS 버킷 및 수명 주기 관리
 └── gemini-enterprise/                # Gemini Enterprise (ADK 2.0 / Vertex AI) 배포 패키지
-    ├── deploy.sh                     # 원클릭 자동 배포 스크립트
+    ├── deploy.sh                     # 루트 deploy.sh로 전달하는 스크립트
     ├── agents-cli-manifest.yaml      # agents-cli 배포 명세서
     └── app/                          # 엔터프라이즈 에이전트 모듈
 ```

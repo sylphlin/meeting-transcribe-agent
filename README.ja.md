@@ -236,20 +236,11 @@ Meeting Transcribe Agent は、2つの異なる実行・インストール形態
    gcloud auth application-default login
    ```
 
-3. **Cloud Storage 一時バケット (GCS Bucket)**（ローカル音声・動画ファイル用。YouTube URL は直接解析のため不要）：
-   ```bash
-   cd terraform
-   terraform init
-   terraform apply -var="project_id=YOUR_GCP_PROJECT_ID" -var="region=us-central1"
-   cd ..
-   ```
-   *（Terraform により `raw/` プレフィックスの自動ライフサイクルルールが構成され、アップロードから 2 日後に自動削除されます）。*
-
 ---
 
-### 方法 1：Google Antigravity (AI Agent Skill インストール)
+### 方法 1：Google Antigravity インストール (ローカル AI Agent スキル & CLI)
 
-AI Agent のローカルスキルとして Antigravity に導入し、IDE や CLI から自然言語で会議録を生成します：
+AI Agent のローカルスキルとして Antigravity に導入し、IDE や CLI から自然言語で会議録を生成、または Python CLI からスタンドアロンで実行します：
 
 1. **Skill を Antigravity にインストール**：
    - **グローバルスキル (Global Skill)**（すべての作業スペースで利用可能、推奨）：
@@ -277,10 +268,11 @@ AI Agent のローカルスキルとして Antigravity に導入し、IDE や CL
    GOOGLE_CLOUD_PROJECT=your-gcp-project-id
    GOOGLE_CLOUD_LOCATION=global
    GCP_REGION=us-central1
-   MEETING_STORAGE_BUCKET=your-bucket-name
+   MEETING_STORAGE_BUCKET=your-gcp-project-id-meeting-transcribe
    TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
    SUMMARY_MODEL=gemini-3.8-flash
    ```
+   *（クラウド Gemini でローカルファイルを処理する場合、事前にバケットを作成できます：`gcloud storage buckets create gs://your-gcp-project-id-meeting-transcribe --location=us-central1`）。*
 
 4. **Antigravity での利用**：
    Antigravity が `SKILL.md` を自動検出します。チャット欄で自然言語で依頼するだけで完了します：
@@ -288,25 +280,35 @@ AI Agent のローカルスキルとして Antigravity に導入し、IDE や CL
 
 ---
 
-### 方法 2：Gemini Enterprise (クラウドマネージド Agent デプロイ)
+### 方法 2：Gemini Enterprise インストール (クラウド Vertex AI Agent Runtime デプロイ)
 
-Google ADK 2.0 および `agents-cli` を使用し、Vertex AI Agent Runtime（Agent Engine / Reasoning Engine）へ企業向けマネージドサービスとしてデプロイします：
+Google ADK 2.0 および `agents-cli` を使用し、Vertex AI Agent Runtime（Agent Engine / Reasoning Engine）へ企業向けマネージドサービスとしてデプロイします。
+
+本デプロイフローは **100% ネイティブ `gcloud`** で実行され、Terraform などの外部ツールに依存せず、Google Cloud Shell からそのままワンクリックで実行可能です：
 
 1. **デプロイ CLI ツールの導入 (`uv` および `google-agents-cli`)**：
    ```bash
    uv tool install google-agents-cli
    ```
 
-2. **`deploy.sh` による自動ワンクリックデプロイ**：
-   内蔵のデプロイスクリプトが前提環境の検証、Terraform による最小権限バケット（`roles/storage.objectUser`）作成/検証、`agents-cli deploy`、および Gemini Enterprise への自動登録を全自動で処理します：
+2. **`./deploy.sh` による自動ワンクリックデプロイ**：
+   内蔵のデプロイスクリプトがエンドツーエンドのデプロイを完全自動で処理します：
+   - GCS バケット `gs://${PROJECT_ID}-meeting-transcribe` の作成/検証、24 時間 CORS 設定、および自動ライフサイクル削除ルール（`raw/` 一時ファイルは 2 日後に自動削除、議事録とプレイヤーは 30 日保存）。
+   - 専用サービスアカウント `meeting-transcribe-sa` の作成と最小権限の付与 (`roles/storage.objectUser`, `roles/aiplatform.user`, `roles/logging.logWriter`)。
+   - `agents-cli deploy` による Vertex AI Agent Runtime へのコードパッケージとデプロイ。
+   - Gemini Enterprise へのエージェント自動検出と拡張機能登録。
+
    ```bash
    chmod +x deploy.sh
 
-   # 自動デプロイ（.env を読み込み、Terraform バケット作成/検証、デプロイ、Gemini Enterprise 連携を一括実行）：
+   # 自動デプロイ（.env を読み込み、gcloud でクラウドリソースを作成、デプロイ、Gemini Enterprise 連携を一括実行）：
    ./deploy.sh
 
    # またはプロジェクトとリージョンを指定：
    ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
+
+   # ドライラン確認：
+   ./deploy.sh --dry-run
    ```
 
 3. **エンタープライズ統合と成果物共有**：
@@ -327,6 +329,7 @@ meeting-transcribe-agent/
 ├── .gitignore                        # テストメディア・ローカルキャッシュの除外
 ├── .env.example                      # Antigravity Skill 用環境変数サンプル
 ├── meeting_transcribe.py             # ルート CLI エントリポイント
+├── deploy.sh                         # 100% ネイティブ gcloud 自動デプロイスクリプト (Cloud Shell 対応)
 ├── scripts/                          # コアモジュール
 │   ├── __init__.py
 │   ├── meeting_transcribe.py         # パイプライン制御スクリプト
@@ -340,9 +343,8 @@ meeting-transcribe-agent/
 │   ├── audio_player_template.html    # 音声用 2 ペインプレイヤーテンプレート
 │   ├── video_player_template.html    # 動画用 3 ペインプレイヤーテンプレート
 │   └── prompts/                      # プロンプトテンプレート群
-├── terraform/                        # GCS バケット・ライフサイクル設定
 └── gemini-enterprise/                # Gemini Enterprise (ADK 2.0 / Vertex AI) デプロイ一式
-    ├── deploy.sh                     # 自動デプロイスクリプト
+    ├── deploy.sh                     # ルート deploy.sh への転送スクリプト
     ├── agents-cli-manifest.yaml      # agents-cli デプロイ定義
     └── app/                          # エンタープライズエージェント実装
 ```

@@ -5,8 +5,8 @@ Vertex AI has no equivalent of the Gemini Developer API's ephemeral Files API
 (client.files.upload/.get/.delete) -- media fed to Gemini via Vertex AI must
 be referenced by a gs:// URI instead. This module is the shared replacement:
 upload a local file to the raw/ prefix of the meeting-transcribe bucket
-(provisioned by terraform/, which auto-deletes raw/ objects after a couple of
-days -- see raw_retention_days) and reference the resulting URI directly.
+(configured with lifecycle rules that auto-delete raw/ objects after a couple
+of days) and reference the resulting URI directly.
 """
 
 from datetime import timedelta

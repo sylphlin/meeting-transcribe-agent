@@ -74,8 +74,8 @@ def generate_meeting_minutes_and_transcript(
     - Pipeline 1 (Multimodal Video): Directly analyzes YouTube or local video via Gemini Vision with optional Agentic navigation.
     - Pipeline 2 (Pure Audio): Gemini 3.5 Transcribe with ephemeral Cloud Storage upload cleanup or Offline Whisper + Diarization.
 
-    Media fed to Gemini (local audio/video, not YouTube URLs) is staged through the
-    bucket provisioned by terraform/ (bucket_name, or MEETING_STORAGE_BUCKET in the
+    Media fed to Gemini (local audio/video, not YouTube URLs) is staged through a
+    Cloud Storage bucket (bucket_name, or MEETING_STORAGE_BUCKET in the
     environment) -- Vertex AI has no equivalent of the old Files API, so it reads
     uploads via a gs:// URI instead.
     """
@@ -198,7 +198,7 @@ def generate_meeting_minutes_and_transcript(
         if engine.lower() == "gemini" and not resolved_bucket:
             raise ValueError(
                 "A Cloud Storage bucket is required to feed audio to Gemini via Vertex AI. "
-                "Pass bucket_name / --bucket, or set MEETING_STORAGE_BUCKET (see terraform/)."
+                "Pass bucket_name / --bucket, or set MEETING_STORAGE_BUCKET."
             )
     except Exception as e:
         if engine.lower() == "gemini":
@@ -417,7 +417,7 @@ def main():
     )
     parser.add_argument(
         "--bucket",
-        help="GCS bucket name used to stage local audio/video for Gemini (default: MEETING_STORAGE_BUCKET env var; provision one with terraform/). Not needed for YouTube URLs or --engine whisper."
+        help="GCS bucket name used to stage local audio/video for Gemini (default: MEETING_STORAGE_BUCKET env var). Not needed for YouTube URLs or --engine whisper."
     )
     parser.add_argument(
         "--transcribe-model",
