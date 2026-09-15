@@ -34,6 +34,7 @@ REGION="${GCP_REGION:-us-central1}"
 BUCKET_NAME="${MEETING_STORAGE_BUCKET:-}"
 GE_APP="${GEMINI_ENTERPRISE_APP_ID:-}"
 GE_LOCATION="${GEMINI_ENTERPRISE_LOCATION:-global}"
+SKIP_GE=false
 APPLY_TERRAFORM=false
 DRY_RUN=false
 
@@ -55,8 +56,9 @@ Options:
   -r, --region REGION          Google Cloud Region (default: us-central1)
       --apply-terraform        Automatically apply Terraform storage configuration
   -b, --bucket BUCKET_NAME     Custom GCS bucket name for meeting data
-      --ge APP_ID              Gemini Enterprise App ID or full resource name (overrides .env)
+      --ge APP_ID              Gemini Enterprise App ID or full resource name (overrides .env/auto-detect)
       --ge-location LOCATION   Gemini Enterprise location (default: global)
+      --skip-ge                Skip linking agent to Gemini Enterprise
   -n, --dry-run                Preview deployment commands without executing
   -h, --help                   Show this help message and exit
 
@@ -98,6 +100,10 @@ while [[ $# -gt 0 ]]; do
         --ge-location)
             GE_LOCATION="$2"
             shift 2
+            ;;
+        --skip-ge)
+            SKIP_GE=true
+            shift
             ;;
         -n|--dry-run)
             DRY_RUN=true
@@ -245,74 +251,91 @@ echo "👉 Vertex AI Reasoning Engines: https://console.cloud.google.com/vertex-
 echo "=================================================================="
 
 # ------------------------------------------------------------------------------
-# 6. Step 3: Gemini Enterprise Registration (Optional / Automatic)
+# 6. Step 3: Gemini Enterprise Registration (Fully Automated)
 # ------------------------------------------------------------------------------
-# Interactive prompt if GE_APP not specified and running in interactive terminal
-if [ -z "$GE_APP" ] && [ -t 0 ] && [ "$DRY_RUN" = false ]; then
+if [ "$SKIP_GE" = true ]; then
     echo ""
-    read -rp "Do you want to link this agent to Gemini Enterprise now? (y/N): " PROMPT_GE
-    if [[ "$PROMPT_GE" =~ ^[Yy]$ ]]; then
-        echo "[*] Listing available Gemini Enterprise apps in project $PROJECT_ID..."
-        agents-cli publish gemini-enterprise --list --project "$PROJECT_ID" 2>/dev/null || true
+    echo "[*] Step 3: Skipping Gemini Enterprise registration (--skip-ge specified)."
+else
+    # Auto-discover Gemini Enterprise app if not explicitly provided via --ge or .env
+    if [ -z "$GE_APP" ]; then
         echo ""
-        read -rp "Enter Gemini Enterprise App ID or Engine ID: " INPUT_GE
-        if [ -n "$INPUT_GE" ]; then
-            GE_APP="$INPUT_GE"
+        echo "[*] Step 3: Auto-discovering Gemini Enterprise apps in project $PROJECT_ID..."
+        GE_LIST_RAW="$(agents-cli publish gemini-enterprise --list --project "$PROJECT_ID" 2>/dev/null || true)"
+
+        GE_APP="$(echo "$GE_LIST_RAW" | python3 -c '
+import sys, json, re
+text = sys.stdin.read()
+match = re.search(r"\{\s*\"apps\"\s*:\s*\[.*?\]\s*\}", text, re.DOTALL)
+if match:
+    try:
+        data = json.loads(match.group(0))
+        apps = data.get("apps", [])
+        if apps:
+            print(apps[0].get("name", ""))
+    except Exception:
+        pass
+' 2>/dev/null || true)"
+
+        if [ -n "$GE_APP" ]; then
+            echo "[✓] Auto-detected Gemini Enterprise app: $GE_APP"
+        else
+            echo "[!] No Gemini Enterprise apps found in project $PROJECT_ID."
         fi
     fi
-fi
 
-if [ -n "$GE_APP" ]; then
-    echo ""
-    echo "[*] Step 3: Registering Agent to Gemini Enterprise..."
+    if [ -n "$GE_APP" ]; then
+        echo ""
+        echo "[*] Step 3: Registering Agent to Gemini Enterprise..."
 
-    # If short Engine ID provided (does not start with 'projects/'), construct full resource name
-    if [[ "$GE_APP" != projects/* ]]; then
-        if [ -z "$PROJECT_NUMBER" ] && command -v gcloud &> /dev/null; then
-            PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)" 2>/dev/null || true)"
+        # If short Engine ID provided (does not start with 'projects/'), construct full resource name
+        if [[ "$GE_APP" != projects/* ]]; then
+            if [ -z "$PROJECT_NUMBER" ] && command -v gcloud &> /dev/null; then
+                PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)" 2>/dev/null || true)"
+            fi
+            if [ -n "$PROJECT_NUMBER" ]; then
+                GE_APP="projects/${PROJECT_NUMBER}/locations/${GE_LOCATION}/collections/default_collection/engines/${GE_APP}"
+            else
+                echo "[!] Warning: Could not resolve project number. Passing '$GE_APP' directly."
+            fi
+        fi
+
+        echo "    Target GE App: $GE_APP"
+
+        GE_DISPLAY_NAME="${GEMINI_DISPLAY_NAME:-Meeting Transcribe Agent}"
+        GE_DESCRIPTION="${GEMINI_DESCRIPTION:-Universal meeting intelligence and interactive verbatim transcription suite.}"
+        GE_TOOL_DESCRIPTION="${GEMINI_TOOL_DESCRIPTION:-Transcribes meeting audio/video, generates structured executive minutes, action items, and interactive verbatim transcripts.}"
+
+        PUBLISH_CMD=(
+            agents-cli publish gemini-enterprise
+            --gemini-enterprise-app-id "$GE_APP"
+            --registration-type adk
+            --display-name "$GE_DISPLAY_NAME"
+            --description "$GE_DESCRIPTION"
+            --tool-description "$GE_TOOL_DESCRIPTION"
+        )
+
+        if [ -n "$PROJECT_ID" ]; then
+            PUBLISH_CMD+=(--project-id "$PROJECT_ID")
         fi
         if [ -n "$PROJECT_NUMBER" ]; then
-            GE_APP="projects/${PROJECT_NUMBER}/locations/${GE_LOCATION}/collections/default_collection/engines/${GE_APP}"
-        else
-            echo "[!] Warning: Could not resolve project number. Passing '$GE_APP' directly."
+            PUBLISH_CMD+=(--project-number "$PROJECT_NUMBER")
         fi
-    fi
 
-    echo "    Target GE App: $GE_APP"
-
-    GE_DISPLAY_NAME="${GEMINI_DISPLAY_NAME:-Meeting Transcribe Agent}"
-    GE_DESCRIPTION="${GEMINI_DESCRIPTION:-Universal meeting intelligence and interactive verbatim transcription suite.}"
-    GE_TOOL_DESCRIPTION="${GEMINI_TOOL_DESCRIPTION:-Transcribes meeting audio/video, generates structured executive minutes, action items, and interactive verbatim transcripts.}"
-
-    PUBLISH_CMD=(
-        agents-cli publish gemini-enterprise
-        --gemini-enterprise-app-id "$GE_APP"
-        --registration-type adk
-        --display-name "$GE_DISPLAY_NAME"
-        --description "$GE_DESCRIPTION"
-        --tool-description "$GE_TOOL_DESCRIPTION"
-    )
-
-    if [ -n "$PROJECT_ID" ]; then
-        PUBLISH_CMD+=(--project-id "$PROJECT_ID")
-    fi
-    if [ -n "$PROJECT_NUMBER" ]; then
-        PUBLISH_CMD+=(--project-number "$PROJECT_NUMBER")
-    fi
-
-    if [ "$DRY_RUN" = true ]; then
-        echo "[Dry-Run] Executing: ${PUBLISH_CMD[*]}"
+        if [ "$DRY_RUN" = true ]; then
+            echo "[Dry-Run] Executing: ${PUBLISH_CMD[*]}"
+        else
+            echo "    Command: ${PUBLISH_CMD[*]}"
+            "${PUBLISH_CMD[@]}"
+            echo ""
+            echo "=================================================================="
+            echo "🎉 Successfully linked Meeting Transcribe Agent to Gemini Enterprise!"
+            echo "=================================================================="
+        fi
     else
-        echo "    Command: ${PUBLISH_CMD[*]}"
-        "${PUBLISH_CMD[@]}"
         echo ""
-        echo "=================================================================="
-        echo "🎉 Successfully linked Meeting Transcribe Agent to Gemini Enterprise!"
-        echo "=================================================================="
+        echo "ℹ️  Note: No Gemini Enterprise app found or specified."
+        echo "   To link to a specific app, re-run with: ./deploy.sh --ge <APP_ID_OR_FULL_RESOURCE_NAME>"
+        echo "   or set GEMINI_ENTERPRISE_APP_ID in .env"
     fi
-else
-    echo ""
-    echo "ℹ️  Tip: To register this agent with Gemini Enterprise, run:"
-    echo "   ./deploy.sh --ge <APP_ID_OR_FULL_RESOURCE_NAME>"
-    echo "   or set GEMINI_ENTERPRISE_APP_ID in .env"
 fi
