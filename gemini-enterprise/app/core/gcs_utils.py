@@ -155,9 +155,13 @@ def generate_signed_download_url(
     bucket = gcs_client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
 
-    url = blob.generate_signed_url(
-        version="v4",
-        expiration=timedelta(hours=expiration_hours),
-        method="GET",
-    )
-    return url
+    try:
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(hours=expiration_hours),
+            method="GET",
+        )
+        return url
+    except Exception as e:
+        print(f"[!] Warning: generate_signed_url failed ({e}). Falling back to storage URL.")
+        return f"https://storage.cloud.google.com/{bucket_name}/{blob_name}"

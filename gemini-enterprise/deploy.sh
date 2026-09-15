@@ -32,6 +32,7 @@ PROJECT_ID="${GCP_PROJECT:-${GOOGLE_CLOUD_PROJECT:-}}"
 PROJECT_NUMBER="${GCP_PROJECT_NUMBER:-${PROJECT_NUMBER:-}}"
 REGION="${GCP_REGION:-us-central1}"
 BUCKET_NAME="${MEETING_STORAGE_BUCKET:-}"
+SERVICE_ACCOUNT="${GCP_SERVICE_ACCOUNT:-${SERVICE_ACCOUNT:-}}"
 GE_APP="${GEMINI_ENTERPRISE_APP_ID:-}"
 GE_LOCATION="${GEMINI_ENTERPRISE_LOCATION:-global}"
 SKIP_GE=false
@@ -48,6 +49,7 @@ Environment Variables (.env or shell):
   GCP_PROJECT / GOOGLE_CLOUD_PROJECT  Target GCP Project ID
   GCP_REGION                          Target GCP Region (default: us-central1)
   MEETING_STORAGE_BUCKET              GCS bucket name for meeting media & minutes
+  GCP_SERVICE_ACCOUNT                 Custom Service Account for the deployed agent
   GEMINI_ENTERPRISE_APP_ID            Gemini Enterprise App ID / Resource name
   GEMINI_ENTERPRISE_LOCATION          Gemini Enterprise Location (default: global)
 
@@ -56,6 +58,7 @@ Options:
   -r, --region REGION          Google Cloud Region (default: us-central1)
       --apply-terraform        Automatically apply Terraform storage configuration
   -b, --bucket BUCKET_NAME     Custom GCS bucket name for meeting data
+  -s, --service-account SA     Custom service account email for the deployed agent
       --ge APP_ID              Gemini Enterprise App ID or full resource name (overrides .env/auto-detect)
       --ge-location LOCATION   Gemini Enterprise location (default: global)
       --skip-ge                Skip linking agent to Gemini Enterprise
@@ -91,6 +94,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -b|--bucket)
             BUCKET_NAME="$2"
+            shift 2
+            ;;
+        -s|--service-account)
+            SERVICE_ACCOUNT="$2"
             shift 2
             ;;
         --ge)
@@ -219,8 +226,43 @@ fi
 echo ""
 echo "[*] Step 2: Deploying Agent to Vertex AI Agent Runtime..."
 
+# Ensure target GCS bucket has objectAdmin permissions for Agent Runtime
+if [ -n "$BUCKET_NAME" ]; then
+    if [ -z "$PROJECT_NUMBER" ] && command -v gcloud &> /dev/null; then
+        PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)" 2>/dev/null || true)"
+    fi
+
+    if command -v gcloud &> /dev/null && [ "$DRY_RUN" = false ]; then
+        echo "[*] Ensuring GCS bucket IAM permissions on gs://$BUCKET_NAME..."
+        if [ -n "$SERVICE_ACCOUNT" ]; then
+            echo "    Granting roles/storage.objectAdmin to $SERVICE_ACCOUNT..."
+            gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_NAME" \
+                --member="serviceAccount:$SERVICE_ACCOUNT" \
+                --role="roles/storage.objectAdmin" --quiet 2>/dev/null || true
+        else
+            if [ -n "$PROJECT_NUMBER" ]; then
+                RE_AGENTS=(
+                    "service-${PROJECT_NUMBER}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
+                    "service-${PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com"
+                    "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+                )
+                for sa in "${RE_AGENTS[@]}"; do
+                    echo "    Granting roles/storage.objectAdmin to $sa..."
+                    gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_NAME" \
+                        --member="serviceAccount:$sa" \
+                        --role="roles/storage.objectAdmin" --quiet 2>/dev/null || true
+                done
+            fi
+        fi
+    fi
+fi
+
 SERVICE_NAME="${SERVICE_NAME:-meeting-transcribe-agent}"
 DEPLOY_CMD=(agents-cli deploy -d agent_runtime --project "$PROJECT_ID" --region "$REGION" --service-name "$SERVICE_NAME")
+
+if [ -n "$SERVICE_ACCOUNT" ]; then
+    DEPLOY_CMD+=(--service-account "$SERVICE_ACCOUNT")
+fi
 
 # Pass runtime environment variables to the deployed container. Gemini calls
 # always use Vertex AI + the deployed agent's own service account credentials
