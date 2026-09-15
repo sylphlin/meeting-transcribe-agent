@@ -319,16 +319,15 @@ Meeting Transcribe Agent 支持两种不同的运作与安装部署流程：
    ```
 
 2. **通过 `deploy.sh` 快速自动部署**：
-   项目内置的一键部署脚本会自动检查环境依赖、执行 Terraform 创建存储桶并调用 `agents-cli deploy`：
+   项目内置的一键部署脚本会自动检查环境依赖、默认执行 Terraform 创建/检验存储桶与最小权限 (`roles/storage.objectUser`)、调用 `agents-cli deploy` 并自动关联至 Gemini Enterprise：
    ```bash
-   cd gemini-enterprise
    chmod +x deploy.sh
 
-   # 自动化部署（包含创建 Terraform 存储桶）：
-   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1 --apply-terraform
-
-   # 或运行交互模式（将提示输入项目 ID 与各项参数）：
+   # 自动化部署（读取 .env，通过 Terraform 创建/验证存储桶并自动关联 Gemini Enterprise）：
    ./deploy.sh
+
+   # 或指定项目与区域：
+   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
    ```
 
 3. **企业集成与成果交付**：

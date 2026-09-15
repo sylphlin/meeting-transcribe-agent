@@ -68,19 +68,22 @@ The generated meeting storage bucket enforces enterprise lifecycle rules and cro
 
 ### Quick Start: One-Click Shell Script
 
-The unified [`deploy.sh`](deploy.sh) script handles prerequisite validation, optional Terraform storage provisioning, and `agents-cli deploy`:
+The unified [`deploy.sh`](../deploy.sh) script located at the repository root handles prerequisite validation, default Terraform storage & least-privilege IAM provisioning (`roles/storage.objectUser`), `agents-cli deploy`, and automated Gemini Enterprise registration:
 
 ```bash
 chmod +x deploy.sh
 
-# Interactive mode (prompts for Project ID if not set):
+# Standard automated deployment (reads .env, applies Terraform, deploys, and links to Gemini Enterprise):
 ./deploy.sh
 
-# Non-interactive automated deployment:
-./deploy.sh --project YOUR_PROJECT_ID --region us-central1 --apply-terraform
+# Explicit project/region with custom storage bucket:
+./deploy.sh --project YOUR_PROJECT_ID --region us-central1 --bucket YOUR_BUCKET
+
+# Skip Terraform infrastructure step if already provisioned:
+./deploy.sh --skip-terraform
 
 # Preview execution without making cloud changes:
-./deploy.sh --project YOUR_PROJECT_ID --dry-run
+./deploy.sh --dry-run
 ```
 
 ### Manual CLI Deployment (Alternative)

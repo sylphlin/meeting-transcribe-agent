@@ -298,16 +298,15 @@ Google ADK 2.0 および `agents-cli` を使用し、Vertex AI Agent Runtime（A
    ```
 
 2. **`deploy.sh` による自動ワンクリックデプロイ**：
-   内蔵のデプロイスクリプトが前提環境の検証、Terraform バケット作成、`agents-cli deploy` を全自動で処理します：
+   内蔵のデプロイスクリプトが前提環境の検証、Terraform による最小権限バケット（`roles/storage.objectUser`）作成/検証、`agents-cli deploy`、および Gemini Enterprise への自動登録を全自動で処理します：
    ```bash
-   cd gemini-enterprise
    chmod +x deploy.sh
 
-   # 自動デプロイ（Terraform バケット自動作成含む）：
-   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1 --apply-terraform
-
-   # または対話モードで実行：
+   # 自動デプロイ（.env を読み込み、Terraform バケット作成/検証、デプロイ、Gemini Enterprise 連携を一括実行）：
    ./deploy.sh
+
+   # またはプロジェクトとリージョンを指定：
+   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
    ```
 
 3. **エンタープライズ統合と成果物共有**：

@@ -298,16 +298,15 @@ Google ADK 2.0 및 `agents-cli`를 사용하여 Vertex AI Agent Runtime(Agent En
    ```
 
 2. **`deploy.sh`를 통한 원클릭 자동 배포**:
-   내장된 배포 스크립트가 사전 요구사항 검증, Terraform 버킷 생성, `agents-cli deploy`를 자동으로 진행합니다:
+   내장된 배포 스크립트가 사전 요구사항 검증, Terraform 기반 최소 권한 버킷(`roles/storage.objectUser`) 생성/검증, `agents-cli deploy`, Gemini Enterprise 자동 등록을 원스톱으로 처리합니다:
    ```bash
-   cd gemini-enterprise
    chmod +x deploy.sh
 
-   # 자동 배포 (Terraform 버킷 생성 포함):
-   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1 --apply-terraform
-
-   # 또는 대화형 모드로 실행:
+   # 자동 배포 (.env 로드, Terraform 버킷 생성/검증, 배포 및 Gemini Enterprise 연동 일괄 실행):
    ./deploy.sh
+
+   # 또는 프로젝트 및 리전 지정:
+   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
    ```
 
 3. **엔터프라이즈 연동 및 산출물 공유**:

@@ -321,16 +321,15 @@ Deploy as an enterprise managed service on Google Cloud Vertex AI Agent Runtime 
    ```
 
 2. **Deploy Using `deploy.sh`**:
-   The automated deployment script handles prerequisite validation, optional Terraform storage provisioning, and `agents-cli deploy`:
+   The automated deployment script handles prerequisite validation, default Terraform storage & least-privilege IAM provisioning (`roles/storage.objectUser`), `agents-cli deploy`, and automated Gemini Enterprise registration:
    ```bash
-   cd gemini-enterprise
    chmod +x deploy.sh
 
-   # Automated deployment with Terraform storage provisioning:
-   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1 --apply-terraform
-
-   # Or run interactively (prompts for project and settings):
+   # Automated deployment (reads .env, provisions storage via Terraform, deploys, and links to Gemini Enterprise):
    ./deploy.sh
+
+   # Or specify explicit project and region:
+   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
    ```
 
 3. **Enterprise Capabilities & Delivery**:

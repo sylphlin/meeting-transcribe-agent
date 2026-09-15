@@ -35,6 +35,6 @@ variable "output_retention_days" {
 
 variable "bucket_editors" {
   type        = list(string)
-  description = "Additional IAM members granted object-admin (create/read/delete) access on the bucket, in `user:`/`serviceAccount:`/`group:` form. The dedicated agent service account is always included; add your own identity here for local/personal use (e.g. \"user:you@example.com\") if your project role doesn't already cover it."
+  description = "Additional IAM members granted object-user (create/read/delete/update) access on the bucket, in `user:`/`serviceAccount:`/`group:` form. The dedicated agent service account is always included; add your own identity here for local/personal use (e.g. \"user:you@example.com\") if your project role doesn't already cover it."
   default     = []
 }

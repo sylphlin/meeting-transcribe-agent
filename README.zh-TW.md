@@ -320,16 +320,15 @@ Meeting Transcribe Agent 支援兩種不同的運作與安裝部屬流程：
    ```
 
 2. **透過 `deploy.sh` 快速自動部屬**：
-   專案內建的一鍵部屬腳本會自動檢查相依環境、執行 Terraform 建立儲存桶並調用 `agents-cli deploy`：
+   專案內建的一鍵部屬腳本會自動檢查相依環境、預設執行 Terraform 建立/檢驗儲存桶與最小權限 (`roles/storage.objectUser`)、調用 `agents-cli deploy` 並自動連結至 Gemini Enterprise：
    ```bash
-   cd gemini-enterprise
    chmod +x deploy.sh
 
-   # 自動化部屬（包含建立 Terraform 儲存桶）：
-   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1 --apply-terraform
-
-   # 或執行互動模式（將提示輸入專案 ID 與各項參數）：
+   # 自動化部屬（讀取 .env，透過 Terraform 建立/驗證儲存桶並自動連結 Gemini Enterprise）：
    ./deploy.sh
+
+   # 或指定專案與區域：
+   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
    ```
 
 3. **企業整合與成果發布**：

@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/google"
       version = ">= 5.0.0"
     }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = ">= 5.0.0"
+    }
     random = {
       source  = "hashicorp/random"
       version = ">= 3.5.0"
@@ -15,6 +19,15 @@ terraform {
 provider "google" {
   project = var.project_id
   region  = var.region
+}
+
+provider "google-beta" {
+  project = var.project_id
+  region  = var.region
+}
+
+data "google_project" "project" {
+  project_id = var.project_id
 }
 
 resource "random_id" "bucket_suffix" {
@@ -99,20 +112,39 @@ resource "google_project_iam_member" "sa_logging" {
   member  = "serviceAccount:${google_service_account.agent_sa.email}"
 }
 
-# Object-level access is scoped to just this bucket (not project-wide
-# Storage Admin), so a compromised service account can't touch other buckets.
-resource "google_storage_bucket_iam_member" "sa_bucket_object_admin" {
+# Object-level access is scoped to just this bucket with least privilege (roles/storage.objectUser).
+# Storage Object User allows object create/read/update/delete/multipart without administrative IAM permissions.
+resource "google_storage_bucket_iam_member" "sa_bucket_object_user" {
   bucket = google_storage_bucket.meeting_bucket.name
-  role   = "roles/storage.objectAdmin"
+  role   = "roles/storage.objectUser"
   member = "serviceAccount:${google_service_account.agent_sa.email}"
 }
 
-# Extra bucket-scoped object-admin grants (e.g. a personal Google identity
+# 4. Vertex AI Service Agent Bindings for Agent Runtime (Reasoning Engine)
+resource "google_project_service_identity" "vertex_sa" {
+  provider = google-beta
+  project  = var.project_id
+  service  = "aiplatform.googleapis.com"
+}
+
+resource "google_storage_bucket_iam_member" "vertex_sa_bucket_object_user" {
+  bucket = google_storage_bucket.meeting_bucket.name
+  role   = "roles/storage.objectUser"
+  member = google_project_service_identity.vertex_sa.member
+}
+
+resource "google_storage_bucket_iam_member" "vertex_re_sa_bucket_object_user" {
+  bucket = google_storage_bucket.meeting_bucket.name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
+}
+
+# Extra bucket-scoped object-user grants (e.g. a personal Google identity
 # running the Antigravity CLI locally via `gcloud auth application-default
 # login`), on top of the service account above.
 resource "google_storage_bucket_iam_member" "extra_bucket_editors" {
   for_each = toset(var.bucket_editors)
   bucket   = google_storage_bucket.meeting_bucket.name
-  role     = "roles/storage.objectAdmin"
+  role     = "roles/storage.objectUser"
   member   = each.value
 }
