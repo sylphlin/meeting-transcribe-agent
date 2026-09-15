@@ -189,89 +189,167 @@ if [ -n "$BUCKET_NAME" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 4. Step 1: Terraform Storage & IAM Provisioning (Enabled by Default)
+# 4. Step 1: Storage & Service Account Provisioning
 # ------------------------------------------------------------------------------
-if [ "$SKIP_TERRAFORM" = false ]; then
-    if ! command -v terraform &> /dev/null; then
-        echo ""
-        echo "[!] Warning: terraform CLI is not found in PATH."
-        echo "    Skipping Terraform provisioning and falling back to gcloud IAM checks..."
-    else
-        echo ""
-        echo "[*] Step 1: Provisioning / Verifying Infrastructure with Terraform..."
+has_real_terraform() {
+    if command -v terraform &> /dev/null; then
+        local ver
+        ver="$(terraform version 2>&1 || true)"
+        if echo "$ver" | grep -qiE "^(Terraform|OpenTofu) v[0-9]+"; then
+            return 0
+        fi
+    fi
+    return 1
+}
 
-        (
-            cd "$TF_DIR"
-            terraform init -upgrade
+is_valid_bucket_name() {
+    local name="$1"
+    [[ "$name" =~ ^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$ ]]
+}
 
-            TF_STATE_LIST="$(terraform state list 2>/dev/null || true)"
+is_valid_email() {
+    local email="$1"
+    [[ "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]
+}
 
-            # Smart Adoption 1: Service Account already exists in GCP but not in TF state
-            EXPECTED_SA="meeting-transcribe-sa@${PROJECT_ID}.iam.gserviceaccount.com"
-            if ! echo "$TF_STATE_LIST" | grep -q "google_service_account.agent_sa"; then
-                if command -v gcloud &>/dev/null && gcloud iam service-accounts describe "$EXPECTED_SA" --project="$PROJECT_ID" &>/dev/null; then
-                    echo "    [*] Adopting existing service account ($EXPECTED_SA) into Terraform state..."
-                    terraform import -var="project_id=$PROJECT_ID" -var="region=$REGION" google_service_account.agent_sa "projects/$PROJECT_ID/serviceAccounts/$EXPECTED_SA" 2>/dev/null || true
-                fi
-            fi
+if [ "$SKIP_TERRAFORM" = false ] && has_real_terraform; then
+    echo ""
+    echo "[*] Step 1: Provisioning / Verifying Infrastructure with Terraform..."
 
-            # Smart Adoption 2: Specified Bucket already exists in GCP but not in TF state
-            if [ -n "$BUCKET_NAME" ] && ! echo "$TF_STATE_LIST" | grep -q "google_storage_bucket.meeting_bucket"; then
-                if command -v gcloud &>/dev/null && gcloud storage buckets describe "gs://$BUCKET_NAME" --project="$PROJECT_ID" &>/dev/null; then
-                    echo "    [*] Adopting existing GCS bucket (gs://$BUCKET_NAME) into Terraform state..."
-                    terraform import -var="project_id=$PROJECT_ID" -var="region=$REGION" -var="bucket_name=$BUCKET_NAME" google_storage_bucket.meeting_bucket "$BUCKET_NAME" 2>/dev/null || true
-                fi
-            fi
+    (
+        cd "$TF_DIR"
+        terraform init -upgrade
 
-            TF_VARS=(
-                -var="project_id=$PROJECT_ID"
-                -var="region=$REGION"
-                -var="cors_max_age_seconds=86400"
-            )
-            if [ -n "$BUCKET_NAME" ]; then
-                TF_VARS+=(-var="bucket_name=$BUCKET_NAME")
-            fi
+        TF_STATE_LIST="$(terraform state list 2>/dev/null || true)"
 
-            if [ "$DRY_RUN" = true ]; then
-                echo "    [Dry-Run] Would execute: terraform apply ${TF_VARS[*]}"
-            else
-                terraform apply -auto-approve "${TF_VARS[@]}"
-            fi
-        )
-
-        # Retrieve created/managed bucket name if not explicitly set
-        if [ -z "$BUCKET_NAME" ]; then
-            TF_OUT_BUCKET="$(cd "$TF_DIR" && terraform output -raw meeting_bucket_name 2>/dev/null || true)"
-            if [ -n "$TF_OUT_BUCKET" ]; then
-                BUCKET_NAME="$TF_OUT_BUCKET"
-                echo "[✓] Terraform Storage Bucket: gs://$BUCKET_NAME"
+        # Smart Adoption 1: Service Account already exists in GCP but not in TF state
+        EXPECTED_SA="meeting-transcribe-sa@${PROJECT_ID}.iam.gserviceaccount.com"
+        if ! echo "$TF_STATE_LIST" | grep -q "google_service_account.agent_sa"; then
+            if command -v gcloud &>/dev/null && gcloud iam service-accounts describe "$EXPECTED_SA" --project="$PROJECT_ID" &>/dev/null; then
+                echo "    [*] Adopting existing service account ($EXPECTED_SA) into Terraform state..."
+                terraform import -var="project_id=$PROJECT_ID" -var="region=$REGION" google_service_account.agent_sa "projects/$PROJECT_ID/serviceAccounts/$EXPECTED_SA" 2>/dev/null || true
             fi
         fi
 
-        # Retrieve managed service account email if not explicitly set
-        if [ -z "$SERVICE_ACCOUNT" ]; then
-            TF_OUT_SA="$(cd "$TF_DIR" && terraform output -raw service_account_email 2>/dev/null || true)"
-            if [ -n "$TF_OUT_SA" ]; then
-                SERVICE_ACCOUNT="$TF_OUT_SA"
-                echo "[✓] Terraform Service Account: $SERVICE_ACCOUNT"
+        # Smart Adoption 2: Specified Bucket already exists in GCP but not in TF state
+        if [ -n "$BUCKET_NAME" ] && ! echo "$TF_STATE_LIST" | grep -q "google_storage_bucket.meeting_bucket"; then
+            if command -v gcloud &>/dev/null && gcloud storage buckets describe "gs://$BUCKET_NAME" --project="$PROJECT_ID" &>/dev/null; then
+                echo "    [*] Adopting existing GCS bucket (gs://$BUCKET_NAME) into Terraform state..."
+                terraform import -var="project_id=$PROJECT_ID" -var="region=$REGION" -var="bucket_name=$BUCKET_NAME" google_storage_bucket.meeting_bucket "$BUCKET_NAME" 2>/dev/null || true
             fi
+        fi
+
+        TF_VARS=(
+            -var="project_id=$PROJECT_ID"
+            -var="region=$REGION"
+            -var="cors_max_age_seconds=86400"
+        )
+        if [ -n "$BUCKET_NAME" ]; then
+            TF_VARS+=(-var="bucket_name=$BUCKET_NAME")
+        fi
+
+        if [ "$DRY_RUN" = true ]; then
+            echo "    [Dry-Run] Would execute: terraform apply ${TF_VARS[*]}"
+        else
+            terraform apply -auto-approve "${TF_VARS[@]}"
+        fi
+    )
+
+    # Retrieve created/managed bucket name if not explicitly set
+    if [ -z "$BUCKET_NAME" ] && [ "$DRY_RUN" = false ]; then
+        TF_OUT_BUCKET="$(cd "$TF_DIR" && terraform output -raw meeting_bucket_name 2>/dev/null || true)"
+        TF_OUT_BUCKET="$(echo "$TF_OUT_BUCKET" | tr -d '[:space:]')"
+        if is_valid_bucket_name "$TF_OUT_BUCKET"; then
+            BUCKET_NAME="$TF_OUT_BUCKET"
+            echo "[✓] Terraform Storage Bucket: gs://$BUCKET_NAME"
+        fi
+    fi
+
+    # Retrieve managed service account email if not explicitly set
+    if [ -z "$SERVICE_ACCOUNT" ] && [ "$DRY_RUN" = false ]; then
+        TF_OUT_SA="$(cd "$TF_DIR" && terraform output -raw service_account_email 2>/dev/null || true)"
+        TF_OUT_SA="$(echo "$TF_OUT_SA" | tr -d '[:space:]')"
+        if is_valid_email "$TF_OUT_SA"; then
+            SERVICE_ACCOUNT="$TF_OUT_SA"
+            echo "[✓] Terraform Service Account: $SERVICE_ACCOUNT"
         fi
     fi
 else
-    echo ""
-    echo "[*] Step 1: Skipping Terraform (--skip-terraform specified)."
+    if [ "$SKIP_TERRAFORM" = true ]; then
+        echo ""
+        echo "[*] Step 1: Skipping Terraform (--skip-terraform specified)."
+    else
+        echo ""
+        echo "[!] Notice: Terraform CLI is not installed (or Cloud Shell placeholder stub detected)."
+        echo "    Using native gcloud for automatic storage & service account provisioning..."
+    fi
+
+    # Fallback to gcloud automated provisioning if bucket or SA is missing
+    if [ -z "$BUCKET_NAME" ] || ! is_valid_bucket_name "$BUCKET_NAME"; then
+        RAND_SUFFIX="$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom 2>/dev/null | head -c 6 || true)"
+        if [ -z "$RAND_SUFFIX" ]; then
+            RAND_SUFFIX="$(date +%s | tail -c 6)"
+        fi
+        BUCKET_NAME="${PROJECT_ID}-meeting-transcribe-${RAND_SUFFIX}"
+        echo "[*] Creating GCS bucket: gs://$BUCKET_NAME via gcloud..."
+        if [ "$DRY_RUN" = false ] && command -v gcloud &>/dev/null; then
+            gcloud storage buckets create "gs://$BUCKET_NAME" \
+                --project="$PROJECT_ID" \
+                --location="$REGION" \
+                --uniform-bucket-level-access --quiet || true
+
+            CORS_FILE="$(mktemp 2>/dev/null || echo "/tmp/cors_$$.json")"
+            cat << 'EOF' > "$CORS_FILE"
+[
+  {
+    "origin": ["*"],
+    "responseHeader": ["Content-Type", "Range", "Accept-Ranges", "Content-Range", "ETag"],
+    "method": ["GET", "HEAD", "OPTIONS"],
+    "maxAgeSeconds": 86400
+  }
+]
+EOF
+            gcloud storage buckets update "gs://$BUCKET_NAME" --cors-file="$CORS_FILE" --quiet 2>/dev/null || true
+            rm -f "$CORS_FILE"
+            echo "[✓] Provisioned Storage Bucket: gs://$BUCKET_NAME"
+        else
+            echo "    [Dry-Run] Would create GCS bucket: gs://$BUCKET_NAME"
+        fi
+    fi
+
+    if [ -z "$SERVICE_ACCOUNT" ] || ! is_valid_email "$SERVICE_ACCOUNT"; then
+        EXPECTED_SA="meeting-transcribe-sa@${PROJECT_ID}.iam.gserviceaccount.com"
+        if [ "$DRY_RUN" = false ] && command -v gcloud &>/dev/null; then
+            if ! gcloud iam service-accounts describe "$EXPECTED_SA" --project="$PROJECT_ID" &>/dev/null; then
+                echo "[*] Creating dedicated service account: $EXPECTED_SA via gcloud..."
+                gcloud iam service-accounts create meeting-transcribe-sa \
+                    --display-name="Meeting Transcribe Agent Service Account" \
+                    --project="$PROJECT_ID" --quiet 2>/dev/null || true
+            fi
+            gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+                --member="serviceAccount:$EXPECTED_SA" \
+                --role="roles/aiplatform.user" --condition=None --quiet 2>/dev/null || true
+            gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+                --member="serviceAccount:$EXPECTED_SA" \
+                --role="roles/logging.logWriter" --condition=None --quiet 2>/dev/null || true
+        fi
+        SERVICE_ACCOUNT="$EXPECTED_SA"
+        echo "[✓] Dedicated Service Account: $SERVICE_ACCOUNT"
+    fi
 fi
 
 # ------------------------------------------------------------------------------
 # 5. Step 2: Ensure Least-Privilege IAM (roles/storage.objectUser)
 # ------------------------------------------------------------------------------
-if [ -n "$BUCKET_NAME" ] && command -v gcloud &> /dev/null && [ "$DRY_RUN" = false ]; then
+if [ -n "$BUCKET_NAME" ] && is_valid_bucket_name "$BUCKET_NAME" && command -v gcloud &> /dev/null && [ "$DRY_RUN" = false ]; then
     echo ""
     echo "[*] Step 2: Ensuring least-privilege IAM permissions (roles/storage.objectUser) on gs://$BUCKET_NAME..."
 
-    if [ -n "$SERVICE_ACCOUNT" ]; then
+    if [ -n "$SERVICE_ACCOUNT" ] && is_valid_email "$SERVICE_ACCOUNT"; then
         echo "    Granting roles/storage.objectUser to $SERVICE_ACCOUNT..."
-        gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_NAME"             --member="serviceAccount:$SERVICE_ACCOUNT"             --role="roles/storage.objectUser" --quiet 2>/dev/null || true
+        gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_NAME" \
+            --member="serviceAccount:$SERVICE_ACCOUNT" \
+            --role="roles/storage.objectUser" --quiet 2>/dev/null || true
     fi
 
     if [ -n "$PROJECT_NUMBER" ]; then
@@ -282,7 +360,9 @@ if [ -n "$BUCKET_NAME" ] && command -v gcloud &> /dev/null && [ "$DRY_RUN" = fal
         )
         for sa in "${RE_AGENTS[@]}"; do
             echo "    Granting roles/storage.objectUser to $sa..."
-            gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_NAME"                 --member="serviceAccount:$sa"                 --role="roles/storage.objectUser" --quiet 2>/dev/null || true
+            gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_NAME" \
+                --member="serviceAccount:$sa" \
+                --role="roles/storage.objectUser" --quiet 2>/dev/null || true
         done
     fi
 fi
@@ -296,12 +376,12 @@ echo "[*] Step 3: Deploying Agent to Vertex AI Agent Runtime..."
 SERVICE_NAME="${SERVICE_NAME:-meeting-transcribe-agent}"
 DEPLOY_CMD=(agents-cli deploy -d agent_runtime --project "$PROJECT_ID" --region "$REGION" --service-name "$SERVICE_NAME")
 
-if [ -n "$SERVICE_ACCOUNT" ]; then
+if [ -n "$SERVICE_ACCOUNT" ] && is_valid_email "$SERVICE_ACCOUNT"; then
     DEPLOY_CMD+=(--service-account "$SERVICE_ACCOUNT")
 fi
 
 RUNTIME_ENV=()
-if [ -n "$BUCKET_NAME" ]; then
+if [ -n "$BUCKET_NAME" ] && is_valid_bucket_name "$BUCKET_NAME"; then
     RUNTIME_ENV+=("MEETING_STORAGE_BUCKET=gs://$BUCKET_NAME")
 fi
 
