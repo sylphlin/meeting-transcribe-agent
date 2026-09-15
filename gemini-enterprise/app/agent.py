@@ -20,8 +20,10 @@ from google.adk.apps import App
 from google.adk.models import Gemini
 from google.genai import types
 
-from .tools.transcribe_tool import process_meeting_transcription
-from .core.gcs_utils import generate_signed_download_url
+from .tools.transcribe_tool import (
+    process_meeting_transcription,
+    get_signed_download_url,
+)
 
 # Initialize GCP Environment for Vertex AI & GenAI SDK
 try:
@@ -61,7 +63,7 @@ root_agent = Agent(
     instruction=AGENT_INSTRUCTION,
     tools=[
         process_meeting_transcription,
-        generate_signed_download_url,
+        get_signed_download_url,
     ],
 )
 

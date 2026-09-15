@@ -11,6 +11,7 @@ days -- see raw_retention_days) and reference the resulting URI directly.
 
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 from google.cloud import storage
 
@@ -67,7 +68,7 @@ def upload_file_to_gcs(
     bucket_name: str,
     destination_blob_name: str,
     content_type: str = None,
-    client: storage.Client = None,
+    client: Any = None,
 ) -> str:
     """
     Upload a local file to a GCS bucket.
@@ -91,7 +92,7 @@ def upload_file_to_gcs(
     return gcs_uri
 
 
-def delete_gcs_blob(gcs_uri: str, client: storage.Client = None) -> None:
+def delete_gcs_blob(gcs_uri: str, client: Any = None) -> None:
     """
     Delete a blob by its gs:// URI. Used to clean up ephemeral raw/ uploads
     right after Gemini has processed them (the bucket's lifecycle rule is a
@@ -111,7 +112,7 @@ def delete_gcs_blob(gcs_uri: str, client: storage.Client = None) -> None:
 def download_file_from_gcs(
     gcs_uri: str,
     local_destination_dir: Path | str = None,
-    client: storage.Client = None,
+    client: Any = None,
 ) -> Path:
     """
     Download a file from GCS to a local directory.
@@ -144,7 +145,7 @@ def generate_signed_download_url(
     bucket_name: str,
     blob_name: str,
     expiration_hours: int = 24,
-    client: storage.Client = None,
+    client: Any = None,
 ) -> str:
     """
     Generate a v4 signed URL for secure browser access and streaming.

@@ -35,6 +35,29 @@ def get_default_bucket_name() -> str:
     return f"{project_id}-meeting-data"
 
 
+def get_signed_download_url(
+    bucket_name: str,
+    blob_name: str,
+    expiration_hours: int = 24,
+) -> str:
+    """
+    Generate a v4 signed download URL for secure browser access to a file in GCS.
+
+    Args:
+        bucket_name: The GCS bucket name where the file is stored.
+        blob_name: The blob or object path within the GCS bucket.
+        expiration_hours: Duration in hours before the signed URL expires (default: 24).
+
+    Returns:
+        The HTTPS signed URL string for direct browser download and playback.
+    """
+    return generate_signed_download_url(
+        bucket_name=bucket_name,
+        blob_name=blob_name,
+        expiration_hours=expiration_hours,
+    )
+
+
 def process_meeting_transcription(
     source: str,
     bucket_name: str = None,

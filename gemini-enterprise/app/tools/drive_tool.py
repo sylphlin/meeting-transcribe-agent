@@ -55,7 +55,7 @@ def stream_drive_file_to_gcs(
     bucket_name: str,
     gcs_prefix: str = "raw",
     drive_service=None,
-    gcs_client: storage.Client = None,
+    gcs_client: Any = None,
     chunk_size_mb: int = 10,
 ) -> tuple[str, str, dict[str, Any]]:
     """
