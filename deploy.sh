@@ -10,7 +10,7 @@
 # Options:
 #   -p, --project PROJECT_ID     Google Cloud Project ID (overrides .env)
 #   -r, --region REGION          Google Cloud Region (default: us-central1)
-#   -b, --bucket BUCKET_NAME     Custom GCS bucket name (default: ${PROJECT_ID}-meeting-transcribe)
+#   -b, --bucket BUCKET_NAME     Custom GCS bucket name (default: meeting-transcribe-${PROJECT_ID})
 #   -s, --service-account SA     Custom service account email (default: meeting-transcribe-sa@...)
 #       --ge APP_ID              Gemini Enterprise App ID or full resource name
 #       --ge-location LOCATION   Gemini Enterprise location (default: global)
@@ -61,7 +61,7 @@ Deploy Meeting Transcribe Agent to Vertex AI Agent Runtime for Gemini Enterprise
 Environment Variables (.env or shell):
   GCP_PROJECT / GOOGLE_CLOUD_PROJECT  Target GCP Project ID
   GCP_REGION                          Target GCP Region (default: us-central1)
-  MEETING_STORAGE_BUCKET              GCS bucket name (default: \${PROJECT_ID}-meeting-transcribe)
+  MEETING_STORAGE_BUCKET              GCS bucket name (default: meeting-transcribe-\${PROJECT_ID})
   GCP_SERVICE_ACCOUNT                 Custom Service Account for the deployed agent
   GEMINI_ENTERPRISE_APP_ID            Gemini Enterprise App ID / Resource name
   GEMINI_ENTERPRISE_LOCATION          Gemini Enterprise Location (default: global)
@@ -69,7 +69,7 @@ Environment Variables (.env or shell):
 Options:
   -p, --project PROJECT_ID     Google Cloud Project ID (overrides .env)
   -r, --region REGION          Google Cloud Region (default: us-central1)
-  -b, --bucket BUCKET_NAME     Custom GCS bucket name (default: \${PROJECT_ID}-meeting-transcribe)
+  -b, --bucket BUCKET_NAME     Custom GCS bucket name (default: meeting-transcribe-\${PROJECT_ID})
   -s, --service-account SA     Custom service account email (default: meeting-transcribe-sa@...)
       --ge APP_ID              Gemini Enterprise App ID or full resource name
       --ge-location LOCATION   Gemini Enterprise location (default: global)
@@ -173,7 +173,7 @@ fi
 
 # Set deterministic default names
 if [ -z "$BUCKET_NAME" ]; then
-    BUCKET_NAME="${PROJECT_ID}-meeting-transcribe"
+    BUCKET_NAME="meeting-transcribe-${PROJECT_ID}"
 fi
 
 if [ -z "$SERVICE_ACCOUNT" ]; then

@@ -293,11 +293,11 @@ Install directly into Google Antigravity as an Agent Skill for conversational me
    GOOGLE_CLOUD_PROJECT=your-gcp-project-id
    GOOGLE_CLOUD_LOCATION=global
    GCP_REGION=us-central1
-   MEETING_STORAGE_BUCKET=your-gcp-project-id-meeting-transcribe
+   MEETING_STORAGE_BUCKET=meeting-transcribe-your-gcp-project-id
    TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
    SUMMARY_MODEL=gemini-3.8-flash
    ```
-   *(If processing local files with cloud Gemini, create your bucket via: `gcloud storage buckets create gs://your-gcp-project-id-meeting-transcribe --location=us-central1`).*
+   *(If processing local files with cloud Gemini, create your bucket via: `gcloud storage buckets create gs://meeting-transcribe-your-gcp-project-id --location=us-central1`).*
 
 4. **Usage in Antigravity**:
    Antigravity automatically discovers and loads `SKILL.md`. Simply instruct the agent in the chat:
@@ -318,7 +318,7 @@ This deployment is **100% native `gcloud`**—requiring zero external tools (no 
 
 2. **One-Click Automated Deployment (`./deploy.sh`)**:
    The automated deployment script handles the entire lifecycle end-to-end:
-   - Provisions/verifies GCS bucket `gs://${PROJECT_ID}-meeting-transcribe` with 24-hour CORS and automated lifecycle deletion rules (2 days for `raw/` ephemeral uploads, 30 days for minutes and interactive players).
+   - Provisions/verifies GCS bucket `gs://meeting-transcribe-${PROJECT_ID}` with 24-hour CORS and automated lifecycle deletion rules (2 days for `raw/` ephemeral uploads, 30 days for minutes and interactive players).
    - Creates dedicated service account `meeting-transcribe-sa` with least-privilege IAM bindings (`roles/storage.objectUser`, `roles/aiplatform.user`, `roles/logging.logWriter`).
    - Packages and deploys code to Vertex AI Agent Runtime via `agents-cli deploy`.
    - Automatically registers and binds the extension into Gemini Enterprise.

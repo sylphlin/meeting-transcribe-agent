@@ -38,7 +38,7 @@ gemini-enterprise/
 
 ## Storage & 24-Hour CORS Configuration
 
-The storage bucket (`gs://${GCP_PROJECT}-meeting-transcribe`) enforces enterprise lifecycle rules and cross-origin browser access:
+The storage bucket (`gs://meeting-transcribe-${GCP_PROJECT}`) enforces enterprise lifecycle rules and cross-origin browser access:
 
 * **24-Hour CORS (`max_age_seconds = 86400`)**: Allows web browsers to stream audio/video media directly from Cloud Storage signed URLs within the interactive player.
 * **Tiered Lifecycle Policies**:

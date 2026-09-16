@@ -268,11 +268,11 @@ AI Agent의 로컬 스킬로 Antigravity에 설치하여 IDE 환경에서 대화
    GOOGLE_CLOUD_PROJECT=your-gcp-project-id
    GOOGLE_CLOUD_LOCATION=global
    GCP_REGION=us-central1
-   MEETING_STORAGE_BUCKET=your-gcp-project-id-meeting-transcribe
+   MEETING_STORAGE_BUCKET=meeting-transcribe-your-gcp-project-id
    TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
    SUMMARY_MODEL=gemini-3.8-flash
    ```
-   *(클라우드 Gemini로 로컬 파일을 처리할 경우 사전에 버킷을 생성할 수 있습니다: `gcloud storage buckets create gs://your-gcp-project-id-meeting-transcribe --location=us-central1`).*
+   *(클라우드 Gemini로 로컬 파일을 처리할 경우 사전에 버킷을 생성할 수 있습니다: `gcloud storage buckets create gs://meeting-transcribe-your-gcp-project-id --location=us-central1`).*
 
 4. **Antigravity에서 사용하기**:
    Antigravity가 `SKILL.md`를 자동으로 색인합니다. 대화창에서 자연어로 요청하기만 하면 됩니다:
@@ -293,7 +293,7 @@ Google ADK 2.0 및 `agents-cli`를 사용하여 Vertex AI Agent Runtime(Agent En
 
 2. **`./deploy.sh`를 통한 원클릭 자동 배포**:
    내장된 배포 스크립트가 엔드투엔드 배포 라이프사이클을 전자동으로 처리합니다:
-   - GCS 버킷 `gs://${PROJECT_ID}-meeting-transcribe` 생성/검증, 24시간 CORS 설정 및 자동 수명 주기 삭제 규칙 적용(`raw/` 임시 파일은 2일 후 자동 파기, 회의록 및 플레이어는 30일 보존).
+   - GCS 버킷 `gs://meeting-transcribe-${PROJECT_ID}` 생성/검증, 24시간 CORS 설정 및 자동 수명 주기 삭제 규칙 적용(`raw/` 임시 파일은 2일 후 자동 파기, 회의록 및 플레이어는 30일 보존).
    - 전용 서비스 계정 `meeting-transcribe-sa` 생성 및 최소 권한 부여 (`roles/storage.objectUser`, `roles/aiplatform.user`, `roles/logging.logWriter`).
    - `agents-cli deploy`를 통한 코드 패키징 및 Vertex AI Agent Runtime 배포.
    - 기업 Gemini Enterprise 확장에 에이전트 자동 등록 및 연결.

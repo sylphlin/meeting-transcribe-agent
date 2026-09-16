@@ -290,11 +290,11 @@ Meeting Transcribe Agent 支援兩種不同的運作與安裝部屬流程：
    GOOGLE_CLOUD_PROJECT=your-gcp-project-id
    GOOGLE_CLOUD_LOCATION=global
    GCP_REGION=us-central1
-   MEETING_STORAGE_BUCKET=your-gcp-project-id-meeting-transcribe
+   MEETING_STORAGE_BUCKET=meeting-transcribe-your-gcp-project-id
    TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
    SUMMARY_MODEL=gemini-3.8-flash
    ```
-   *（如需使用雲端 Gemini 處理本機檔案，可直接透過指令建立儲存桶：`gcloud storage buckets create gs://your-gcp-project-id-meeting-transcribe --location=us-central1`）。*
+   *（如需使用雲端 Gemini 處理本機檔案，可直接透過指令建立儲存桶：`gcloud storage buckets create gs://meeting-transcribe-your-gcp-project-id --location=us-central1`）。*
 
 4. **於 Antigravity 中使用**：
    Antigravity 會自動探索並讀取 `SKILL.md`，您只需在對話視窗中提出需求：
@@ -315,7 +315,7 @@ Meeting Transcribe Agent 支援兩種不同的運作與安裝部屬流程：
 
 2. **透過 `./deploy.sh` 一鍵自動部屬**：
    專案內建的一鍵部屬腳本會全自動處理端到端部屬流程：
-   - 建立並檢驗 GCS 儲存桶 `gs://${PROJECT_ID}-meeting-transcribe`，自動套用 24 小時 CORS 與生命週期規則（`raw/` 暫存檔 2 天自動銷毀，會議記錄與播放器保存 30 天）。
+   - 建立並檢驗 GCS 儲存桶 `gs://meeting-transcribe-${PROJECT_ID}`，自動套用 24 小時 CORS 與生命週期規則（`raw/` 暫存檔 2 天自動銷毀，會議記錄與播放器保存 30 天）。
    - 建立專屬服務帳戶 `meeting-transcribe-sa` 並配置最小權限 (`roles/storage.objectUser`, `roles/aiplatform.user`, `roles/logging.logWriter`)。
    - 調用 `agents-cli deploy` 打包程式碼並部屬至 Vertex AI Agent Runtime。
    - 自動探索並將 Agent 註冊關聯至企業的 Gemini Enterprise 擴充功能中。
