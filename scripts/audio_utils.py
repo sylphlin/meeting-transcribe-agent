@@ -112,6 +112,11 @@ def extract_audio_from_video(video_path: Path, output_path: Path = None, bitrate
     else:
         output_path = Path(output_path).resolve()
 
+    if output_path.exists() and output_path.stat().st_size > 0:
+        cached_mb = output_path.stat().st_size / (1024 * 1024)
+        print(f"[✓] Found existing extracted audio: {output_path.name} ({cached_mb:.1f} MB). Reusing.")
+        return output_path
+
     print(f"[*] Extracting audio from video: {video_path.name} -> {output_path.name}...")
     cmd = [
         "ffmpeg", "-y", "-i", str(video_path),

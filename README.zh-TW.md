@@ -13,28 +13,33 @@
 
 ### 依據媒介分流的雙軌智慧流水線：
 
-1. **多模態視訊管線 (YouTube 連結 / 本地影片檔案)**：
+1. **YouTube 多模態雲端管線 (YouTube 雲端原生直入)**：
    - **單一 Request 極致效能**：直接由 **Gemini 3.8 Flash** 進行視覺多模態端到端分析，同步閱讀簡報投影片（Slide OCR）與現場長官名牌／電視鏡面字幕，精確對應講者姓名職稱，省下 50% Token 消耗與等待時間（32 分鐘影片僅需 ~44 秒）。
    - **Agentic Video Understanding (`--agentic`)**：支援動態多輪訊框導航與工具調用，針對多小時長影片或複雜圖表進行深層視覺探索。
    - **畫中畫 YouTube Dock 播放器**：產出的獨立 HTML 播放器內建 YouTube IFrame 控制器，支援即時點擊時間軸跳轉視訊與卡拉 OK 歌詞式精準同步。
 
-2. **純音訊高精度管線 (錄音筆 / Podcast / 語音音檔)**：
+2. **本地影片兩階段融合管線 (音訊抽取 + 多模態視覺融合)**：
+   - **第一階段（專用聲學 ASR 錨定）**：抽取 16kHz mono 音軌，由 **Google Gemini 3.5 Transcribe**（雲端首選）或 **Apple Silicon MLX/Whisper + Sherpa-ONNX Diarization**（本地離線）建立毫秒級精確物理時間戳 `[MM:SS - MM:SS]` 與講者發言段落。
+   - **第二階段（多模態視覺與摘要融合）**：將 720p 視訊與生字稿送入 **Gemini 3.8 Flash**，同步審視畫面投影片、架構圖與發言者名牌，將 `Speaker 1` 精準映射為真實姓名職稱，並提煉第 1~5 節專業會議摘要。
+   - **確定性組裝**：Python 程式碼自動以視覺講者映射表置換第 6 節逐字稿中的講者代號，嚴格保留實體時間戳，杜絕純 LLM 看影片的時間戳漂移與 Token 截斷。
+
+3. **純音訊高精度雙層管線 (錄音筆 / Podcast / 語音音檔)**：
    - **底層聲學轉譯 (Gemini 3.5 Transcribe)**：專職毫秒級「詞級時間戳記 (Word Timestamps)」與物理聲學「語者分離 (Diarization)」，確保每一句話皆有真實聲波物理錨定，絕不跳漏。
    - **上層語意重構 (Gemini 3.8 Flash)**：前後文脈絡理解、同音專有名詞校正、發言人身分收斂與上下文語意流暢化，提煉決策摘要與待辦追蹤。
    - **本地離線備援**：支援本地 Apple Silicon GPU (MLX) / faster-whisper 搭配 Sherpa-ONNX 聲紋切分。
 
 ---
 
-### 為什麼要將「視訊（YouTube / 本地影片）」與「純音訊」分流處理？
+### 為什麼架構要明確區分「YouTube」、「本地影片檔案」與「純音訊」？
 
-在會議轉譯的真實場景中，「有畫面」與「純聲音」所乘載的情報密度具有根本性差異：
+在會議轉譯的真實場景中，不同媒介所乘載的情報與基礎設施具有根本性差異：
 
-1. **視訊模式（保留畫面視覺脈絡，辨識率 100%）**：
-   - **視覺 OCR 錨定**：會議經常包含座席名牌、電視台或直播下標字卡、投影簡報等。若一律抽取音軌降級為純聲音，便會完全喪失這些畫面線索，導致許多未在發言中自報姓名的長官、局處首長無法被識別。
-   - **單一 Request 極致效率**：視訊直接透過多模態大模型（Gemini 3.8 Flash）進行端到端分析，能在單一請求中同步融合視覺字卡與語音語意，省下「先 ASR 轉文字、再送 LLM 重構」的往返延遲與重複 Prompt Token 消耗。
-2. **純音訊模式（物理聲學分離，成本最經濟）**：
-   - **缺乏畫面，依賴專用聲學模型**：錄音筆、Podcast 或電話訪談本身完全沒有影像畫面。此時專用的聲學語音辨識模型（Gemini 3.5 Transcribe 詞級時間戳與聲學分離 / 離線 Whisper + Sherpa-ONNX 聲紋向量聚類）能提供嚴格的聲波物理錨定，確保不跳句、不漏字。
-   - **極致節省 Token**：純音訊每秒僅約 32 tokens，能以最低成本完成長時間錄音轉譯。
+1. **YouTube（雲端原生，自帶預建聲學時鐘）**：
+   - YouTube 雲端骨幹已預先建立 ASR 自動字幕與時間戳索引。Gemini 3.8 Flash 雲端直入分析無須重複音訊解碼，即可同步達成極速摘要與精確時間戳。
+2. **本地影片檔案（兩階段融合，確保 100% 聲畫對齊與投影片閱讀）**：
+   - 本地檔案缺乏預建聲學時鐘，純 LLM 單次推論必然引發嚴重的時間戳累積漂移與長度截斷。兩階段融合以專用 ASR 提供精確時間戳，再由視覺模型讀取畫面字卡，兼得精準時鐘與視覺情報。
+3. **純音訊模式（物理聲學分離，成本最經濟）**：
+   - 錄音筆與 Podcast 本身完全沒有畫面。專用聲學模型（Gemini 3.5 Transcribe / 離線 Whisper）提供毫秒級時間戳與語者分段，每秒僅消耗 ~32 tokens，成本最經濟。
 
 ---
 
@@ -127,6 +132,7 @@ flowchart TD
     classDef inputStyle fill:#2D3748,stroke:#4A5568,stroke-width:2px,color:#fff;
     classDef routerStyle fill:#D69E2E,stroke:#B7791F,stroke-width:2px,color:#fff;
     classDef videoStyle fill:#2B6CB0,stroke:#2C5282,stroke-width:2px,color:#fff;
+    classDef fusionStyle fill:#4C51BF,stroke:#3C366B,stroke-width:2px,color:#fff;
     classDef audioStyle fill:#2C7A7B,stroke:#234E52,stroke-width:2px,color:#fff;
     classDef outputStyle fill:#276749,stroke:#1C4532,stroke-width:2px,color:#fff;
 
@@ -143,22 +149,40 @@ flowchart TD
     V --> Router
     A --> Router
 
-    subgraph VideoTrack["🎥 視訊多模態管線 (Video Pipeline)"]
-        VMode{"模式選擇"}:::videoStyle
-        Static["⚡ 靜態視訊模式 (預設 1 FPS)<br>• Token: ~3x<br>• 極速 ~44s / 辨識率 100%"]:::videoStyle
-        Agentic["🤖 Agentic Video (--agentic)<br>• Token: ~2x<br>• 動態訊框導航與深層探索"]:::videoStyle
-        GeminiFlash["Google Gemini 3.8 Flash<br>(單一 Request 多模態端到端分析)"]:::videoStyle
-        VisionOCR["視覺 OCR 錨定：<br>• 現場座牌 / 講者姓名職稱<br>• 新聞電視鏡面字幕<br>• 簡報投影片 (Slide OCR)"]:::videoStyle
+    subgraph YouTubeTrack["🎥 管線 1: YouTube 多模態雲端管線"]
+        YMode{"模式選擇"}:::videoStyle
+        Static["⚡ 靜態視訊模式<br>• 極速 ~44s / 辨識率 100%"]:::videoStyle
+        Agentic["🤖 Agentic Video (--agentic)<br>• 動態訊框導航與深層探索"]:::videoStyle
+        GeminiFlash["Google Gemini 3.8 Flash<br>(雲端原生多模態端到端分析)"]:::videoStyle
 
-        VMode -- "預設" --> Static --> GeminiFlash
-        VMode -- "旗標 --agentic" --> Agentic --> GeminiFlash
-        GeminiFlash <--> VisionOCR
+        YMode -- "預設" --> Static --> GeminiFlash
+        YMode -- "旗標 --agentic" --> Agentic --> GeminiFlash
     end
 
-    subgraph AudioTrack["🎙️ 純音訊雙層管線 (Pure Audio Pipeline)"]
+    subgraph LocalVideoTrack["🎬 管線 2: 本地影片兩階段融合管線"]
+        ExtractAudio["1. 抽取 16kHz Mono 音訊軌"]:::fusionStyle
+        VideoASR{"Stage 1: 專用聲學 ASR"}:::fusionStyle
+        ASR_Gemini["Gemini 3.5 Transcribe"]:::fusionStyle
+        ASR_Whisper["本地 MLX / Faster-Whisper"]:::fusionStyle
+        RawTranscript["實體聲學時間戳生字稿<br>• [MM:SS - MM:SS] 絕對時間"]:::fusionStyle
+        
+        ExtractAudio --> VideoASR
+        VideoASR -- "雲端 (預設)" --> ASR_Gemini --> RawTranscript
+        VideoASR -- "離線" --> ASR_Whisper --> RawTranscript
+
+        Stage2["Stage 2: 多模態視覺融合<br>Google Gemini 3.8 Flash<br>• 投影片/字卡視覺 OCR<br>• Speaker 1 -> 真實姓名職稱映射<br>• 提煉第 1~5 節核心摘要"]:::fusionStyle
+        RawTranscript --> Stage2
+        V -. "720p 視訊上傳" .-> Stage2
+
+        Deterministic["確定性 Python 組裝<br>• 嚴格保留 Stage 1 實體時間戳<br>• 0 漂移、不跳句、不腦補"]:::fusionStyle
+        Stage2 --> Deterministic
+        RawTranscript --> Deterministic
+    end
+
+    subgraph AudioTrack["🎙️ 管線 3: 純音訊雙層管線"]
         Ingest["智慧預處理<br>(位元率探測 / FFmpeg 預壓縮)"]:::audioStyle
         ASREngine{"語音辨識引擎"}:::audioStyle
-        GTranscribe["【雲端】Gemini 3.5 Transcribe<br>• 毫秒級詞級時間戳記<br>• 聲學語者分離 (Diarization)<br>• Token: ~1x (最經濟)"]:::audioStyle
+        GTranscribe["【雲端】Gemini 3.5 Transcribe<br>• 毫秒級詞級時間戳記<br>• 聲學語者分離 (Diarization)"]:::audioStyle
         OfflineWhisper["【本地】MLX / Faster-Whisper<br>+ Sherpa-ONNX 聲紋向量聚類"]:::audioStyle
         Restructure["【語意重構】Gemini 3.8 Flash<br>• 專有名詞與同音校正<br>• 角色收斂與語意流暢化"]:::audioStyle
 
@@ -168,48 +192,64 @@ flowchart TD
         O -. 注入上下文 .-> Ingest
     end
 
-    Router -- "視訊或 YouTube" --> VMode
+    Router -- "YouTube 網址" --> YMode
+    Router -- "本地影片" --> ExtractAudio
     Router -- "純音訊 (或 --extract-audio)" --> Ingest
 
     subgraph Delivery["📦 成果發布與播放器 (Delivery)"]
         MD["📄 結構化會議記錄.md<br>(基本資訊 / 摘要 / 決策 / 待辦 / 逐字稿)"]:::outputStyle
-        HTML["🌐 零依賴雙欄互動播放器.html"]:::outputStyle
+        HTML["🌐 零依賴 3 欄 / 2 欄互動播放器.html"]:::outputStyle
         YTDock["🎬 畫中畫 YouTube Dock<br>(精確點擊跳轉 & 卡拉 OK 同步)"]:::outputStyle
+        VPlayer["🎬 HTML5 視訊播放器<br>(音畫同步時間戳跳轉)"]:::outputStyle
         AudioPlayer["🎵 原生音訊控制器<br>(進度條時間戳跳轉)"]:::outputStyle
 
         MD --> HTML
         HTML --> YTDock
+        HTML --> VPlayer
         HTML --> AudioPlayer
     end
 
     GeminiFlash --> MD
     GeminiFlash -. 載入 YouTube 視訊 .-> YTDock
+    Deterministic --> MD
+    Deterministic -. 載入本地影片 .-> VPlayer
     Restructure --> MD
     Restructure -. 載入音訊 .-> AudioPlayer
 ```
 
 ### 處理管線詳細步驟說明 (Pipeline Steps Explained)
 
-系統在接收到輸入後，依據媒體屬性分為 **「分流決策」**、**「雙軌處理」** 與 **「成果發布」** 三大階段：
+系統在接收到輸入後，依據媒體屬性分為 **「分流決策」**、**「管線執行」** 與 **「成果發布」** 三大階段：
 
 #### 步驟 1：輸入媒體檢測與智慧分流 (Smart Router)
-- **YouTube 網址**（包含 `youtube.com/watch`, `youtu.be/`, Shorts 與 Live 錄影）或 **本地影片**（`.mp4`, `.mov`, `.mkv`, `.webm`）：自動分流至 **🎥 視訊多模態管線**。
-- **純語音檔案**（`.mp3`, `.m4a`, `.wav`, `.aac`, `.flac`）或加入 `--extract-audio` 旗標者：自動分流至 **🎙️ 純音訊雙層管線**。
+- **YouTube 網址**（包含 `youtube.com/watch`, `youtu.be/`, Shorts 與 Live 錄影）：自動分流至 **🎥 管線 1: YouTube 多模態雲端管線**。
+- **本地視訊檔案**（`.mp4`, `.mov`, `.mkv`, `.webm`）：自動分流至 **🎬 管線 2: 本地影片兩階段融合管線**。
+- **純語音檔案**（`.mp3`, `.m4a`, `.wav`, `.aac`, `.flac`）或加入 `--extract-audio` 旗標者：自動分流至 **🎙️ 管線 3: 純音訊雙層管線**。
 
 ---
 
-#### 步驟 2A：視訊多模態處理流程 (YouTube 與本地影片)
-1. **雲端直傳與暫存優化**：
-   - **YouTube**：直接將 YouTube URL 傳入 Gemini 多模態 API，免本地下載、免 `yt-dlp`，徹底規避 YouTube 429 頻率限制。
-   - **本地影片**：若檔案超過 250MB，後台自動轉碼為 720p 輕量 H.264，上傳至 Google Cloud Storage 暫存（並於處理完畢後立即自動銷毀）。
-2. **多模態端到端分析 (Single-Request)**：
-   - **預設模式 (靜態訊框 1 FPS)**：極速（約數十秒）同步完成簡報 Slide OCR、現場長官座牌字卡與語音對齊。
+#### 步驟 2A：YouTube 多模態雲端管線處理流程
+1. **雲端直傳與零下載**：直接將 YouTube URL 傳入 Gemini 多模態 API，免本地下載、免 `yt-dlp`，徹底規避 YouTube 429 頻率限制。
+2. **多模態端到端分析**：
+   - **預設模式 (靜態訊框)**：極速（約數十秒）同步完成簡報 Slide OCR、現場長官座牌字卡與語音對齊。
    - **Agentic 模式 (`--agentic`)**：啟用動態訊框導航與工具調用，專門深入探索數小時長影片的細部投影片與關鍵段落。
-3. **一步到位提煉**：直接輸出帶真實姓名職稱的 6 大章節會議記錄與時間戳記逐字稿，無需二度呼叫 LLM 重構。
+3. **一步到位提煉**：直接輸出帶真實姓名職稱的 6 大章節會議記錄與時間戳記逐字稿。
 
 ---
 
-#### 步驟 2B：純音訊雙層處理流程 (純語音錄音檔)
+#### 步驟 2B：本地影片兩階段融合管線處理流程
+1. **第一階段（專用聲學 ASR 錨定）**：
+   - 自動抽取 16kHz mono 音軌（具備快取機制避免重複轉碼）。
+   - 調用 `gemini-3.5-transcribe`（雲端）或 `mlx-whisper`（本地離線），產出毫秒級實體時間戳 `[MM:SS - MM:SS]` 與講者發言段落。
+2. **第二階段（多模態視覺融合）**：
+   - 視訊壓縮為 720p H.264 並上傳至 Cloud Storage 暫存（處理後立即銷毀）。
+   - 將視訊與第一階段文字稿一同送交 `gemini-3.8-flash`，觀察畫面名牌、投影片 OCR，精確映射 `Speaker 1` 為真實講者姓名，並產出第 1~5 節核心摘要。
+3. **確定性組裝**：
+   - Python 程式碼自動將視覺映射套用至實體逐字稿，時間戳 100% 絕對零漂移。
+
+---
+
+#### 步驟 2C：純音訊雙層處理流程 (純語音錄音檔)
 1. **智慧預處理 (Smart Ingestion)**：自動探測音訊位元率，低碼率直傳免轉碼；高碼率音訊自動以 FFmpeg 預壓縮為 16kHz mono 最佳語音格式。
 2. **術語與角色預先探勘 (選填)**：若有傳入議程大綱 (`--outline`)，提煉與會名單與專有名詞對照表。
 3. **底層聲學轉譯 (ASR & Diarization)**：

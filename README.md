@@ -13,28 +13,33 @@
 
 ### Intelligent Bifurcated Pipelines:
 
-1. **Multimodal Video Pipeline (YouTube URLs / Local Video Files)**:
+1. **YouTube Multimodal Pipeline (Cloud Ingestion)**:
    - **Single-Request Maximum Efficiency**: Direct end-to-end multimodal analysis powered by **Gemini 3.8 Flash**. Reads slide OCR, speaker desktop nameplates, and TV lower-third captions simultaneously to map speaker names with 100% accuracy, cutting 50% token overhead and latency (~44s for a 32-minute meeting).
    - **Agentic Video Understanding (`--agentic`)**: Dynamic multi-turn frame navigation and tool calling for deep visual exploration across multi-hour videos and intricate technical slides.
    - **Picture-in-Picture YouTube Dock Player**: Standalone zero-dependency HTML player with bidirectional synchronization, seeking, and real-time karaoke scrolling.
 
-2. **Pure Audio High-Precision Pipeline (Voice Recorders / Podcasts / Audio Files)**:
+2. **Local Video Two-Stage Fusion Pipeline (Audio Extraction + Multimodal Vision Fusion)**:
+   - **Stage 1 (Acoustic Ground Truth ASR)**: Extracts 16kHz mono audio and runs speech transcription via **Google Gemini 3.5 Transcribe** (Cloud Primary) or **Local Apple Silicon MLX/Whisper + Sherpa-ONNX Diarization** (Offline Mode) to establish millisecond-accurate physical timestamps `[MM:SS - MM:SS]` and speaker turns.
+   - **Stage 2 (Multimodal Vision & Minutes Fusion)**: Ingests the 720p video file alongside the Stage 1 transcript into **Gemini 3.8 Flash**. Reads visual presentation slides, architecture diagrams, and speaker nameplates to map real identities (`Speaker 1` -> Real Name/Title) and synthesize Executive Sections 1–5.
+   - **Deterministic Assembly**: Python code combines Sections 1–5 with the verbatim Section 6, applying visual speaker mappings while strictly preserving physical timestamps with 0 drift.
+
+3. **Pure Audio High-Precision Pipeline (Voice Recorders / Podcasts / Audio Files)**:
    - **Acoustic Transcription (Gemini 3.5 Transcribe)**: Millisecond word-level timestamps and physical acoustic diarization, ensuring every spoken word is physically anchored.
    - **Semantic Restructuring (Gemini 3.8 Flash)**: Contextual homophone correction, speaker role convergence, and natural multilingual fluency, structuring executive summaries and action items.
    - **Local Offline Backup**: Apple Silicon GPU (MLX) / faster-whisper paired with Sherpa-ONNX acoustic speaker embeddings.
 
 ---
 
-### Why Bifurcate "Video (YouTube / Local Files)" and "Pure Audio"?
+### Why the Architecture Distinguishes "YouTube", "Local Video Files", and "Pure Audio"?
 
 In real-world meeting transcription, visual video feeds and pure audio streams carry fundamentally different information densities:
 
-1. **Video Mode (Preserves Visual Context with 100% Speaker Recognition)**:
-   - **Visual OCR Grounding**: Meetings frequently contain desk nameplates, broadcast lower-third titles, and presentation slides. Demoting video to audio strips away these critical cues, rendering officials who do not self-identify unnamable.
-   - **Single-Request Efficiency**: Ingesting video directly into a multimodal model (Gemini 3.8 Flash) fuses visual captions and spoken speech in one pass, eliminating the latency and token overhead of two-step ASR-then-LLM processing.
-2. **Pure Audio Mode (Acoustic Diarization & Maximum Token Economy)**:
-   - **Acoustic Precision**: Dictaphones and podcasts contain zero visual information. Specialized acoustic models (Gemini 3.5 Transcribe / offline Whisper + Sherpa-ONNX) provide millisecond word-level timestamps and acoustic speaker clustering to prevent skipped lines.
-   - **Extreme Token Economy**: Pure audio consumes only ~32 tokens per second, making long audio transcription exceptionally cost-effective.
+1. **YouTube (Cloud Native with Pre-computed Acoustic Clock)**:
+   - Google's cloud backbone already indexes YouTube videos with pre-computed acoustic timing. Direct cloud ingestion via Gemini 3.8 Flash achieves instantaneous analysis without downloading files.
+2. **Local Video Files (Two-Stage Fusion for 100% Temporal Sync & Slide Grounding)**:
+   - Local videos lack pre-computed cloud ASR clocks. Single-pass LLM analysis suffers from severe clock drift and output token truncation. Two-stage fusion uses acoustic ASR for immutable timestamps and vision fusion for slide/nameplate reading.
+3. **Pure Audio Mode (Acoustic Diarization & Maximum Token Economy)**:
+   - Dictaphones and podcasts contain zero visual information. Specialized acoustic models (Gemini 3.5 Transcribe / offline Whisper + Sherpa-ONNX) provide millisecond word-level timestamps and acoustic speaker clustering at only ~32 tokens per second.
 
 ---
 
@@ -125,6 +130,7 @@ flowchart TD
     classDef inputStyle fill:#2D3748,stroke:#4A5568,stroke-width:2px,color:#fff;
     classDef routerStyle fill:#D69E2E,stroke:#B7791F,stroke-width:2px,color:#fff;
     classDef videoStyle fill:#2B6CB0,stroke:#2C5282,stroke-width:2px,color:#fff;
+    classDef fusionStyle fill:#4C51BF,stroke:#3C366B,stroke-width:2px,color:#fff;
     classDef audioStyle fill:#2C7A7B,stroke:#234E52,stroke-width:2px,color:#fff;
     classDef outputStyle fill:#276749,stroke:#1C4532,stroke-width:2px,color:#fff;
     classDef playerStyle fill:#6B46C1,stroke:#553C9A,stroke-width:2px,color:#fff;
@@ -142,17 +148,37 @@ flowchart TD
     V --> Router
     A --> Router
 
-    subgraph VideoTrack["🎥 Multimodal Video Pipeline (Gemini 3.8 Flash)"]
-        VMode{"Mode Selection"}:::videoStyle
+    subgraph YouTubeTrack["🎥 Pipeline 1: YouTube Multimodal Cloud Pipeline"]
+        YMode{"Mode Selection"}:::videoStyle
         Static["⚡ Static Multimodal Mode<br>• Speed: ~40s / 100% OCR<br>• Lower-Third Nameplates & Slides"]:::videoStyle
         Agentic["🤖 Agentic Video (--agentic)<br>• Dynamic Frame Navigation<br>• Deep Reasoning for Long Videos"]:::videoStyle
-        GeminiFlash["Google Gemini 3.8 Flash<br>(End-to-End Multimodal Analysis)"]:::videoStyle
+        GeminiFlash["Google Gemini 3.8 Flash<br>(Cloud-Native Multimodal Analysis)"]:::videoStyle
 
-        VMode -- "Default" --> Static --> GeminiFlash
-        VMode -- "Flag --agentic" --> Agentic --> GeminiFlash
+        YMode -- "Default" --> Static --> GeminiFlash
+        YMode -- "Flag --agentic" --> Agentic --> GeminiFlash
     end
 
-    subgraph AudioTrack["🎙️ Pure Audio Dual-Layer Pipeline"]
+    subgraph LocalVideoTrack["🎬 Pipeline 2: Local Video Two-Stage Fusion Pipeline"]
+        ExtractAudio["1. Extract 16kHz Mono Audio Track"]:::fusionStyle
+        VideoASR{"Stage 1: Acoustic ASR"}:::fusionStyle
+        ASR_Gemini["Gemini 3.5 Transcribe"]:::fusionStyle
+        ASR_Whisper["Local MLX / Faster-Whisper"]:::fusionStyle
+        RawTranscript["Acoustic Ground Truth Transcript<br>• Physical Timestamps [MM:SS - MM:SS]"]:::fusionStyle
+        
+        ExtractAudio --> VideoASR
+        VideoASR -- "Cloud (Default)" --> ASR_Gemini --> RawTranscript
+        VideoASR -- "Offline" --> ASR_Whisper --> RawTranscript
+
+        Stage2["Stage 2: Multimodal Vision Fusion<br>Google Gemini 3.8 Flash<br>• Visual Slide & Nameplate OCR<br>• Speaker 1 -> Real Name Mapping<br>• Synthesizes Sections 1-5 Minutes"]:::fusionStyle
+        RawTranscript --> Stage2
+        V -. "720p Video Upload" .-> Stage2
+
+        Deterministic["Deterministic Python Assembly<br>• Retains Stage 1 Physical Timestamps<br>• Zero Drift & Zero Hallucinated Skips"]:::fusionStyle
+        Stage2 --> Deterministic
+        RawTranscript --> Deterministic
+    end
+
+    subgraph AudioTrack["🎙️ Pipeline 3: Pure Audio Dual-Layer Pipeline"]
         Ingest["Smart Ingestion<br>(16kHz Mono Adaptive Compression)"]:::audioStyle
         ASREngine{"ASR Diarization Engine"}:::audioStyle
         GTranscribe["【Cloud】Gemini 3.5 Transcribe<br>• Word-Level Timestamps<br>• Acoustic Diarization"]:::audioStyle
@@ -165,7 +191,8 @@ flowchart TD
         O -. Inject Context .-> Ingest
     end
 
-    Router -- "Video or YouTube" --> VMode
+    Router -- "YouTube URL" --> YMode
+    Router -- "Local Video File" --> ExtractAudio
     Router -- "Audio (or --extract-audio)" --> Ingest
 
     subgraph Delivery["📦 Deliverables & Dedicated Players"]
@@ -178,33 +205,47 @@ flowchart TD
 
     GeminiFlash --> MD
     GeminiFlash --> VPlayer
+    Deterministic --> MD
+    Deterministic --> VPlayer
     Restructure --> MD
     Restructure --> APlayer
 ```
 
 ### Pipeline Steps Explained
 
-The system categorizes processing into **Routing**, **Dual-Track Execution**, and **Delivery**:
+The system categorizes processing into **Routing**, **Pipeline Execution**, and **Delivery**:
 
 #### Step 1: Input Detection, Title Discovery & Smart Routing
-- **YouTube URLs** (`youtube.com/watch`, `youtu.be/`, Shorts, Live): Automatically queries YouTube's official oEmbed API to discover the official meeting title (e.g., `City_Council_Meeting_2026`), and routes to the **🎥 Multimodal Video Pipeline**.
-- **Local Video Files** (`.mp4`, `.mov`, `.mkv`, `.webm`): Uses file stem or extracts title from visual slides/Section 1, routing directly to the **🎥 Multimodal Video Pipeline** (playable natively in HTML5).
+- **YouTube URLs** (`youtube.com/watch`, `youtu.be/`, Shorts, Live): Automatically queries YouTube's official oEmbed API to discover the official meeting title (e.g., `City_Council_Meeting_2026`), and routes to the **🎥 YouTube Multimodal Cloud Pipeline**.
+- **Local Video Files** (`.mp4`, `.mov`, `.mkv`, `.webm`): Routes to the **🎬 Local Video Two-Stage Fusion Pipeline** (playable natively in HTML5).
 - **Pure Audio Files** (`.mp3`, `.m4a`, `.wav`, `.aac`, `.flac`) or commands with `--extract-audio`: Routed to the **🎙️ Pure Audio Pipeline**.
 
 ---
 
-#### Step 2A: Multimodal Video Pipeline (YouTube & Local Video)
+#### Step 2A: YouTube Multimodal Cloud Pipeline
 1. **Cloud Direct Streaming & Ingestion**:
-   - **YouTube**: Streams URL directly into Gemini Multimodal API without downloading files or triggering YouTube 429 rate limits.
-   - **Local Video**: Compresses files >250MB to 720p H.264 before uploading to Cloud Storage (deleted automatically in `finally` blocks after Gemini reads it via `gs://`).
+   - Streams URL directly into Gemini Multimodal API without downloading files or triggering YouTube 429 rate limits.
 2. **Single-Request End-to-End Analysis**:
    - **Default (Static Multimodal)**: Fast (~40-50s) synthesis aligning visual OCR (desk nameplates, slide text) with audio dialogue.
    - **Agentic Mode (`--agentic`)**: Dynamic multi-turn frame navigation for slide-dense or multi-hour videos.
-3. **Universal Plain-Text Formatting**: Emits 6 structured sections with canonical speaker names, paragraph-level turn consolidation (each paragraph keeps its own accurate timestamp rather than being collapsed into one giant turn), and timestamped verbatim turns. Headings and labels are dynamically translated into the target language with **zero emojis/icons**.
+3. **Universal Plain-Text Formatting**: Emits 6 structured sections with canonical speaker names, paragraph-level turn consolidation, and timestamped verbatim turns. Headings and labels are dynamically translated into the target language with **zero emojis/icons**.
 
 ---
 
-#### Step 2B: Pure Audio Dual-Layer Pipeline (Voice Recordings)
+#### Step 2B: Local Video Two-Stage Fusion Pipeline
+1. **Stage 1 (Acoustic ASR Ground-Truth)**:
+   - Extracts 16kHz mono audio (cached to avoid redundant extraction).
+   - Transcribes with `gemini-3.5-transcribe` (Cloud) or `mlx-whisper` (Local Offline), generating millisecond-accurate physical timestamps `[MM:SS - MM:SS]` and speaker turns.
+2. **Stage 2 (Multimodal Vision & Minutes Fusion)**:
+   - Compresses video to 720p H.264 if needed and stages to Cloud Storage (cleaned up in `finally`).
+   - Ingests video + Stage 1 transcript into `gemini-3.8-flash` to inspect visual slides, nameplates, and participant feeds.
+   - Maps speaker roles (`Speaker 1` -> Real Name/Title) and generates Executive Sections 1–5.
+3. **Deterministic Assembly**:
+   - Python code combines Sections 1–5 with the verbatim Section 6, applying visual speaker mappings while strictly preserving physical timestamps with 0 drift.
+
+---
+
+#### Step 2C: Pure Audio Dual-Layer Pipeline (Voice Recordings)
 1. **Smart Ingestion**: Probes audio bitrate; low-bitrate passes through, high-bitrate adaptively converts to 16kHz mono.
 2. **Terminology Pre-Mining (Optional)**: Extracts participant rosters and specialized vocabulary from `--outline`.
 3. **Acoustic Transcription (ASR & Diarization)**:

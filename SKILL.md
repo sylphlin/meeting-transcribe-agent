@@ -13,9 +13,13 @@ metadata:
 
 Universal meeting intelligence and interactive transcription suite adhering to the open [Agent Skills Specification](https://agentskills.io/specification).
 
-Provides dual specialized pipelines tailored to input media:
-1. **Multimodal Video Pipeline (YouTube URLs & Local Video)**: End-to-end single-request analysis via **Gemini 3.8 Flash** with visual lower-third caption OCR, presentation slide extraction, and optional **Agentic Video Understanding** (`--agentic`). Automatically synchronizes with an embedded 3-pane interactive video player (top-left video, bottom-left executive summary, right synchronized transcript).
-2. **Pure Audio Pipeline (Audio Files & Podcasts)**: Combines **Google Gemini 3.5 Transcribe** (Cloud Primary via Vertex AI with ephemeral Cloud Storage auto-cleanup) or **Local Apple Silicon MLX / Faster-Whisper + Sherpa-ONNX Diarization** (Explicit User-Requested Offline Mode) with **Gemini 3.8 Flash** for executive minutes structuring, speaker role arbitration, and technical glossary consistency. Outputs a zero-dependency 2-pane audio player functioning 100% offline via local `file://` protocol.
+Provides specialized pipelines tailored to input media:
+1. **YouTube Multimodal Pipeline (Direct Cloud Ingestion)**: End-to-end cloud-native analysis via **Gemini 3.8 Flash** with visual lower-third caption OCR, presentation slide extraction, and optional **Agentic Video Understanding** (`--agentic`). Automatically synchronizes with an embedded 3-pane interactive video player (top-left YouTube player, bottom-left executive summary, right synchronized transcript).
+2. **Local Video Two-Stage Fusion Pipeline (Audio Extraction + Multimodal Vision Fusion)**: Solves the acoustic clock drift and token limit compression inherent in single-pass LLM video analysis.
+   - **Stage 1 (Acoustic Ground Truth ASR)**: Extracts 16kHz mono audio and runs speech transcription via **Google Gemini 3.5 Transcribe** (Cloud Primary) or **Local Apple Silicon MLX/Whisper + Sherpa-ONNX Diarization** (Offline Mode) to establish millisecond-accurate physical timestamps `[MM:SS - MM:SS]` and speaker turns.
+   - **Stage 2 (Multimodal Vision & Minutes Fusion)**: Ingests the 720p video file alongside the Stage 1 transcript into **Gemini 3.8 Flash**. The model reads visual presentation slides, architecture diagrams, and speaker nameplates to map real identities (`Speaker 1` -> Real Name/Title) and synthesize Executive Sections 1–5.
+   - **Deterministic Assembly**: Python code deterministically combines Sections 1–5 with the verbatim Section 6, applying visual speaker mappings while strictly preserving physical timestamps with 0 drift, delivering a 3-pane HTML5 video player.
+3. **Pure Audio Pipeline (Audio Files & Podcasts)**: Combines **Google Gemini 3.5 Transcribe** (Cloud Primary via Vertex AI with ephemeral Cloud Storage auto-cleanup) or **Local Apple Silicon MLX / Faster-Whisper + Sherpa-ONNX Diarization** (Explicit User-Requested Offline Mode) with **Gemini 3.8 Flash** for executive minutes structuring, speaker role arbitration, and technical glossary consistency. Outputs a zero-dependency 2-pane audio player functioning 100% offline via local `file://` protocol.
 
 ---
 
@@ -29,10 +33,10 @@ meeting-transcribe-agent/
 ├── meeting_transcribe.py             # Primary CLI entrypoint forwarder
 ├── scripts/                          # Modular core components
 │   ├── __init__.py
-│   ├── meeting_transcribe.py         # Master pipeline orchestrator (Video & Audio Dual-Track)
-│   ├── audio_utils.py                # Video detection, YouTube title fetching, FFmpeg compression, filename sanitization
+│   ├── meeting_transcribe.py         # Master pipeline orchestrator (YouTube, Local Video Fusion, & Audio)
+│   ├── audio_utils.py                # Video detection, YouTube title fetching, FFmpeg compression, audio extraction
 │   ├── gcs_utils.py                  # Google Cloud Storage upload/download, signed URLs, ephemeral blob cleanup
-│   ├── gemini_engine.py              # Multimodal video end-to-end, Cloud Storage upload & auto-cleanup, universal LLM localization
+│   ├── gemini_engine.py              # Multimodal video end-to-end, two-stage video fusion, Cloud Storage auto-cleanup
 │   ├── diarization.py                # Local Sherpa-ONNX acoustic diarization & Whisper/MLX transcription
 │   ├── glossary.py                   # Dual-track terminology mining (audio pre-scan + agenda outline)
 │   ├── canonicalizer.py              # Acoustic cluster drift convergence & sequential turn merging
@@ -49,11 +53,11 @@ meeting-transcribe-agent/
 
 ## Key Capabilities
 
-1. **Multimodal Video Pipeline (YouTube & Local Video)**:
-   - **Direct YouTube URL Support**: Transcribes and analyzes public meetings, council sessions, webinars, and conferences directly from YouTube URLs (`https://www.youtube.com/watch?v=...`, `youtu.be/...`, shorts, live).
+1. **Multimodal Video & Two-Stage Fusion Pipelines**:
+   - **Direct YouTube URL Support**: Cloud-native single-request analysis of public meetings and conferences directly from YouTube URLs (`https://www.youtube.com/watch?v=...`, `youtu.be/...`, shorts, live).
+   - **Local Video Two-Stage Fusion**: Decouples acoustic timekeeping from multimodal semantic reasoning. Stage 1 extracts audio and executes acoustic ASR for immutable timestamps; Stage 2 feeds video + transcript to Gemini 3.8 Flash for visual slide/speaker mapping; downstream deterministic assembly eliminates token ceiling truncation and hallucinated skips.
    - **Intelligent Title & File Naming**: Automatically queries YouTube's official oEmbed API or extracts Section 1's official meeting title to name files cleanly (e.g., `City_Council_Meeting_2026_minutes.md` and `_player.html`), eliminating raw video IDs.
    - **Visual Speaker & Slide Grounding**: Inspects lower-third title cards, nameplates, and presentation slides to accurately identify real participant names, governmental departments, and agenda slide numbers.
-   - **Single-Request Efficiency**: Employs a single unified multimodal request delivering complete executive minutes, speaker mapping, and full verbatim transcript in ~40s (50% input token savings).
    - **Agentic Video Understanding (`--agentic`)**: Harnesses dynamic multi-turn frame navigation and tool-use (`types.MediaProcessing.AGENTIC`) for intricate multi-hour video deep dives.
 
 2. **Dual-Engine Audio Architecture (Cloud Primary + Explicit User-Requested Local Offline)**:
@@ -90,8 +94,8 @@ When Antigravity or any compatible agent is instructed by the user to transcribe
    - **DO NOT** silently switch to `--engine whisper`, extract container subtitles, or run local OCR workarounds.
    - Report the exact blocked error to the user with actionable remediation steps (e.g., `gcloud auth application-default login`, granting `roles/storage.objectUser`, or providing a bucket with `--bucket`) and wait for user direction.
 
-### Branch A: Multimodal Video Pipeline (YouTube URL or Video File)
-For YouTube links (`https://www.youtube.com/...`) or local video files (`.mp4`, `.mov`, `.mkv`), the agent runs the end-to-end multimodal pipeline:
+### Branch A: Video Pipelines (YouTube or Local Video)
+For YouTube links (`https://www.youtube.com/...`) or local video files (`.mp4`, `.mov`, `.mkv`), the agent runs the appropriate video pipeline:
 ```bash
 # YouTube Meeting (Direct cloud ingestion + YouTube player sync)
 python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
@@ -99,11 +103,12 @@ python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 # YouTube Meeting with Agentic Video Understanding (Deep multi-turn frame exploration)
 python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agentic
 
-# Local Video File (Automatic 720p compression + local player audio extraction)
+# Local Video File (Two-Stage Audio Extraction + Multimodal Vision Fusion)
 python3 meeting_transcribe.py "path/to/video.mp4"
 ```
-- In a single multimodal request, `gemini-3.8-flash` inspects visual lower-third title cards, presentation slides, and acoustic speech to extract speaker identities, structured executive minutes, and verbatim timestamps.
-- Produces `<stem>_minutes.md` and `<stem>_player.html` (with embedded YouTube Dock or audio player).
+- For YouTube: direct cloud ingestion via `gemini-3.8-flash` delivers complete minutes and transcript in ~40s.
+- For local video files: Stage 1 extracts audio and executes acoustic ASR (Gemini 3.5 Transcribe or local Whisper) for physical ground-truth timestamps; Stage 2 passes 720p video + transcript to `gemini-3.8-flash` for visual slide/speaker mapping and executive minutes synthesis; downstream deterministic assembly combines them with zero timestamp drift.
+- Produces `<stem>_minutes.md` and `<stem>_player.html` (with embedded YouTube Dock or local video player).
 
 ### Branch B: Pure Audio Pipeline (Audio Files & Podcasts)
 For audio recordings (`.mp3`, `.m4a`, `.wav`, `.aac`, etc.), or when video files are forced to audio via `--extract-audio`:

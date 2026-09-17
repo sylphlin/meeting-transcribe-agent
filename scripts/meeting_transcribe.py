@@ -32,6 +32,7 @@ from scripts.gemini_engine import (
     transcribe_with_gemini_cloud,
     generate_minutes_with_gemini,
     process_video_meeting_end_to_end,
+    analyze_video_with_transcript,
 )
 from scripts.glossary import (
     extract_global_consistency_glossary,
@@ -71,8 +72,9 @@ def generate_meeting_minutes_and_transcript(
 
     """
     End-to-End Meeting Transcription & Intelligence Pipeline:
-    - Pipeline 1 (Multimodal Video): Directly analyzes YouTube or local video via Gemini Vision with optional Agentic navigation.
-    - Pipeline 2 (Pure Audio): Gemini 3.5 Transcribe with ephemeral Cloud Storage upload cleanup or Offline Whisper + Diarization.
+    - Pipeline 1 (YouTube Multimodal): Direct cloud ingestion via Gemini Vision with optional Agentic navigation.
+    - Pipeline 2 (Local Video Two-Stage Fusion): Stage 1 Audio Extraction + Acoustic ASR (Gemini 3.5 Transcribe or offline Whisper), Stage 2 Gemini 3.8 Flash Multimodal Vision Fusion (slides, faces, nameplates) & minutes synthesis, followed by deterministic assembly & synchronized video player.
+    - Pipeline 3 (Pure Audio): Gemini 3.5 Transcribe with ephemeral Cloud Storage upload cleanup or Offline Whisper + Diarization.
 
     Media fed to Gemini (local audio/video, not YouTube URLs) is staged through a
     Cloud Storage bucket (bucket_name, or MEETING_STORAGE_BUCKET in the
@@ -87,10 +89,10 @@ def generate_meeting_minutes_and_transcript(
     is_vid = is_video_file(source_str) if not is_yt else False
     resolved_bucket = (bucket_name or os.environ.get("MEETING_STORAGE_BUCKET", "")).removeprefix("gs://") or None
 
-    # Dispatch to Multimodal Video Pipeline if YouTube or Video (and not forced audio extraction)
-    if (is_yt or is_vid) and not extract_audio:
+    # Branch 1: YouTube Multimodal Cloud Pipeline (Direct Ingestion)
+    if is_yt and not extract_audio:
         print(f"\n========================================================")
-        print(f"🎥  Meeting Transcribe Agent: Multimodal Video Pipeline")
+        print(f"🎥  Meeting Transcribe Agent: YouTube Multimodal Pipeline")
         print(f"📺  Source: {source_str}")
         print(f"🤖  Mode: {'Agentic Video Understanding' if agentic else 'High-Speed Static Multimodal'}")
         print(f"⚙️  Vision Model: {summary_model}")
@@ -99,23 +101,15 @@ def generate_meeting_minutes_and_transcript(
         t_total_start = time.time()
         client = get_gemini_client(project_id=project_id, location=location)
 
-        if is_vid:
-            video_p = Path(source_str).resolve()
-            if not video_p.exists():
-                raise FileNotFoundError(f"Video file not found: {video_p}")
-            play_media = video_p
-            default_out_stem = video_p.stem
-            out_parent = video_p.parent
+        from scripts.audio_utils import fetch_youtube_title, sanitize_filename
+        yt_id = extract_youtube_id(source_str) or "youtube_meeting"
+        play_media = source_str
+        yt_title = fetch_youtube_title(source_str)
+        if yt_title:
+            default_out_stem = sanitize_filename(yt_title)
         else:
-            from scripts.audio_utils import fetch_youtube_title, sanitize_filename
-            yt_id = extract_youtube_id(source_str) or "youtube_meeting"
-            play_media = source_str
-            yt_title = fetch_youtube_title(source_str)
-            if yt_title:
-                default_out_stem = sanitize_filename(yt_title)
-            else:
-                default_out_stem = f"yt_{yt_id}"
-            out_parent = Path.cwd()
+            default_out_stem = f"yt_{yt_id}"
+        out_parent = Path.cwd()
 
         final_markdown, video_time = process_video_meeting_end_to_end(
             client=client,
@@ -143,9 +137,175 @@ def generate_meeting_minutes_and_transcript(
 
         out_path.write_text(final_markdown, encoding="utf-8")
         print(f"\n========================================================")
-        print(f"✅ Multimodal video meeting minutes successfully generated!")
+        print(f"✅ Multimodal YouTube meeting minutes successfully generated!")
         print(f"📄 Output file: {out_path.resolve()}")
         print(f"⏱️  Processing Time: {video_time:.1f}s | Total Time: {total_time:.1f}s")
+        print(f"========================================================\n")
+
+        if not no_player:
+            if out_path.stem.endswith("_minutes"):
+                player_path = out_path.parent / f"{out_path.stem[:-8]}_player.html"
+            else:
+                player_path = out_path.parent / f"{out_path.stem}_player.html"
+            try:
+                generate_interactive_html(
+                    media_source=play_media,
+                    markdown_content=final_markdown,
+                    output_html_path=player_path
+                )
+                if serve and player_path.exists():
+                    from scripts.html_generator import serve_html_player
+                    serve_html_player(player_path)
+            except Exception as e:
+                print(f"[!] Warning: Interactive HTML player generation failed ({e}).")
+
+        return out_path
+
+    # Branch 2: Local Video Pipeline (Two-Stage Audio Extraction + Multimodal Vision Fusion)
+    if is_vid and not extract_audio:
+        video_p = Path(source_str).resolve()
+        if not video_p.exists():
+            raise FileNotFoundError(f"Video file not found: {video_p}")
+        play_media = video_p
+        default_out_stem = video_p.stem
+        out_parent = video_p.parent
+
+        print(f"\n========================================================")
+        print(f"🎥  Meeting Transcribe Agent: Two-Stage Local Video Pipeline")
+        print(f"📺  Source Video: {video_p.name}")
+        print(f"🎙️  Stage 1 (Acoustic ASR): {transcribe_model if engine.lower() != 'whisper' else f'Whisper ({whisper_backend})'}")
+        print(f"👁️  Stage 2 (Multimodal Vision Fusion): {summary_model}")
+        if resolved_bucket:
+            print(f"☁️  Cloud Storage Staging: gs://{resolved_bucket}")
+        print(f"========================================================\n")
+
+        t_total_start = time.time()
+
+        # Step 0: Initialize Gemini Client
+        client = None
+        try:
+            client = get_gemini_client(project_id=project_id, location=location)
+            if engine.lower() == "gemini" and not resolved_bucket:
+                raise ValueError(
+                    "A Cloud Storage bucket is required to process video/audio with Gemini via Vertex AI. "
+                    "Pass bucket_name / --bucket, or set MEETING_STORAGE_BUCKET."
+                )
+        except Exception as e:
+            if engine.lower() == "gemini":
+                raise e
+            print(f"[*] Note: Gemini API not available ({e}). Operating in pure offline mode.")
+
+        # Step 1: Extract 16kHz mono audio track
+        print(f"--- [Stage 1/2] Audio Extraction & Acoustic Transcription ---")
+        audio_path = extract_audio_from_video(video_p)
+
+        # Stage 1 ASR: Transcribe extracted audio with physical timestamps & diarization
+        if engine.lower() == "whisper":
+            print(f"[*] Acoustic ASR: Local Whisper + Sherpa-ONNX Diarization ({whisper_backend})")
+            raw_transcript_text, asr_time = transcribe_with_local_whisper_and_diarization(
+                audio_path=audio_path,
+                model_size=whisper_model,
+                enable_diarization=enable_diarization,
+                clustering_threshold=clustering_threshold,
+                num_speakers=num_speakers,
+                embedding_type=embedding_type,
+                whisper_backend=whisper_backend,
+                language=language
+            )
+        else:
+            print(f"[*] Acoustic ASR: Cloud Gemini Transcribe ({transcribe_model})")
+            raw_transcript_text, asr_time = transcribe_with_gemini_cloud(
+                client=client,
+                audio_path=audio_path,
+                bucket_name=resolved_bucket,
+                model_name=transcribe_model,
+                compress=compress,
+                language=language
+            )
+
+        # Early return if only verbatim transcript requested
+        if only_transcript:
+            duration_sec = get_audio_duration(audio_path)
+            dur_str = format_offset(duration_sec)
+            eng_label = f"Local Whisper ({whisper_backend}/{whisper_model})" if engine.lower() == "whisper" else transcribe_model
+            out_path = Path(output_file) if output_file else video_p.parent / f"{video_p.stem}_transcript.md"
+            content = (
+                f"# Meeting Transcript: {video_p.stem}\n\n"
+                f"- **Video File**: `{video_p.name}`\n"
+                f"- **Duration**: {dur_str}\n"
+                f"- **Transcription Engine**: {eng_label}\n"
+                f"- **Generated At**: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                f"## 🎙️ Verbatim Transcript\n\n"
+                f"{raw_transcript_text.strip()}\n"
+            )
+            out_path.write_text(content, encoding="utf-8")
+            print(f"\n========================================================")
+            print(f"✅ Verbatim transcript successfully generated from video audio!")
+            print(f"📄 Output file: {out_path.resolve()}")
+            print(f"⏱️  ASR Time: {asr_time:.1f}s | Total Time: {time.time() - t_total_start:.1f}s")
+            print(f"========================================================\n")
+            return out_path
+
+        # Step 2: Stage 2 Multimodal Vision + Transcript Fusion
+        summary_time = 0.0
+        final_markdown = ""
+        if client is not None:
+            print(f"\n--- [Stage 2/2] Multimodal Vision & Minutes Fusion ({summary_model}) ---")
+            try:
+                sections_1_5, summary_time = analyze_video_with_transcript(
+                    client=client,
+                    video_path=video_p,
+                    raw_transcript_text=raw_transcript_text,
+                    bucket_name=resolved_bucket,
+                    summary_model=summary_model,
+                    use_agentic=agentic,
+                    summary_language=summary_language,
+                    outline_path=Path(outline) if outline else None,
+                )
+
+                # Deterministic Assembly: combine Sections 1-5 with Section 6 verbatim transcript
+                combined_raw = f"{sections_1_5.strip()}\n\n{raw_transcript_text.strip()}\n"
+
+                print(f"[*] Consolidating canonical speaker identities from visual mapping...")
+                final_markdown = consolidate_meeting_minutes(combined_raw)
+            except Exception as e:
+                print(f"[!] Warning: Multimodal video fusion failed ({e}). Falling back to standalone acoustic transcript.")
+                final_markdown = ""
+
+        if not final_markdown:
+            duration_sec = get_audio_duration(audio_path)
+            dur_str = format_offset(duration_sec)
+            eng_label = f"Local Whisper ({whisper_backend}/{whisper_model})" if engine.lower() == "whisper" else transcribe_model
+            final_markdown = (
+                f"# Meeting Minutes & Transcript: {video_p.stem}\n\n"
+                f"- **Video File**: `{video_p.name}`\n"
+                f"- **Duration**: {dur_str}\n"
+                f"- **Transcription Engine**: {eng_label}\n"
+                f"- **Generated At**: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                f"## 6. Full Verbatim Transcript\n\n"
+                f"{raw_transcript_text.strip()}\n"
+            )
+            final_markdown = consolidate_meeting_minutes(final_markdown)
+
+        total_time = time.time() - t_total_start
+
+        if output_file:
+            out_path = Path(output_file).resolve()
+        else:
+            from scripts.html_generator import extract_meeting_title
+            from scripts.audio_utils import sanitize_filename
+            md_title = extract_meeting_title(final_markdown)
+            if md_title:
+                clean_title_stem = sanitize_filename(md_title)
+                if clean_title_stem:
+                    default_out_stem = clean_title_stem
+            out_path = out_parent / f"{default_out_stem}_minutes.md"
+
+        out_path.write_text(final_markdown, encoding="utf-8")
+        print(f"\n========================================================")
+        print(f"✅ Video meeting minutes & synchronized transcript successfully generated!")
+        print(f"📄 Output file: {out_path.resolve()}")
+        print(f"⏱️  ASR Time: {asr_time:.1f}s | Vision Fusion Time: {summary_time:.1f}s | Total Time: {total_time:.1f}s")
         print(f"========================================================\n")
 
         if not no_player:

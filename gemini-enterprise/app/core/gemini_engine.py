@@ -709,3 +709,206 @@ Output strictly the following 6 sections in Markdown (DO NOT include any emojis 
             except Exception as e:
                 print(f"[!] Warning: Failed to delete uploaded video file: {e}")
 
+
+def analyze_video_with_transcript(
+    client: genai.Client,
+    video_path: str | Path,
+    raw_transcript_text: str,
+    bucket_name: str = None,
+    summary_model: str = None,
+    use_agentic: bool = False,
+    summary_language: str = None,
+    outline_path: Path = None,
+) -> tuple[str, float]:
+    """
+    Stage 2 of the Local Video Pipeline: Multimodal Vision + Transcript Fusion.
+    Takes the local video (optimized to 720p and uploaded to Cloud Storage) together with the
+    Stage 1 acoustic verbatim transcript. Gemini 3.8 Flash inspects visual slides, speaker nameplates,
+    presentation decks, attendee video feeds, and the verbatim transcript to:
+      1. Accurately map participant identities (Speaker 1, Speaker 2 -> Real Name, Title, Organization)
+         in the Section 1 Speaker Mapping Table.
+      2. Synthesize structured executive sections 1 through 5 (Metadata & Attendees, Executive Summary,
+         Key Topics with Speaker Perspectives, Decisions, and Action Items).
+      3. Output the localized Section 6 heading.
+    Section 6 verbatim transcript turns are deterministically assembled downstream by Python
+    to maintain 100% physical acoustic clock fidelity and avoid output token limits.
+    """
+    load_env_file()
+    summary_model = summary_model or os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash"
+    t0 = time.time()
+    video_p = Path(video_path).resolve()
+    if not video_p.is_file():
+        raise FileNotFoundError(f"Local video file not found: {video_p}")
+    if not bucket_name:
+        raise ValueError("bucket_name is required to analyze a local video file.")
+
+    # Outline context injection
+    outline_injection = ""
+    if outline_path and Path(outline_path).exists():
+        try:
+            outline_content = Path(outline_path).read_text(encoding="utf-8").strip()
+            if outline_content:
+                outline_injection = f"\n---\n# Official Meeting Outline & Agenda Reference\n{outline_content}\n---\n"
+        except Exception as e:
+            print(f"[!] Warning: Could not read outline file {outline_path}: {e}")
+
+    # Target summary language specification (universal, LLM-driven localization)
+    if summary_language and summary_language.lower() != "auto":
+        target_lang = summary_language
+    else:
+        target_lang = "the primary language spoken in the meeting (e.g. Traditional Chinese for Taiwan meetings, English for English meetings, Japanese for Japanese meetings, etc.)"
+
+    lang_instruction = (
+        f"- **Sections 1 to 5 (Metadata, Summary, Discussion Topics, Decisions, Action Items)**:\n"
+        f"  Must be written in fluent, native, professional {target_lang}.\n"
+        f"- **Universal Language Adaptation (CRITICAL)**:\n"
+        f"  1. Translate and adapt all section headings (1 to 6), metadata field labels, and table column headers naturally into {target_lang}. This template's English labels (\"Meeting Metadata & Attendees\", \"Executive Summary\", \"Key Discussion Topics\", etc.) are placeholders describing what belongs in each section -- they are NOT literal heading text to copy verbatim. Leaving any heading in English when {target_lang} is not English is a critical error.\n"
+        f"  2. **STRICTLY FORBIDDEN to include ANY emojis or icons** (e.g. no 📌, 🎯, 💡, ⚖️, 📋, 🎙️) in any section headings, sub-headings, or table headers. Use clean, plain text markdown headings only (e.g. `## 1. `, `## 2. `).\n"
+        f"- **Section 6 Heading**:\n"
+        f"  At the very end of your response, output ONLY the localized Markdown heading for Section 6 (e.g., `## 6. Full Verbatim Transcript` in English, `## 6. 完整逐字記錄` in Traditional Chinese, `## 6. 全文逐字録` in Japanese), followed by nothing else."
+    )
+
+    s1_s5_schema = f"""## 1. Meeting Metadata & Attendees
+- **Meeting Title**: (Inferred from video slides, agenda, or dialogue)
+- **Source**: {video_p.name}
+- **Estimated Date / Time**: (Inferred from slides or dialogue)
+- **Chairperson / Host**: (Identified meeting leader)
+- **Speaker Mapping Table**:
+  Cross-reference the draft transcript's dialogue turns with video frames, presentation slides, attendee video boxes, nameplates, and lower-third titles:
+  | Speaker ID | Role / Title | Name | Organization / Department | Remarks / Key Presentation Topic |
+  | :--- | :--- | :--- | :--- | :--- |
+
+## 2. Executive Summary
+- A high-level, 300–400 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
+
+## 3. Key Discussion Topics & Agenda Items
+- Structured breakdown for each topic discussed:
+  - **Context & Motivation**: Background and why this issue was raised.
+  - **Key Arguments & Data**: Evidence, metrics, or points presented by participants (incorporating on-screen presentation slides, architecture diagrams, or demo screens).
+  - **Discussion Flow & Speaker Perspectives**: Contributions organized per speaker (【Role / Name】: Key arguments, metrics, or positions).
+  - **Outcome / Consensus**: Conclusion reached on this specific topic.
+
+## 4. Key Decisions & Resolutions
+- Bulleted list of formal decisions, policy directives, approved motions, or consensus reached.
+
+## 5. Action Items & Next Steps
+- Structured Markdown table assigning clear ownership and timelines:
+  | # | Action Item / Task | Owner / Assignee | Due Date / Timeline | Status / Notes |
+  | :--- | :--- | :--- | :--- | :--- |
+
+## 6. Full Verbatim Transcript
+(Output ONLY the localized Section 6 heading translated into {target_lang}. Stop immediately after this heading line. Do NOT output any transcript lines!)"""
+
+    prompt = f"""# Role & Objective
+You are an elite, highly professional executive meeting secretary and multimodal video intelligence specialist.
+Analyze this recorded meeting video (utilizing visual slides, on-screen speaker nameplates, lower-third titles, presentation decks, attendee video feeds, and the provided acoustic draft transcript) and produce Sections 1 to 5 of an impeccably formatted, executive-ready meeting record.
+
+# Language & Localization Policy
+{lang_instruction}
+
+{outline_injection}
+
+# Ground-Truth Acoustic Draft Transcript
+The following is the verbatim acoustic transcript with physical timestamps and initial speaker cluster IDs from Stage 1 speech recognition:
+---
+{raw_transcript_text}
+---
+
+# Critical Visual & Speaker Mapping Instructions
+1. **Visual Speaker Grounding & Mapping**:
+   - Cross-reference the draft transcript's dialogue turns with video frames, presentation slides, attendee video boxes, nameplates, and lower-third titles.
+   - Accurately map every speaker ID from the draft transcript (e.g. `Speaker 1`, `Speaker 2`, `spk_0`, `spk_1`) to their real Name, Official Title / Role, and Organization / Department.
+   - Populate the **Speaker Mapping Table** in Section 1 with these mapped identities.
+2. **Slide & Visual Deck Synthesis**:
+   - In Section 3 (Key Discussion Topics & Agenda Items), incorporate key data, metrics, architecture diagrams, and slide points visible on screen.
+   - Under "Discussion Flow & Speaker Perspectives", explicitly organize contributions per mapped speaker (`【Role / Name】: ...`).
+3. **Sections 1 to 5 ONLY**:
+   - Output strictly and exclusively Sections 1 to 5, followed by the localized Section 6 heading.
+   - **DO NOT** output any dialogue lines in Section 6 (the verbatim transcript will be deterministically assembled downstream to preserve physical timestamps).
+   - Stop immediately after the Section 6 heading line.
+
+# Output Structure
+Output strictly the following structure in Markdown (DO NOT include any emojis or icons in headings):
+
+{s1_s5_schema}
+"""
+
+    gcs_uri = None
+    try:
+        # Check and optimize video size if needed (e.g. 720p H.264)
+        upload_target = optimize_video_for_upload(video_p, max_size_mb=250.0)
+
+        print(f"[*] Uploading local video to Cloud Storage: {upload_target.name}...")
+        mime_type = guess_mime_type(upload_target)
+        with safe_ascii_upload_path(upload_target) as safe_path:
+            gcs_uri = upload_file_to_gcs(
+                local_path=safe_path,
+                bucket_name=bucket_name,
+                destination_blob_name=_unique_raw_blob_name(safe_path),
+                content_type=mime_type,
+            )
+
+        if use_agentic:
+            print("[*] Mode: 🤖 Agentic Video Understanding (Dynamic frame navigation & tool-use)")
+            part = types.Part(
+                file_data=types.FileData(file_uri=gcs_uri, mime_type=mime_type),
+                media_processing=types.MediaProcessing.AGENTIC,
+            )
+        else:
+            print("[*] Mode: 📺 High-Speed Multimodal Video + Transcript Fusion")
+            part = types.Part(
+                file_data=types.FileData(file_uri=gcs_uri, mime_type=mime_type)
+            )
+
+        print(f"[*] Dispatching multimodal video + transcript fusion analysis to {summary_model}...")
+        resp = client.models.generate_content(
+            model=summary_model,
+            contents=[part, prompt]
+        )
+        duration = time.time() - t0
+
+        # Extract text content safely
+        output_text = ""
+        try:
+            if resp.text:
+                output_text = resp.text
+        except Exception:
+            pass
+
+        if not output_text and hasattr(resp, "candidates") and resp.candidates:
+            for cand in resp.candidates:
+                if getattr(cand, "content", None) and getattr(cand.content, "parts", None):
+                    for p in cand.content.parts:
+                        if getattr(p, "text", None):
+                            output_text += p.text
+
+        if not output_text.strip():
+            finish_reason = getattr(resp.candidates[0], "finish_reason", "UNKNOWN") if resp.candidates else "NO_CANDIDATE"
+            raise RuntimeError(f"Video analysis model returned no text content (finish_reason: {finish_reason})")
+
+        output_text = normalize_verbatim_timestamps(output_text)
+
+        # Print token usage accounting
+        if hasattr(resp, "usage_metadata") and resp.usage_metadata:
+            u = resp.usage_metadata
+            print(f"[*] Token Usage: Prompt={getattr(u, 'prompt_token_count', 0)}, "
+                  f"Output={getattr(u, 'candidates_token_count', 0)}, "
+                  f"Total={getattr(u, 'total_token_count', 0)}")
+            if getattr(u, 'thoughts_token_count', None):
+                print(f"    (Internal Thought Tokens: {u.thoughts_token_count})")
+            if getattr(u, 'tool_use_prompt_token_count', None):
+                print(f"    (Tool Navigation Tokens: {u.tool_use_prompt_token_count})")
+
+        print(f"[✓] Multimodal video + transcript analysis completed in {duration:.1f}s (Output: {len(output_text)} chars)")
+        return output_text, duration
+
+    finally:
+        if gcs_uri is not None:
+            try:
+                print(f"[*] Cleaning up ephemeral Cloud Storage video upload...")
+                delete_gcs_blob(gcs_uri)
+                print(f"[✓] Cloud Storage upload cleaned up successfully.")
+            except Exception as e:
+                print(f"[!] Warning: Failed to delete uploaded video file: {e}")
+
+

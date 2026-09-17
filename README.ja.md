@@ -13,28 +13,33 @@
 
 ### メディアに応じたインテリジェントな2系統パイプライン：
 
-1. **マルチモーダル動画パイプライン (YouTube リンク / ローカル動画ファイル)**：
+1. **YouTube マルチモーダルクラウドパイプライン (YouTube クラウドネイティブ解析)**：
    - **単一リクエストによる圧倒的な処理効率**：**Gemini 3.8 Flash** によるエンドツーエンドの視覚・音声マルチモーダル分析。プレゼン資料（Slide OCR）、席札、ニュースのテロップ字幕を同時に読み取り、発言者の氏名・役職を100%の精度で特定。処理時間とトークン消費を50%削減（32分の動画を約44秒で処理）。
    - **Agentic Video Understanding (`--agentic`)**：動的なマルチターンフレーム探索とツール呼び出しにより、数時間に及ぶ長編動画や複雑な図表スライドを徹底的に分析。
    - **ピクチャー・イン・ピクチャー対応 YouTube プレイヤー**：生成される単一 HTML プレイヤーに YouTube IFrame コントローラーを内蔵。文字起こしテキストの秒数クリックによるシークとカラオケ風リアルタイムハイライトに対応。
 
-2. **高精度音声パイプライン (ボイスレコーダー / ポッドキャスト / 音声ファイル)**：
+2. **ローカル動画2段階融合パイプライン (音声抽出 + マルチモーダル視覚融合)**：
+   - **第1段階 (専用音響 ASR による厳密なタイムスタンプ)**：16kHz mono 音声を抽出し、**Google Gemini 3.5 Transcribe** (クラウド優先) または **Apple Silicon MLX/Whisper + Sherpa-ONNX Diarization** (オフライン) により、ミリ秒単位の物理タイムスタンプ `[MM:SS - MM:SS]` と話者ターニングを確立。
+   - **第2段階 (マルチモーダル視覚・議事録融合)**：720p 動画と第1段階の生テキストを **Gemini 3.8 Flash** に入力。画面内のスライド・席札を視覚 OCR し、`Speaker 1` を実名・役職へマッピングした上で第1〜5章の重要要約を生成。
+   - **決定的アセンブリ**：Python コードが視覚的マッピングを第6章の逐字録へ適用し、実タイムスタンプを100%維持。純粋な動画単発 LLM 推論で生じるタイムスタンプドリフトやトークン打ち切りを完全に解消。
+
+3. **高精度純粋音声パイプライン (ボイスレコーダー / ポッドキャスト / 音声ファイル)**：
    - **下層：音響文字起こし (Gemini 3.5 Transcribe)**：ミリ秒単位の「単語レベルタイムスタンプ (Word Timestamps)」と物理音響に基づく「話者ダイアライゼーション (Diarization)」を担当し、発言の聞き漏らしやスキップを完全に防止。
    - **上層：文脈的構造化 (Gemini 3.8 Flash)**：文脈理解による同音異義語・専門用語の補正、話者名の正規化、自然な言語表現への洗練を行い、決定事項やToDoリストを自動抽出。
    - **ローカルオフライン備え**：Apple Silicon GPU (MLX) / faster-whisper と Sherpa-ONNX 音響声紋クラスタリングによるローカル実行をサポート。
 
 ---
 
-### なぜ「動画（YouTube / ローカル動画）」と「純粋な音声」を分離するのか？
+### なぜアーキテクチャで「YouTube」「ローカル動画」「純粋音声」を明確に区別するのか？
 
-会議の文字起こしにおいて、「映像がある状態」と「音声のみ」では情報密度に根本的な違いが存在します：
+会議の文字起こしにおいて、媒体ごとにインフラストラクチャと情報密度が根本的に異なります：
 
-1. **動画モード（視覚的コンテキストの保持・話者特定率 100%）**：
-   - **視覚 OCR による話者固定**：会議にはデスクのネームプレート、放送字幕、投影スライドなどの重要情報が含まれます。音声を抽出して音声のみの処理に落とし込むと、名乗らずに発言した参加者や役職者を特定できなくなります。
-   - **単一リクエストによる極限の効率化**：動画を直接マルチモーダル LLM（Gemini 3.8 Flash）に渡すことで、文字情報と音声を一度に融合理解し、「ASR 変換後に LLM へ再送する」二重の通信遅延とトークン消費を回避します。
-2. **純粋音声モード（音響物理分離・最大のトークン節約）**：
-   - **画面がない場合の音響物理的アンカー**：ボイスレコーダーやポッドキャストには映像が一切ありません。この場合、専用の音響モデル（Gemini 3.5 Transcribe / オフライン Whisper + Sherpa-ONNX）が厳密なタイムスタンプと声紋分離を提供します。
-   - **圧倒的な低コスト**：純粋な音声は毎秒約32トークンしか消費しないため、長時間の録音を最小限のコストで処理できます。
+1. **YouTube (クラウドネイティブ・事前インデックス済み音響クロック)**：
+   - Google のクラウド基盤が YouTube 動画の自動字幕と時間インデックスを保持しているため、Gemini 3.8 Flash の直接分析により、動画ダウンロード不要で高速かつ正確な処理が可能です。
+2. **ローカル動画ファイル (2段階融合・100%の音画同期とスライド読解)**：
+   - ローカル動画には事前の音響クロックが存在しないため、LLM 単体での推論は重大な時間ズレと長文打ち切りを招きます。専用 ASR で不変のタイムスタンプを確保し、視覚モデルで画面情報を読み解く2段階融合が最適解となります。
+3. **純粋音声モード (音響物理分離・最大のトークン節約)**：
+   - ボイスレコーダーやポッドキャストには映像が一切ありません。専用音響モデル（Gemini 3.5 Transcribe / オフライン Whisper）が毎秒わずか ~32 トークンで厳密なタイムスタンプと声紋分離を提供します。
 
 ---
 
@@ -125,6 +130,7 @@ flowchart TD
     classDef inputStyle fill:#2D3748,stroke:#4A5568,stroke-width:2px,color:#fff;
     classDef routerStyle fill:#D69E2E,stroke:#B7791F,stroke-width:2px,color:#fff;
     classDef videoStyle fill:#2B6CB0,stroke:#2C5282,stroke-width:2px,color:#fff;
+    classDef fusionStyle fill:#4C51BF,stroke:#3C366B,stroke-width:2px,color:#fff;
     classDef audioStyle fill:#2C7A7B,stroke:#234E52,stroke-width:2px,color:#fff;
     classDef outputStyle fill:#276749,stroke:#1C4532,stroke-width:2px,color:#fff;
 
@@ -141,24 +147,42 @@ flowchart TD
     V --> Router
     A --> Router
 
-    subgraph VideoTrack["🎥 マルチモーダル動画パイプライン"]
-        VMode{"モード選択"}:::videoStyle
-        Static["⚡ 静的フレームモード (デフォルト 1 FPS)<br>• トークン: ~3x<br>• 約44秒で高速完了 / OCR精度100%"]:::videoStyle
-        Agentic["🤖 Agentic Video (--agentic)<br>• トークン: ~2x<br>• 動的フレーム探索＆深層分析"]:::videoStyle
-        GeminiFlash["Google Gemini 3.8 Flash<br>(単一リクエストによる一括分析)"]:::videoStyle
-        VisionOCR["視覚 OCR 連携：<br>• 席札 / 登壇者氏名・役職<br>• 放送字幕テロップ<br>• プレゼンスライド (Slide OCR)"]:::videoStyle
+    subgraph YouTubeTrack["🎥 パイプライン 1: YouTube マルチモーダルクラウド"]
+        YMode{"モード選択"}:::videoStyle
+        Static["⚡ 静的フレームモード<br>• 約44秒で高速完了 / OCR精度100%"]:::videoStyle
+        Agentic["🤖 Agentic Video (--agentic)<br>• 動的フレーム探索＆深層分析"]:::videoStyle
+        GeminiFlash["Google Gemini 3.8 Flash<br>(クラウドネイティブマルチモーダル分析)"]:::videoStyle
 
-        VMode -- "デフォルト" --> Static --> GeminiFlash
-        VMode -- "フラグ --agentic" --> Agentic --> GeminiFlash
-        GeminiFlash <--> VisionOCR
+        YMode -- "デフォルト" --> Static --> GeminiFlash
+        YMode -- "フラグ --agentic" --> Agentic --> GeminiFlash
     end
 
-    subgraph AudioTrack["🎙️ 音声2層パイプライン"]
+    subgraph LocalVideoTrack["🎬 パイプライン 2: ローカル動画2段階融合パイプライン"]
+        ExtractAudio["1. 16kHz Mono 音声を抽出"]:::fusionStyle
+        VideoASR{"Stage 1: 専用音響 ASR"}:::fusionStyle
+        ASR_Gemini["Gemini 3.5 Transcribe"]:::fusionStyle
+        ASR_Whisper["ローカル MLX / Faster-Whisper"]:::fusionStyle
+        RawTranscript["物理音響タイムスタンプ生テキスト<br>• [MM:SS - MM:SS] 厳密なクロック"]:::fusionStyle
+        
+        ExtractAudio --> VideoASR
+        VideoASR -- "クラウド (デフォルト)" --> ASR_Gemini --> RawTranscript
+        VideoASR -- "オフライン" --> ASR_Whisper --> RawTranscript
+
+        Stage2["Stage 2: マルチモーダル視覚融合<br>Google Gemini 3.8 Flash<br>• スライド/席札視覚 OCR<br>• Speaker 1 -> 実名・役職マッピング<br>• 第1〜5章の重要要約を生成"]:::fusionStyle
+        RawTranscript --> Stage2
+        V -. "720p 動画アップロード" .-> Stage2
+
+        Deterministic["決定的 Python アセンブリ<br>• Stage 1 の物理タイムスタンプを100%維持<br>• ドリフト・スキップ・幻覚ゼロ"]:::fusionStyle
+        Stage2 --> Deterministic
+        RawTranscript --> Deterministic
+    end
+
+    subgraph AudioTrack["🎙️ パイプライン 3: 音声2層パイプライン"]
         Ingest["スマート前処理<br>(ビットレート判定 / FFmpeg 圧縮)"]:::audioStyle
         ASREngine{"音声認識エンジン"}:::audioStyle
-        GTranscribe["【クラウド】Gemini 3.5 Transcribe<br>• 単語レベルタイムスタンプ<br>• 音響話者分離 (Diarization)<br>• トークン: ~1x (最も経済的)"]:::audioStyle
+        GTranscribe["【クラウド】Gemini 3.5 Transcribe<br>• 単語レベルタイムスタンプ<br>• 音響話者分離 (Diarization)"]:::audioStyle
         OfflineWhisper["【ローカル】MLX / Faster-Whisper<br>+ Sherpa-ONNX 声紋クラスタリング"]:::audioStyle
-        Restructure["【文脈構造化】Gemini 3.8 Flash<br>• 同音異義語＆専門用語補正<br>• 話者統合＆自然な日本語化"]:::audioStyle
+        Restructure["【文脈構造化】Gemini 3.8 Flash<br>• 同音異義語＆専門用語補正<br>• 話者統合＆自然な言語化"]:::audioStyle
 
         Ingest --> ASREngine
         ASREngine -- "クラウド (デフォルト)" --> GTranscribe --> Restructure
@@ -166,22 +190,27 @@ flowchart TD
         O -. 文脈を注入 .-> Ingest
     end
 
-    Router -- "動画または YouTube" --> VMode
+    Router -- "YouTube URL" --> YMode
+    Router -- "ローカル動画" --> ExtractAudio
     Router -- "音声 (または --extract-audio)" --> Ingest
 
     subgraph Delivery["📦 成果物出力とプレイヤー"]
         MD["📄 構造化議事録.md<br>(基本情報 / 要約 / 決定事項 / ToDo / 逐字録)"]:::outputStyle
-        HTML["🌐 単一完結インタラクティブプレイヤー.html"]:::outputStyle
+        HTML["🌐 単一完結 3ペイン / 2ペイン プレイヤー.html"]:::outputStyle
         YTDock["🎬 YouTube PiP ウィンドウ<br>(正確なシーク＆カラオケ同期)"]:::outputStyle
+        VPlayer["🎬 HTML5 動画プレイヤー<br>(映像・音声同期シーク)"]:::outputStyle
         AudioPlayer["🎵 ネイティブ音声プレイヤー<br>(プログレスバー・タイムスタンプジャンプ)"]:::outputStyle
 
         MD --> HTML
         HTML --> YTDock
+        HTML --> VPlayer
         HTML --> AudioPlayer
     end
 
     GeminiFlash --> MD
     GeminiFlash -. YouTube 動画を読み込み .-> YTDock
+    Deterministic --> MD
+    Deterministic -. ローカル動画を読み込み .-> VPlayer
     Restructure --> MD
     Restructure -. 音声を読み込み .-> AudioPlayer
 ```
@@ -189,26 +218,43 @@ flowchart TD
 ### パイプラインの詳細ステップ (Pipeline Steps Explained)
 
 #### ステップ 1：入力メディアの自動判定 (Smart Router)
-- **YouTube URL** または **動画ファイル**（`.mp4`, `.mov`, `.mkv`）：**動画パイプライン**へ自動ルーティング。
-- **音声ファイル**（`.mp3`, `.m4a`, `.wav` 等）または `--extract-audio` 指定時：**音声パイプライン**へルーティング。
+- **YouTube URL**：**🎥 パイプライン 1: YouTube マルチモーダルクラウド** へ自動ルーティング。
+- **ローカル動画ファイル**（`.mp4`, `.mov`, `.mkv`, `.webm`）：**🎬 パイプライン 2: ローカル動画2段階融合パイプライン** へルーティング。
+- **音声ファイル**（`.mp3`, `.m4a`, `.wav` 等）または `--extract-audio` 指定時：**🎙️ パイプライン 3: 音声2層パイプライン** へルーティング。
 
-#### ステップ 2A：動画マルチモーダル処理 (YouTube & ローカル動画)
-1. **クラウド直接解析 / 最適化**：
-   - **YouTube**：API へ直接 URL を渡し、ダウンロード不要で解析（429制限を回避）。
-   - **ローカル動画**：大容量ファイルは自動で 720p H.264 に軽量圧縮してアップロード（完了後即時削除）。
-2. **単一リクエストによる一括解析**：
+---
+
+#### ステップ 2A：YouTube マルチモーダルクラウドパイプライン処理
+1. **クラウド直接解析 / ダウンロード不要**：API へ直接 URL を渡し、ダウンロード不要で解析（429制限を回避）。
+2. **マルチモーダル端到端一括解析**：
    - `gemini-3.8-flash` が視覚 OCR（名札・テロップ・スライド）と音声を同時に把握。
    - 1回の呼び出しで、正確な話者名付きの議事録と逐字録を完成させます。
 
-#### ステップ 2B：音声2層処理 (純粋な音声録音)
+---
+
+#### ステップ 2B：ローカル動画2段階融合パイプライン処理
+1. **第1段階 (専用音響 ASR タイムスタンプ確立)**：
+   - 自動で 16kHz mono 音声を抽出（キャッシュ機能により重複抽出を回避）。
+   - `gemini-3.5-transcribe` (クラウド) または `mlx-whisper` (ローカルオフライン) により、ミリ秒単位の物理タイムスタンプ `[MM:SS - MM:SS]` と話者ターニングを生成。
+2. **第2段階 (マルチモーダル視覚融合)**：
+   - 720p H.264 に圧縮して Cloud Storage へ一時配置（完了後即時削除）。
+   - 動画と第1段階の生テキストを `gemini-3.8-flash` に入力し、画面内のスライド・席札を OCR。`Speaker 1` を実名・役職へマッピングし、第1〜5章の重要要約を生成。
+3. **決定的アセンブリ**：
+   - Python コードが視覚的マッピングを第6章の逐字録へ適用。物理タイムスタンプを厳格に保持し、時間ズレ 0 を達成。
+
+---
+
+#### ステップ 2C：音声2層処理 (純粋な音声録音)
 1. **スマート前処理**：ビットレートを判定し、必要に応じて 16kHz mono に自動変換。
 2. **用語・アジェンダの事前マイニング**：次第ファイル（`--outline`）から固有名詞を事前抽出。
 3. **下層：音響文字起こし**：Gemini 3.5 Transcribe またはローカル Whisper＋Sherpa-ONNX で精密な単語タイムスタンプと話者分離を実施。
 4. **上層：文脈構造化**：Gemini 3.8 Flash で同音異義語を補正し、決定事項とToDoを整理。
 
+---
+
 #### ステップ 3：成果物の出力 (Delivery)
 - **構造化議事録 Markdown**：`<ファイル名>_會議記錄.md` として保存。
-- **インタラクティブ HTML プレイヤー**：`<ファイル名>_player.html` を出力。YouTube 映像との同期や、音声再生バー、カラオケハイライトを標準搭載。（*注意：YouTube のセキュリティ規約により HTTP/HTTPS 経由でのアクセスが必須です。直接 `file://` で開くとエラー 153 が発生するため、`--serve` オプションまたは `python3 -m http.server 8000` の使用を推奨します*）
+- **インタラクティブ HTML プレイヤー**：`<ファイル名>_player.html` を出力。YouTube 映像との同期や、ローカル動画・音声再生バー、カラオケハイライトを標準搭載。
 
 ---
 
