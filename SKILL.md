@@ -1,6 +1,6 @@
 ---
 name: meeting-transcribe-agent
-description: Universal meeting intelligence and interactive verbatim transcription suite adhering to Agent Skills Specification. Features native Multimodal Video Pipeline (YouTube URLs & local video files with visual slide/speaker OCR and optional Agentic Video Understanding), Google Gemini 3.5 Transcribe (cloud primary audio via Vertex AI with ephemeral Cloud Storage auto-cleanup), and local Apple Silicon MLX/Whisper + Sherpa-ONNX diarization (offline backup) with Gemini 3.8 Flash minutes structuring, canonical speaker consolidation, and standalone zero-dependency interactive HTML playback player.
+description: Universal meeting intelligence and interactive verbatim transcription suite adhering to Agent Skills Specification. Features native Multimodal Video Pipeline (YouTube URLs & local video files with visual slide/speaker OCR and optional Agentic Video Understanding), Google Gemini 3.5 Transcribe (cloud primary audio via Vertex AI with ephemeral Cloud Storage auto-cleanup), and local Apple Silicon MLX/Whisper + Sherpa-ONNX diarization (explicit user-requested offline mode) with Gemini 3.8 Flash minutes structuring, canonical speaker consolidation, and standalone zero-dependency interactive HTML playback player.
 metadata:
   version: "2.5.1"
   author: "sylphlin"
@@ -15,7 +15,7 @@ Universal meeting intelligence and interactive transcription suite adhering to t
 
 Provides dual specialized pipelines tailored to input media:
 1. **Multimodal Video Pipeline (YouTube URLs & Local Video)**: End-to-end single-request analysis via **Gemini 3.8 Flash** with visual lower-third caption OCR, presentation slide extraction, and optional **Agentic Video Understanding** (`--agentic`). Automatically synchronizes with an embedded 3-pane interactive video player (top-left video, bottom-left executive summary, right synchronized transcript).
-2. **Pure Audio Pipeline (Audio Files & Podcasts)**: Combines **Google Gemini 3.5 Transcribe** (Cloud Primary via Vertex AI with ephemeral Cloud Storage auto-cleanup) or **Local Apple Silicon MLX / Faster-Whisper + Sherpa-ONNX Diarization** (Offline Backup) with **Gemini 3.8 Flash** for executive minutes structuring, speaker role arbitration, and technical glossary consistency. Outputs a zero-dependency 2-pane audio player functioning 100% offline via local `file://` protocol.
+2. **Pure Audio Pipeline (Audio Files & Podcasts)**: Combines **Google Gemini 3.5 Transcribe** (Cloud Primary via Vertex AI with ephemeral Cloud Storage auto-cleanup) or **Local Apple Silicon MLX / Faster-Whisper + Sherpa-ONNX Diarization** (Explicit User-Requested Offline Mode) with **Gemini 3.8 Flash** for executive minutes structuring, speaker role arbitration, and technical glossary consistency. Outputs a zero-dependency 2-pane audio player functioning 100% offline via local `file://` protocol.
 
 ---
 
@@ -56,9 +56,9 @@ meeting-transcribe-agent/
    - **Single-Request Efficiency**: Employs a single unified multimodal request delivering complete executive minutes, speaker mapping, and full verbatim transcript in ~40s (50% input token savings).
    - **Agentic Video Understanding (`--agentic`)**: Harnesses dynamic multi-turn frame navigation and tool-use (`types.MediaProcessing.AGENTIC`) for intricate multi-hour video deep dives.
 
-2. **Dual-Engine Audio Architecture (Cloud Primary + Local Offline Backup)**:
-   - **Primary Engine (`--engine gemini`)**: Multimodal cloud transcription via `gemini-3.5-transcribe` (Vertex AI) with native speaker diarization and zero-persistence Cloud Storage auto-cleanup. Lightning-fast (30~60s for 1 hour).
-   - **Offline Backup Engine (`--engine whisper`)**: 100% local transcription running on Apple Silicon Metal GPU (`mlx-whisper`) or CPU (`faster-whisper`), combined with Sherpa-ONNX acoustic diarization. Designed for corporate intranet, air-gapped, or network-restricted environments.
+2. **Dual-Engine Audio Architecture (Cloud Primary + Explicit User-Requested Local Offline)**:
+   - **Primary Engine (`--engine gemini`) [MANDATORY DEFAULT]**: Multimodal cloud transcription via `gemini-3.5-transcribe` (Vertex AI) with native speaker diarization and zero-persistence Cloud Storage auto-cleanup. Lightning-fast (30~60s for 1 hour).
+   - **Offline Engine (`--engine whisper`) [EXPLICIT USER-REQUEST ONLY]**: 100% local transcription running on Apple Silicon Metal GPU (`mlx-whisper`) or CPU (`faster-whisper`), combined with Sherpa-ONNX acoustic diarization. Designed for corporate intranet, air-gapped, or network-restricted environments. **Only used when the user explicitly requests offline/local transcription or specifies `--engine whisper`. Never activated autonomously as a silent fallback.**
 
 3. **Dual-Track Global Consistency Glossary**:
    - **Track 1 (Acoustic Discovery)**: Gemini 1M lightweight pre-scan extracts an authoritative Markdown glossary of participant names, leadership titles, organizations/teams, technical terminology, and acronyms.
@@ -80,6 +80,15 @@ meeting-transcribe-agent/
 ## Standard Agent Workflow (Autonomous Pipeline Execution)
 
 When Antigravity or any compatible agent is instructed by the user to transcribe, summarize, or analyze a meeting (audio file, video file, or YouTube URL), follow this protocol:
+
+### Fail-Fast & Engine Selection Protocol
+1. **Default to Cloud Engine (`--engine gemini`)**: Always run with the primary cloud pipeline unless the user explicitly requested local or offline transcription.
+2. **Explicit Opt-in for `--engine whisper`**: The agent is STRICTLY PROHIBITED from autonomously selecting or falling back to `--engine whisper`. It MUST ONLY be activated when the user explicitly requests local/offline mode or passes `--engine whisper`.
+3. **Fail-Fast on External Auth / Permission / GCS Errors**: If GCS upload or Vertex AI transcription encounters an authentication error (`401`, `RefreshError`, `invalid_scope`), permission denial (`403 Forbidden`, `AccessDeniedException`), quota exhaustion, or bucket missing error:
+   - **HALT EXECUTION IMMEDIATELY**.
+   - **DO NOT** attempt blind speculative retries or probing alternative buckets.
+   - **DO NOT** silently switch to `--engine whisper`, extract container subtitles, or run local OCR workarounds.
+   - Report the exact blocked error to the user with actionable remediation steps (e.g., `gcloud auth application-default login`, granting `roles/storage.objectUser`, or providing a bucket with `--bucket`) and wait for user direction.
 
 ### Branch A: Multimodal Video Pipeline (YouTube URL or Video File)
 For YouTube links (`https://www.youtube.com/...`) or local video files (`.mp4`, `.mov`, `.mkv`), the agent runs the end-to-end multimodal pipeline:
@@ -103,7 +112,7 @@ For audio recordings (`.mp3`, `.m4a`, `.wav`, `.aac`, etc.), or when video files
    # Primary Engine: Cloud Gemini 3.5 Transcribe API (Default)
    python3 scripts/meeting_transcribe.py "path/to/audio" --only-transcript
    
-   # Fallback Engine: Offline Local Whisper (Only if requested or network-restricted)
+   # Explicit Offline Engine: Local Whisper (ONLY when explicitly requested by user)
    python3 scripts/meeting_transcribe.py "path/to/audio" --engine whisper --only-transcript
    ```
 2. **Stage 2: Agent-Native Semantic Intelligence & Minutes Structuring**:
@@ -128,7 +137,7 @@ python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agent
 # Audio Recording (Cloud Gemini)
 python3 meeting_transcribe.py "meeting_recording.mp3"
 
-# Offline Local Whisper Fallback
+# Explicit Local Whisper (User-Requested Offline Mode)
 python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
 ```
 
@@ -138,7 +147,7 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 | `-o, --output` | Path to output Markdown file | `<stem>_minutes.md` / `<stem>_會議記錄.md` |
 | `--agentic` | Enable Agentic Video Understanding (dynamic frame navigation) for video/YouTube | `False` |
 | `--extract-audio` | Force extracting audio track from video files and routing to pure audio pipeline | `False` |
-| `--engine` | Audio transcription engine (`gemini` for cloud, `whisper` for offline backup) | `gemini` |
+| `--engine` | Audio transcription engine (`gemini` for default cloud, `whisper` for explicit user offline mode) | `gemini` |
 | `--whisper-backend` | Offline backend (`auto`, `mlx` for Apple Silicon GPU, `faster-whisper`) | `auto` |
 | `--whisper-model` | Whisper model size (`tiny`, `base`, `small`, `medium`, `large-v3`) | `small` |
 | `--no-diarization` | Disable acoustic speaker diarization in offline Whisper mode | `False` |

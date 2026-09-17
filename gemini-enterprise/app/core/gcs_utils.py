@@ -9,6 +9,7 @@ upload a local file to the raw/ prefix of the meeting-transcribe bucket
 of days) and reference the resulting URI directly.
 """
 
+import sys
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -69,9 +70,11 @@ def upload_file_to_gcs(
     destination_blob_name: str,
     content_type: str = None,
     client: Any = None,
+    timeout: int = 600,
+    chunk_size: int = 8 * 1024 * 1024,
 ) -> str:
     """
-    Upload a local file to a GCS bucket.
+    Upload a local file to a GCS bucket using resumable chunking and dynamic timeout.
     Returns the gs:// URI of the uploaded blob.
     """
     local_p = Path(local_path).resolve()
@@ -80,13 +83,51 @@ def upload_file_to_gcs(
 
     gcs_client = client or get_gcs_client()
     bucket = gcs_client.bucket(bucket_name)
-    blob = bucket.blob(destination_blob_name)
+    blob = bucket.blob(destination_blob_name, chunk_size=chunk_size)
 
     if content_type:
         blob.content_type = content_type
 
-    print(f"[*] Uploading {local_p.name} to gs://{bucket_name}/{destination_blob_name}...")
-    blob.upload_from_filename(str(local_p))
+    file_size_mb = local_p.stat().st_size / (1024 * 1024)
+    effective_timeout = max(timeout, int(file_size_mb * 5) + 60)
+
+    print(
+        f"[*] Uploading {local_p.name} ({file_size_mb:.1f} MB) to gs://{bucket_name}/{destination_blob_name} "
+        f"(chunk_size: {chunk_size // (1024 * 1024)}MB, timeout: {effective_timeout}s)..."
+    )
+    try:
+        blob.upload_from_filename(str(local_p), timeout=effective_timeout)
+    except Exception as exc:
+        err_msg = str(exc)
+        if "403" in err_msg or "Forbidden" in err_msg or "AccessDeniedException" in err_msg:
+            print(
+                f"\n{'='*72}\n"
+                f"[❌ GCS PERMISSION ERROR: 403 Forbidden]\n"
+                f"Failed to upload media to Cloud Storage bucket 'gs://{bucket_name}'.\n"
+                f"Your GCP identity does not have sufficient permission on this bucket.\n\n"
+                f"Action Required:\n"
+                f"  1. Ensure you have 'roles/storage.objectUser' on 'gs://{bucket_name}':\n"
+                f"     gcloud storage buckets add-iam-policy-binding gs://{bucket_name} \\\n"
+                f"       --member=\"user:$(gcloud config get-value account)\" \\\n"
+                f"       --role=\"roles/storage.objectUser\"\n"
+                f"  2. Or specify an accessible bucket via: --bucket <BUCKET_NAME>\n"
+                f"  3. Re-authenticate if credentials expired: gcloud auth application-default login\n"
+                f"{'='*72}\n",
+                file=sys.stderr,
+            )
+        elif "RefreshError" in err_msg or "invalid_scope" in err_msg or "401" in err_msg:
+            print(
+                f"\n{'='*72}\n"
+                f"[❌ GCP AUTHENTICATION ERROR]\n"
+                f"Application Default Credentials (ADC) are invalid, unauthenticated, or expired:\n"
+                f"  {exc}\n\n"
+                f"Action Required:\n"
+                f"  Run: gcloud auth application-default login\n"
+                f"{'='*72}\n",
+                file=sys.stderr,
+            )
+        raise
+
     gcs_uri = f"gs://{bucket_name}/{destination_blob_name}"
     print(f"[✓] Upload complete: {gcs_uri}")
     return gcs_uri

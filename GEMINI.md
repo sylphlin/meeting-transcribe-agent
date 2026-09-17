@@ -76,3 +76,16 @@ This document serves as the project memory and permanent operational guidelines 
     - Speech transcription model: `TRANSCRIBE_MODEL` (fallback: approved designated model from `.env.example`)
     - Executive summary / multimodal vision model: `SUMMARY_MODEL` (fallback: approved designated model from `.env.example`)
   - Never hardcode ad-hoc or unapproved model names across the codebase; configure them in `.env`.
+
+---
+
+## 8. Fail-Fast & Explicit Engine Selection (Strict Zero Silent Fallback)
+
+- **Explicit Engine Selection Only**:
+  - The primary engine is Cloud Gemini (`--engine gemini`).
+  - The local Whisper engine (`--engine whisper`) is STRICTLY user-explicit: it MUST ONLY be activated when the user explicitly requests local/offline transcription or explicitly provides the `--engine whisper` flag.
+  - The agent is STRICTLY PROHIBITED from autonomously downgrading or switching to `--engine whisper` without explicit user instruction.
+- **Fail-Fast on External Infrastructure & Auth Errors**:
+  - Whenever encountering external authentication (`401`, `RefreshError`), permission denials (`403 AccessDeniedException`), cloud storage, or quota errors, the agent MUST STOP IMMEDIATELY.
+  - Zero tolerance on blind retries, probing alternative buckets, extracting container subtitles, or trying random command variations.
+  - The agent must immediately report the blocked error and present the actionable fix to the human user, awaiting user direction.
