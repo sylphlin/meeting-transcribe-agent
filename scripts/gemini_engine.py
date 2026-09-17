@@ -617,15 +617,11 @@ Output strictly the following 6 sections in Markdown (DO NOT include any emojis 
     try:
         if is_yt:
             print(f"[*] Connecting to YouTube video via Gemini Cloud backbone: {source_str}")
-            if use_agentic:
-                print("[*] Mode: 🤖 Agentic Video Understanding (Dynamic frame navigation & tool-use)")
-                part = types.Part(
-                    file_data=types.FileData(file_uri=source_str, mime_type="video/mp4"),
-                    media_processing=types.MediaProcessing.AGENTIC
-                )
-            else:
-                print("[*] Mode: 📺 High-Speed Static Multimodal Video")
-                part = types.Part.from_uri(file_uri=source_str, mime_type="video/mp4")
+            print("[*] Mode: 🤖 Agentic Video Understanding (Dynamic frame navigation & tool-use)")
+            part = types.Part(
+                file_data=types.FileData(file_uri=source_str, mime_type="video/mp4"),
+                media_processing=types.MediaProcessing.AGENTIC
+            )
         else:
             video_path = Path(source_str).resolve()
             if not video_path.is_file():
@@ -646,17 +642,11 @@ Output strictly the following 6 sections in Markdown (DO NOT include any emojis 
                     content_type=mime_type,
                 )
 
-            if use_agentic:
-                print("[*] Mode: 🤖 Agentic Video Understanding (Dynamic frame navigation & tool-use)")
-                part = types.Part(
-                    file_data=types.FileData(file_uri=gcs_uri, mime_type=mime_type),
-                    media_processing=types.MediaProcessing.AGENTIC
-                )
-            else:
-                print("[*] Mode: 📺 High-Speed Static Multimodal Video")
-                part = types.Part(
-                    file_data=types.FileData(file_uri=gcs_uri, mime_type=mime_type)
-                )
+            print("[*] Mode: 🤖 Agentic Video Understanding (Dynamic frame navigation & tool-use)")
+            part = types.Part(
+                file_data=types.FileData(file_uri=gcs_uri, mime_type=mime_type),
+                media_processing=types.MediaProcessing.AGENTIC
+            )
 
         print(f"[*] Dispatching single-request video analysis to {summary_model}...")
         resp = client.models.generate_content(
@@ -848,17 +838,11 @@ Output strictly the following structure in Markdown (DO NOT include any emojis o
                 content_type=mime_type,
             )
 
-        if use_agentic:
-            print("[*] Mode: 🤖 Agentic Video Understanding (Dynamic frame navigation & tool-use)")
-            part = types.Part(
-                file_data=types.FileData(file_uri=gcs_uri, mime_type=mime_type),
-                media_processing=types.MediaProcessing.AGENTIC,
-            )
-        else:
-            print("[*] Mode: 📺 High-Speed Multimodal Video + Transcript Fusion")
-            part = types.Part(
-                file_data=types.FileData(file_uri=gcs_uri, mime_type=mime_type)
-            )
+        print("[*] Mode: 🤖 Agentic Video Understanding (Dynamic frame navigation & tool-use)")
+        part = types.Part(
+            file_data=types.FileData(file_uri=gcs_uri, mime_type=mime_type),
+            media_processing=types.MediaProcessing.AGENTIC,
+        )
 
         print(f"[*] Dispatching multimodal video + transcript fusion analysis to {summary_model}...")
         resp = client.models.generate_content(

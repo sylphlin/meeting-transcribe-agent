@@ -53,10 +53,10 @@ In real-world meeting transcription, visual video feeds and pure audio streams c
   - **Positioning**: **Most token-efficient and economical**. Designed specifically for audio-only scenarios (dictaphones, podcasts, interviews) where dedicated acoustic models strictly anchor word-level timestamps and speaker boundaries.
 * **2. Gemini Agentic Video Understanding — `~2x` Consumption**:
   - **Mechanism & Consumption**: Powered by Google's latest [Gemini Agentic Video](https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-agentic-video-in-gemini/) technology. Consumes approximately **2x** the pure audio baseline.
-  - **Positioning**: **Recommended deep video understanding mode (`--agentic`)**. Instead of scanning all frames indiscriminately, the model couples thinking cache with dynamic tool calling to inspect high-resolution frames only when relevant. Ideal for multi-hour sessions, slide-dense presentations, and cross-temporal reasoning.
+  - **Positioning**: **Native video understanding mode across all video pipelines**. Instead of scanning all frames indiscriminately, the model couples thinking cache with dynamic tool calling to inspect high-resolution frames only when relevant. Ideal for multi-hour sessions, slide-dense presentations, and cross-temporal reasoning.
 * **3. Traditional Gemini Video Understanding — `~3x` Consumption**:
   - **Mechanism & Consumption**: Traditional video multimodal processing relies on rigid 1 FPS uniform frame sampling, incurring the highest token footprint (approximately **3x or more** compared to pure audio).
-  - **Positioning**: **[Not adopted in this project; listed for benchmark comparison only]**. Uniform sampling transmits high volumes of static and redundant frames, inflating token costs and latency. This project replaces this approach with cloud-native direct YouTube ingestion and agentic frame navigation.
+  - **Positioning**: **[Not adopted in this project; listed for benchmark comparison only]**. Uniform sampling transmits high volumes of static and redundant frames, inflating token costs and latency. This project natively uses Agentic Video Understanding (`media_processing=types.MediaProcessing.AGENTIC`) across all video workflows.
 
 ---
 
@@ -132,6 +132,7 @@ flowchart TD
     classDef videoStyle fill:#2B6CB0,stroke:#2C5282,stroke-width:2px,color:#fff;
     classDef fusionStyle fill:#4C51BF,stroke:#3C366B,stroke-width:2px,color:#fff;
     classDef audioStyle fill:#2C7A7B,stroke:#234E52,stroke-width:2px,color:#fff;
+    classDef asrStyle fill:#319795,stroke:#285E61,stroke-width:2px,color:#fff;
     classDef outputStyle fill:#276749,stroke:#1C4532,stroke-width:2px,color:#fff;
     classDef playerStyle fill:#6B46C1,stroke:#553C9A,stroke-width:2px,color:#fff;
 
@@ -149,51 +150,43 @@ flowchart TD
     A --> Router
 
     subgraph YouTubeTrack["🎥 Pipeline 1: YouTube Multimodal Cloud Pipeline"]
-        YMode{"Mode Selection"}:::videoStyle
-        Static["⚡ Static Multimodal Mode<br>• Speed: ~40s / 100% OCR<br>• Lower-Third Nameplates & Slides"]:::videoStyle
-        Agentic["🤖 Agentic Video (--agentic)<br>• Dynamic Frame Navigation<br>• Deep Reasoning for Long Videos"]:::videoStyle
-        GeminiFlash["Google Gemini 3.8 Flash<br>(Cloud-Native Multimodal Analysis)"]:::videoStyle
-
-        YMode -- "Default" --> Static --> GeminiFlash
-        YMode -- "Flag --agentic" --> Agentic --> GeminiFlash
+        GeminiFlash["Google Gemini 3.8 Flash<br>🤖 Native Agentic Video Understanding<br>• Dynamic Frame Navigation & Tool-Use<br>• Lower-Third Nameplate & Slide OCR"]:::videoStyle
     end
 
-    subgraph LocalVideoTrack["🎬 Pipeline 2: Local Video Two-Stage Fusion Pipeline"]
-        ExtractAudio["1. Extract 16kHz Mono Audio Track"]:::fusionStyle
-        VideoASR{"Stage 1: Acoustic ASR"}:::fusionStyle
-        ASR_Gemini["Gemini 3.5 Transcribe"]:::fusionStyle
-        ASR_Whisper["Local MLX / Faster-Whisper"]:::fusionStyle
-        RawTranscript["Acoustic Ground Truth Transcript<br>• Physical Timestamps [MM:SS - MM:SS]"]:::fusionStyle
-        
-        ExtractAudio --> VideoASR
-        VideoASR -- "Cloud (Default)" --> ASR_Gemini --> RawTranscript
-        VideoASR -- "Offline" --> ASR_Whisper --> RawTranscript
+    subgraph SharedASR["🎙️ Shared Stage 1 Acoustic ASR Core (Video & Pure Audio)"]
+        ExtractTrack["Audio Extraction / Ingestion<br>• Extract 16kHz mono audio (if video)<br>• Adaptive 48k AAC Pre-compression<br>• Glossary Pre-Mining (Optional)"]:::asrStyle
+        ASREngine{"ASR Diarization Engine"}:::asrStyle
+        ASR_Gemini["【Cloud Default】Gemini 3.5 Transcribe<br>• Physical Ground Truth Timestamps<br>• Native Speaker Diarization"]:::asrStyle
+        ASR_Whisper["【Offline Explicit】Local Whisper<br>• Apple Silicon MLX / Faster-Whisper<br>• Sherpa-ONNX Voiceprint Clustering"]:::asrStyle
+        RawTranscript["Physical Ground Truth Transcript<br>• Exact Timestamps [MM:SS - MM:SS]<br>• Initial Speaker Clustering"]:::asrStyle
 
-        Stage2["Stage 2: Multimodal Vision Fusion<br>Google Gemini 3.8 Flash<br>• Visual Slide & Nameplate OCR<br>• Speaker 1 -> Real Name Mapping<br>• Synthesizes Sections 1-5 Minutes"]:::fusionStyle
-        RawTranscript --> Stage2
-        V -. "720p Video Upload" .-> Stage2
-
-        Deterministic["Deterministic Python Assembly<br>• Retains Stage 1 Physical Timestamps<br>• Zero Drift & Zero Hallucinated Skips"]:::fusionStyle
-        Stage2 --> Deterministic
-        RawTranscript --> Deterministic
+        ExtractTrack --> ASREngine
+        ASREngine -- "Cloud (Default)" --> ASR_Gemini --> RawTranscript
+        ASREngine -- "Offline (--engine whisper)" --> ASR_Whisper --> RawTranscript
+        O -. Inject Context .-> ExtractTrack
     end
 
-    subgraph AudioTrack["🎙️ Pipeline 3: Pure Audio Dual-Layer Pipeline"]
-        Ingest["Smart Ingestion<br>(16kHz Mono Adaptive Compression)"]:::audioStyle
-        ASREngine{"ASR Diarization Engine"}:::audioStyle
-        GTranscribe["【Cloud】Gemini 3.5 Transcribe<br>• Word-Level Timestamps<br>• Acoustic Diarization"]:::audioStyle
-        OfflineWhisper["【Local】MLX / Faster-Whisper<br>+ Sherpa-ONNX Voiceprint Clustering"]:::audioStyle
-        Restructure["【Restructuring】Gemini 3.8 Flash<br>• Universal Language Adaptation<br>• Strict Zero-Emoji Plain Text Headings"]:::audioStyle
+    subgraph Stage2Divergence["⚙️ Stage 2 Structuring Divergence"]
+        subgraph LocalVideoStage2["🎬 Local Video: Multimodal Vision Fusion"]
+            Stage2Video["Google Gemini 3.8 Flash<br>🤖 Native Agentic Video Understanding<br>• Visual Slide & Nameplate OCR<br>• Maps Speaker IDs to Real Names/Titles<br>• Synthesizes Sections 1-5 Minutes"]:::fusionStyle
+            Deterministic["Deterministic Python Assembly<br>• Retains Stage 1 Physical Timestamps<br>• Zero Drift & Zero Hallucinated Skips"]:::fusionStyle
+            Stage2Video --> Deterministic
+        end
 
-        Ingest --> ASREngine
-        ASREngine -- "Cloud (Default)" --> GTranscribe --> Restructure
-        ASREngine -- "Offline (--engine whisper)" --> OfflineWhisper --> Restructure
-        O -. Inject Context .-> Ingest
+        subgraph AudioStage2["🎙️ Pure Audio: Semantic Restructuring"]
+            Restructure["Google Gemini 3.8 Flash<br>• Dual-Track Concurrency (Track A & B)<br>• Universal Language Adaptation<br>• Strict Zero-Emoji Plain Text Headings"]:::audioStyle
+        end
     end
 
-    Router -- "YouTube URL" --> YMode
-    Router -- "Local Video File" --> ExtractAudio
-    Router -- "Audio (or --extract-audio)" --> Ingest
+    Router -- "YouTube URL" --> GeminiFlash
+    Router -- "Local Video File" --> ExtractTrack
+    Router -- "Audio (or --extract-audio)" --> ExtractTrack
+
+    RawTranscript --> Stage2Video
+    V -. "720p Video Staging" .-> Stage2Video
+    RawTranscript --> Deterministic
+
+    RawTranscript --> Restructure
 
     subgraph Delivery["📦 Deliverables & Dedicated Players"]
         MD["📄 Clean Markdown Minutes<br>• Official Meeting Title Filename<br>• Plain Text Headings (No Emojis)<br>• Universal LLM-Adapted Language"]:::outputStyle
@@ -225,33 +218,30 @@ The system categorizes processing into **Routing**, **Pipeline Execution**, and 
 #### Step 2A: YouTube Multimodal Cloud Pipeline
 1. **Cloud Direct Streaming & Ingestion**:
    - Streams URL directly into Gemini Multimodal API without downloading files or triggering YouTube 429 rate limits.
-2. **Single-Request End-to-End Analysis**:
-   - **Default (Static Multimodal)**: Fast (~40-50s) synthesis aligning visual OCR (desk nameplates, slide text) with audio dialogue.
-   - **Agentic Mode (`--agentic`)**: Dynamic multi-turn frame navigation for slide-dense or multi-hour videos.
+2. **Native Agentic Video Understanding**:
+   - Uses `types.MediaProcessing.AGENTIC` natively: dynamic multi-turn frame navigation and tool calling inspect presentation slides, lower-third titles, and visual nameplates only when relevant, producing high-accuracy synthesis in ~40-50s.
 3. **Universal Plain-Text Formatting**: Emits 6 structured sections with canonical speaker names, paragraph-level turn consolidation, and timestamped verbatim turns. Headings and labels are dynamically translated into the target language with **zero emojis/icons**.
 
 ---
 
 #### Step 2B: Local Video Two-Stage Fusion Pipeline
-1. **Stage 1 (Acoustic ASR Ground-Truth)**:
+1. **Stage 1 (Shared Acoustic ASR Core)**:
    - Extracts 16kHz mono audio (cached to avoid redundant extraction).
-   - Transcribes with `gemini-3.5-transcribe` (Cloud) or `mlx-whisper` (Local Offline), generating millisecond-accurate physical timestamps `[MM:SS - MM:SS]` and speaker turns.
+   - Routes through the **Shared Stage 1 Acoustic ASR Engine** alongside pure audio (48k AAC pre-compression, Cloud Storage staging, and `gemini-3.5-transcribe` or local `whisper`), establishing millisecond-accurate physical timestamps `[MM:SS - MM:SS]` and speaker turns. Supports `--only-transcript` early exit.
 2. **Stage 2 (Multimodal Vision & Minutes Fusion)**:
    - Compresses video to 720p H.264 if needed and stages to Cloud Storage (cleaned up in `finally`).
-   - Ingests video + Stage 1 transcript into `gemini-3.8-flash` to inspect visual slides, nameplates, and participant feeds.
+   - Ingests video + Stage 1 transcript into `gemini-3.8-flash` with **Native Agentic Video Understanding** (`types.MediaProcessing.AGENTIC`) to inspect visual slides, nameplates, and participant feeds.
    - Maps speaker roles (`Speaker 1` -> Real Name/Title) and generates Executive Sections 1–5.
 3. **Deterministic Assembly**:
    - Python code combines Sections 1–5 with the verbatim Section 6, applying visual speaker mappings while strictly preserving physical timestamps with 0 drift.
 
 ---
 
-#### Step 2C: Pure Audio Dual-Layer Pipeline (Voice Recordings)
-1. **Smart Ingestion**: Probes audio bitrate; low-bitrate passes through, high-bitrate adaptively converts to 16kHz mono.
-2. **Terminology Pre-Mining (Optional)**: Extracts participant rosters and specialized vocabulary from `--outline`.
-3. **Acoustic Transcription (ASR & Diarization)**:
-   - **Cloud Mode (Default)**: Calls `gemini-3.5-transcribe` for acoustic speaker separation and word-level timestamps.
-   - **Local Mode (`--engine whisper`)**: Runs Whisper locally on Apple Silicon GPU or CPU with Sherpa-ONNX voiceprint clustering.
-4. **Universal Restructuring**:
+#### Step 2C: Pure Audio Pipeline (Voice Recordings)
+1. **Stage 1 (Shared Acoustic ASR Core)**:
+   - Shares the exact same Stage 1 Acoustic ASR engine as local video (smart bitrate probing, adaptive 48k AAC pre-compression, and `gemini-3.5-transcribe` or local `whisper` + Sherpa-ONNX diarization).
+   - Ingests optional terminology context (`--outline`).
+2. **Stage 2 (Semantic Restructuring)**:
    - `gemini-3.8-flash` corrects homophones, regroups continuous speech into paragraph-level turns (each keeping its own accurate timestamp), and synthesizes executive minutes in the target language with clean, professional plain text headings.
 
 ---
@@ -393,15 +383,15 @@ This deployment is **100% native `gcloud`**—requiring zero external tools (no 
 ```bash
 # Direct YouTube processing (Fast multimodal mode)
 python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
-
-# Enable Agentic Video Understanding for dynamic frame navigation
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agentic
 ```
 
-### Basic Execution (Audio & Local Files)
+### Basic Execution (Audio & Local Video Files)
 ```bash
-# Cloud default mode
+# Cloud default mode (Pure Audio)
 python3 meeting_transcribe.py "meeting_record.mp3"
+
+# Local Video Two-Stage Fusion (extracts audio, stages video for Agentic vision fusion)
+python3 meeting_transcribe.py "presentation.mp4"
 
 # Local offline backup (Apple Silicon GPU / Sherpa-ONNX)
 python3 meeting_transcribe.py "meeting_record.mp3" --engine whisper --whisper-backend auto
@@ -418,7 +408,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 | :--- | :--- | :--- |
 | `input_source` | Audio/video path (mp3, m4a, wav, mp4, mov) or YouTube URL | *(Required)* |
 | `-o, --output` | Custom markdown output path | `<filename>_minutes.md` |
-| `--agentic` | Enable Agentic Video Understanding frame navigation (Video/YouTube) | `False` |
+| `--agentic` | Agentic Video Understanding is natively enabled by default for all video sources | `True` |
 | `--extract-audio` | Force extracting audio track to run pure audio pipeline | `False` |
 | `--engine` | Audio ASR engine: `gemini` (cloud default) or `whisper` (local backup) | `gemini` |
 | `--whisper-backend` | Offline backend: `auto` (auto-detects Apple Silicon MLX), `mlx`, `faster-whisper` | `auto` |

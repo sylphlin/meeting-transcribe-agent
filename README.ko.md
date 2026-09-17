@@ -53,10 +53,10 @@
   - **포지셔닝**: **가장 경제적이며 토큰을 극대화하여 절약**. 영상이 필요 없는 녹음기, 팟캐스트, 인터뷰 등에 특화되어 전용 음향 모델이 단어 타임스탬프와 화자 분리를 엄격하게 처리합니다.
 * **2. Gemini Agentic Video Understanding — `~2x` 소비량**:
   - **작동 원리 및 소비량**: Google의 최신 [Gemini Agentic Video](https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-agentic-video-in-gemini/) 기술을 적용했습니다. 소비량은 순수 오디오 기준 **약 2배 수준**입니다.
-  - **포지셔닝**: **본 프로젝트 권장 영상 심층 이해 모드 (`--agentic`)**. 모든 프레임을 무차별 스캔하는 대신 씽킹 캐시(Thinking Cache)와 동적 도구 호출을 결합하여 필요한 순간에만 고해상도 프레임을 탐색합니다. 수 시간 길이의 영상이나 복잡한 슬라이드 분석에 최적화되어 있습니다.
+  - **포지셔닝**: **본 프로젝트 모든 영상 파이프라인의 네이티브 기본 모드**. 모든 프레임을 무차별 스캔하는 대신 씽킹 캐시(Thinking Cache)와 동적 도구 호출을 결합하여 필요한 순간에만 고해상도 프레임을 탐색합니다. 수 시간 길이의 영상이나 복잡한 슬라이드 분석에 최적화되어 있습니다.
 * **3. Traditional Gemini Video Understanding — `~3x` 소비량**:
   - **작동 원리 및 소비량**: 기존 영상 멀티모달은 초당 1프레임(1 FPS Uniform Sampling)을 고정 샘플링하므로 토큰 소모량이 가장 큽니다 (순수 오디오 대비 **약 3배 이상**).
-  - **포지셔닝**: **【본 프로젝트 미적용, 비교 참조용】**. 고정 주기 샘플링은 정지 화면이나 불필요한 프레임을 과도하게 전송하여 토큰과 대기 시간을 낭비합니다. 본 프로젝트는 YouTube 직접 스트리밍과 Agentic 탐색을 통해 이 기존 방식을 완전히 대체했습니다.
+  - **포지셔닝**: **【본 프로젝트 미적용, 비교 참조용】**. 고정 주기 샘플링은 정지 화면이나 불필요한 프레임을 과도하게 전송하여 토큰과 대기 시간을 낭비합니다. 본 프로젝트는 모든 영상에서 Agentic 탐색 기술(`media_processing=types.MediaProcessing.AGENTIC`)을 네이티브 기본으로 채택하여 기존 방식을 완전히 대체했습니다.
 
 ---
 
@@ -132,6 +132,7 @@ flowchart TD
     classDef videoStyle fill:#2B6CB0,stroke:#2C5282,stroke-width:2px,color:#fff;
     classDef fusionStyle fill:#4C51BF,stroke:#3C366B,stroke-width:2px,color:#fff;
     classDef audioStyle fill:#2C7A7B,stroke:#234E52,stroke-width:2px,color:#fff;
+    classDef asrStyle fill:#319795,stroke:#285E61,stroke-width:2px,color:#fff;
     classDef outputStyle fill:#276749,stroke:#1C4532,stroke-width:2px,color:#fff;
 
     subgraph Input["📥 다원 미디어 입력 (Multi-Source Input)"]
@@ -148,51 +149,43 @@ flowchart TD
     A --> Router
 
     subgraph YouTubeTrack["🎥 파이프라인 1: YouTube 멀티모달 클라우드"]
-        YMode{"모드 선택"}:::videoStyle
-        Static["⚡ 정적 프레임 모드<br>• 약 44초 초고속 완료 / 인식률 100%"]:::videoStyle
-        Agentic["🤖 Agentic Video (--agentic)<br>• 동적 프레임 탐색 및 심층 분석"]:::videoStyle
-        GeminiFlash["Google Gemini 3.8 Flash<br>(클라우드 네이티브 멀티모달 분석)"]:::videoStyle
-
-        YMode -- "기본" --> Static --> GeminiFlash
-        YMode -- "플래그 --agentic" --> Agentic --> GeminiFlash
+        GeminiFlash["Google Gemini 3.8 Flash<br>🤖 네이티브 Agentic Video Understanding<br>• 동적 프레임 탐색 및 심층 분석<br>• 자막, 명패, 슬라이드 OCR"]:::videoStyle
     end
 
-    subgraph LocalVideoTrack["🎬 파이프라인 2: 로컬 비디오 2단계 융합 파이프라인"]
-        ExtractAudio["1. 16kHz Mono 오디오 추출"]:::fusionStyle
-        VideoASR{"Stage 1: 전용 음향 ASR"}:::fusionStyle
-        ASR_Gemini["Gemini 3.5 Transcribe"]:::fusionStyle
-        ASR_Whisper["로컬 MLX / Faster-Whisper"]:::fusionStyle
-        RawTranscript["물리 음향 타임스탬프 원본 전사본<br>• [MM:SS - MM:SS] 불변 클록"]:::fusionStyle
-        
-        ExtractAudio --> VideoASR
-        VideoASR -- "클라우드 (기본)" --> ASR_Gemini --> RawTranscript
-        VideoASR -- "오프라인" --> ASR_Whisper --> RawTranscript
+    subgraph SharedASR["🎙️ 공통 Stage 1 전용 음향 ASR 코어 (로컬 영상 & 순수 오디오)"]
+        ExtractTrack["오디오 추출 및 전처리<br>• 영상에서 16kHz mono 오디오 자동 추출<br>• 48k AAC 적응형 압축<br>• 용어 사전 탐색 (선택)"]:::asrStyle
+        ASREngine{"음향 인식 엔진"}:::asrStyle
+        ASR_Gemini["【클라우드 기본】Gemini 3.5 Transcribe<br>• 밀리초 단위 물리적 타임스탬프<br>• 네이티브 음향 화자 분리 (Diarization)"]:::asrStyle
+        ASR_Whisper["【오프라인 지정】로컬 Whisper<br>• Apple Silicon MLX / Faster-Whisper<br>• Sherpa-ONNX 성문 클러스터링"]:::asrStyle
+        RawTranscript["물리 음향 타임스탬프 원본 전사본<br>• [MM:SS - MM:SS] 불변 클록<br>• 화자 구간 분리 (Speaker Clustering)"]:::asrStyle
 
-        Stage2["Stage 2: 멀티모달 시각 융합<br>Google Gemini 3.8 Flash<br>• 슬라이드/명패 시각 OCR<br>• Speaker 1 -> 실제 참석자 매핑<br>• 제1~5절 핵심 회의록 생성"]:::fusionStyle
-        RawTranscript --> Stage2
-        V -. "720p 영상 업로드" .-> Stage2
-
-        Deterministic["결정론적 Python 결합<br>• Stage 1 물리적 타임스탬프 100% 보존<br>• 드리프트·누락·환각 제로"]:::fusionStyle
-        Stage2 --> Deterministic
-        RawTranscript --> Deterministic
+        ExtractTrack --> ASREngine
+        ASREngine -- "클라우드 (기본)" --> ASR_Gemini --> RawTranscript
+        ASREngine -- "오프라인 (--engine whisper)" --> ASR_Whisper --> RawTranscript
+        O -. 문맥 주입 .-> ExtractTrack
     end
 
-    subgraph AudioTrack["🎙️ 파이프라인 3: 순수 오디오 2계층 파이프라인"]
-        Ingest["스마트 전처리<br>(비트레이트 감지 / FFmpeg 압축)"]:::audioStyle
-        ASREngine{"음성 인식 엔진"}:::audioStyle
-        GTranscribe["【클라우드】Gemini 3.5 Transcribe<br>• 단어 수준 타임스탬프<br>• 음향 화자 분리 (Diarization)"]:::audioStyle
-        OfflineWhisper["【로컬】MLX / Faster-Whisper<br>+ Sherpa-ONNX 성문 클러스터링"]:::audioStyle
-        Restructure["【문맥 구조화】Gemini 3.8 Flash<br>• 동음이의어 & 전문 용어 교정<br>• 화자 통합 & 자연스러운 문장화"]:::audioStyle
+    subgraph Stage2Divergence["⚙️ Stage 2 구조화 및 요약 분기"]
+        subgraph LocalVideoStage2["🎬 로컬 영상: 시각 멀티모달 융합"]
+            Stage2Video["Google Gemini 3.8 Flash<br>🤖 네이티브 Agentic Video Understanding<br>• 슬라이드/명패 시각 OCR<br>• Speaker 1 -> 실제 참석자 매핑<br>• 제1~5절 핵심 회의록 생성"]:::fusionStyle
+            Deterministic["결정론적 Python 결합<br>• Stage 1 물리적 타임스탬프 100% 보존<br>• 드리프트·누락·환각 제로"]:::fusionStyle
+            Stage2Video --> Deterministic
+        end
 
-        Ingest --> ASREngine
-        ASREngine -- "클라우드 (기본)" --> GTranscribe --> Restructure
-        ASREngine -- "오프라인 (--engine whisper)" --> OfflineWhisper --> Restructure
-        O -. 문맥 주입 .-> Ingest
+        subgraph AudioStage2["🎙️ 순수 오디오: 2트랙 문맥 구조화"]
+            Restructure["Google Gemini 3.8 Flash<br>• Track A 요약 추출 & Track B 전사 정제<br>• 화자 통합 & 자연스러운 문장화<br>• 이모지 없는 전문적 표기"]:::audioStyle
+        end
     end
 
-    Router -- "YouTube URL" --> YMode
-    Router -- "로컬 영상" --> ExtractAudio
-    Router -- "오디오 (또는 --extract-audio)" --> Ingest
+    Router -- "YouTube URL" --> GeminiFlash
+    Router -- "로컬 영상" --> ExtractTrack
+    Router -- "오디오 (또는 --extract-audio)" --> ExtractTrack
+
+    RawTranscript --> Stage2Video
+    V -. "720p 영상 업로드 임시 배치" .-> Stage2Video
+    RawTranscript --> Deterministic
+
+    RawTranscript --> Restructure
 
     subgraph Delivery["📦 결과물 생성 및 플레이어"]
         MD["📄 구조화 회의록.md<br>(기본 정보 / 요약 / 결정사항 / ToDo / 전사본)"]:::outputStyle
@@ -226,29 +219,30 @@ flowchart TD
 
 #### 2A단계: YouTube 멀티모달 클라우드 파이프라인
 1. **클라우드 직접 스트리밍 및 다운로드 불필요**: API로 URL을 직접 전달하여 429 요청 제한을 회피합니다.
-2. **단일 Request 엔드투엔드 통합 분석**:
-   - `gemini-3.8-flash`가 화면 OCR(명패, 자막, 슬라이드)과 음성을 동시에 분석합니다.
-   - 1회 호출로 정확한 화자명이 포함된 회의록과 타임스탬프 전사본을 한 번에 산출합니다.
+2. **네이티브 Agentic Video Understanding**:
+   - `types.MediaProcessing.AGENTIC`을 전면 표준 적용합니다. 동적 프레임 탐색과 도구 호출을 결합하여 슬라이드, 명패, 자막을 중요한 순간에 고정밀 OCR하여 수십 초 만에 고품질 요약을 생성합니다.
+3. **원스톱 추출**: 실제 참석자 명단 및 직함이 반영된 6대 챕터 회의록과 타임스탬프 전사본을 한 번에 산출합니다.
 
 ---
 
 #### 2B단계: 로컬 비디오 2단계 융합 파이프라인
-1. **1단계 (전용 음향 ASR 불변 타임스탬프 확정)**:
+1. **1단계 (공통 전용 음향 ASR 코어)**:
    - 16kHz mono 오디오를 자동으로 추출합니다 (캐싱 메커니즘으로 중복 추출 방지).
-   - `gemini-3.5-transcribe` (클라우드) 또는 `mlx-whisper` (로컬 오프라인)을 호출하여 밀리초 단위 물리적 타임스탬프 `[MM:SS - MM:SS]`와 화자 발언 구간을 생성합니다.
+   - **순수 오디오 파이프라인과 100% 동일한 Stage 1 음향 ASR 코어를 공유**합니다 (48k AAC 압축, Cloud Storage 임시 업로드, `gemini-3.5-transcribe` 또는 로컬 `whisper`). 밀리초 단위 물리적 타임스탬프 `[MM:SS - MM:SS]`를 생성하며, `--only-transcript`를 통한 전사본 선행 출력도 완벽히 지원합니다.
 2. **2단계 (멀티모달 시각 융합)**:
    - 720p H.264로 압축하여 Cloud Storage에 임시 업로드합니다 (완료 후 즉시 자동 삭제).
-   - 영상과 1단계 전사본을 `gemini-3.8-flash`에 전달하여 화면 명패 및 슬라이드 OCR을 확인하고, `Speaker 1`을 실제 참석자 이름으로 매핑하며 제1~5절 핵심 회의록을 생성합니다.
+   - 영상과 1단계 전사본을 `gemini-3.8-flash`에 전달하여 **네이티브 Agentic Video Understanding**으로 화면 명패 및 슬라이드 OCR을 확인하고, `Speaker 1`을 실제 참석자 이름으로 매핑하며 제1~5절 핵심 회의록을 생성합니다.
 3. **결정론적 결합**:
    - Python 코드가 시각적 매핑을 물리적 전사본에 적용하여 타임스탬프 드리프트 0을 달성합니다.
 
 ---
 
 #### 2C단계: 순수 오디오 2계층 파이프라인 (순수 오디오 녹음)
-1. **스마트 전처리**: 비트레이트를 자동 감지하여 필요 시 16kHz mono로 자동 변환합니다.
-2. **용어 및 식순 사전 탐색**: 회의 안건 파일(`--outline`)에서 인명과 고유 명사를 사전에 추출합니다.
-3. **하위 음향 전사**: Gemini 3.5 Transcribe 또는 로컬 Whisper + Sherpa-ONNX로 단어 수준 타임스탬프와 화자 분리를 실행합니다.
-4. **상위 문맥 구조화**: Gemini 3.8 Flash로 동음이의어를 교정하고 결정 사항과 액션 아이템을 정리합니다.
+1. **1단계 (공통 전용 음향 ASR 코어)**:
+   - 로컬 영상과 완전히 동일한 Stage 1 음향 ASR 코어 사용: 비트레이트 감지, 48k AAC 압축, `gemini-3.5-transcribe`(클라우드) 또는 `mlx-whisper` + Sherpa-ONNX(로컬 오프라인).
+   - 안건 대조 및 인명 사전 탐색(`--outline`) 지원.
+2. **2단계 (문맥 구조화)**:
+   - `gemini-3.8-flash` 기반 2트랙 병렬 구조화 (Track A 요약 추출 & Track B 전사 정제). 동음이의어 교정, 화자 통합, 이모지 없는 전문적 회의록 생성.
 
 ---
 
@@ -404,17 +398,17 @@ meeting-transcribe-agent/
 
 ### 기본 실행 (YouTube 영상)
 ```bash
-# YouTube 영상 직접 전사 및 플레이어 생성 (초고속 멀티모달 모드)
+# YouTube 영상 직접 전사 및 플레이어 생성 (네이티브 Agentic Video 모드)
 python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
-
-# Agentic Video Understanding 동적 프레임 탐색 활성화
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agentic
 ```
 
-### 기본 실행 (오디오 및 로컬 파일)
+### 기본 실행 (오디오 및 로컬 영상 파일)
 ```bash
-# 클라우드 기본 모드
+# 클라우드 기본 모드 (순수 오디오)
 python3 meeting_transcribe.py "meeting_recording.mp3"
+
+# 로컬 영상 2단계 융합 (오디오 추출 후 Stage 1 ASR 공용, 영상 스테이징 후 Agentic 시각 융합)
+python3 meeting_transcribe.py "presentation.mp4"
 
 # 로컬 오프라인 백업 실행 (Apple Silicon GPU / Sherpa-ONNX)
 python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
@@ -426,7 +420,7 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 | :--- | :--- | :--- |
 | `input_source` | 오디오/영상 파일 경로 또는 YouTube URL | *(필수)* |
 | `-o, --output` | 회의록 출력 Markdown 경로 | `<파일명>_minutes.md` |
-| `--agentic` | 영상 Agentic Video 동적 프레임 탐색 활성화 | `False` |
+| `--agentic` | 모든 영상 소스에서 Agentic Video 이해 모드가 기본적으로 네이티브 활성화 | `True` |
 | `--extract-audio` | 영상 파일에서 음원을 추출하여 오디오 파이프라인으로 강제 전환 | `False` |
 | `--engine` | 오디오 전사 엔진: `gemini` (클라우드) 또는 `whisper` (로컬) | `gemini` |
 | `--whisper-backend` | 오프라인 백엔드: `auto`, `mlx`, `faster-whisper` | `auto` |

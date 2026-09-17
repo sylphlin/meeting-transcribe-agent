@@ -53,10 +53,10 @@
   - **经验定位**：**成本最经济、最省 Token**。专为录音笔、播客、电话访谈等“无画面需求”之纯声音场景设计，由专用声学模型严格锚定字级时间戳与发言人切分。
 * **2. Gemini Agentic Video Understanding — `~2x` 消耗**：
   - **机制与消耗**：采用 Google 最新推出的 [Gemini Agentic Video](https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-agentic-video-in-gemini/) 技术。消耗约为纯音频的 **2 倍左右**。
-  - **经验定位**：**本项目推荐之视频深度理解模式（`--agentic`）**。模型不再盲目扫描所有视频帧，而是结合思考缓存（Thinking Cache）与动态工具调用，主动在关键时刻探索高分辨率画面。特别适合数小时长篇会议、图表密集、需跨时间轴深度推理的场景。
+  - **经验定位**：**本项目所有视频管线之原生默认模式**。模型不再盲目扫描所有视频帧，而是结合思考缓存（Thinking Cache）与动态工具调用，主动在关键时刻探索高分辨率画面。特别适合数小时长篇会议、图表密集、需跨时间轴深度推理的场景。
 * **3. Traditional Gemini Video Understanding — `~3x` 消耗**：
   - **机制与消耗**：传统视频多模态多采每秒固定 1 帧（1 FPS Uniform Sampling）硬性抽样，Token 消耗量最高（约为纯音频的 **3 倍以上**）。
-  - **经验定位**：**【本项目未采用，仅供对照参考】**。全片固定频率抽样会传入大量静止或无意义的冗余视频帧，造成 Token 与等待时间的浪费。本项目通过 YouTube 原生直传与 Agentic 智能导航彻底取代了此种传统方式。
+  - **经验定位**：**【本项目未采用，仅供对照参考】**。全片固定频率抽样会传入大量静止或无意义的冗余视频帧，造成 Token 与等待时间的浪费。本项目全面原生采用 Agentic 智能导航（`media_processing=types.MediaProcessing.AGENTIC`）取代了传统抽样方式。
 
 ---
 
@@ -134,6 +134,7 @@ flowchart TD
     classDef videoStyle fill:#2B6CB0,stroke:#2C5282,stroke-width:2px,color:#fff;
     classDef fusionStyle fill:#4C51BF,stroke:#3C366B,stroke-width:2px,color:#fff;
     classDef audioStyle fill:#2C7A7B,stroke:#234E52,stroke-width:2px,color:#fff;
+    classDef asrStyle fill:#319795,stroke:#285E61,stroke-width:2px,color:#fff;
     classDef outputStyle fill:#276749,stroke:#1C4532,stroke-width:2px,color:#fff;
 
     subgraph Input["📥 多元媒体输入 (Multi-Source Input)"]
@@ -150,51 +151,43 @@ flowchart TD
     A --> Router
 
     subgraph YouTubeTrack["🎥 管线 1: YouTube 多模态云端管线"]
-        YMode{"模式选择"}:::videoStyle
-        Static["⚡ 静态视频模式<br>• 极速 ~44s / 识别率 100%"]:::videoStyle
-        Agentic["🤖 Agentic Video (--agentic)<br>• 动态视频帧导航与深度探索"]:::videoStyle
-        GeminiFlash["Google Gemini 3.8 Flash<br>(云端原生多模态端到端分析)"]:::videoStyle
-
-        YMode -- "默认" --> Static --> GeminiFlash
-        YMode -- "标志 --agentic" --> Agentic --> GeminiFlash
+        GeminiFlash["Google Gemini 3.8 Flash<br>🤖 原生 Agentic Video Understanding<br>• 动态视频帧导航与工具调用<br>• 字卡、座牌与幻灯片 OCR"]:::videoStyle
     end
 
-    subgraph LocalVideoTrack["🎬 管线 2: 本地视频两阶段融合管线"]
-        ExtractAudio["1. 抽取 16kHz Mono 音频轨"]:::fusionStyle
-        VideoASR{"Stage 1: 专用声学 ASR"}:::fusionStyle
-        ASR_Gemini["Gemini 3.5 Transcribe"]:::fusionStyle
-        ASR_Whisper["本地 MLX / Faster-Whisper"]:::fusionStyle
-        RawTranscript["物理声学时间戳原始逐字稿<br>• [MM:SS - MM:SS] 绝对时钟"]:::fusionStyle
-        
-        ExtractAudio --> VideoASR
-        VideoASR -- "云端 (默认)" --> ASR_Gemini --> RawTranscript
-        VideoASR -- "离线" --> ASR_Whisper --> RawTranscript
+    subgraph SharedASR["🎙️ 共用 Stage 1 专用声学 ASR 核心 (本地视频 & 纯音频)"]
+        ExtractTrack["音轨抽取与预处理<br>• 视频自动抽取 16kHz mono 音轨<br>• 自适应 48k AAC 预压缩<br>• 术语预先探勘 (选填)"]:::asrStyle
+        ASREngine{"声学识别引擎"}:::asrStyle
+        ASR_Gemini["【云端默认】Gemini 3.5 Transcribe<br>• 毫秒级物理时间戳<br>• 原生声学发言人分离 (Diarization)"]:::asrStyle
+        ASR_Whisper["【离线指定】本地 Whisper<br>• Apple Silicon MLX / Faster-Whisper<br>• Sherpa-ONNX 声纹向量聚类"]:::asrStyle
+        RawTranscript["物理声学时间戳原始逐字稿<br>• [MM:SS - MM:SS] 绝对时钟<br>• 发言人原始切分 (Speaker Clustering)"]:::asrStyle
 
-        Stage2["Stage 2: 多模态视觉融合<br>Google Gemini 3.8 Flash<br>• 幻灯片/字卡视觉 OCR<br>• Speaker 1 -> 真实姓名职务映射<br>• 提炼第 1~5 节核心摘要"]:::fusionStyle
-        RawTranscript --> Stage2
-        V -. "720p 视频上传" .-> Stage2
-
-        Deterministic["确定性 Python 组装<br>• 严格保留 Stage 1 物理时间戳<br>• 0 漂移、不跳句、零幻觉"]:::fusionStyle
-        Stage2 --> Deterministic
-        RawTranscript --> Deterministic
+        ExtractTrack --> ASREngine
+        ASREngine -- "云端 (默认)" --> ASR_Gemini --> RawTranscript
+        ASREngine -- "离线 (--engine whisper)" --> ASR_Whisper --> RawTranscript
+        O -. 注入上下文 .-> ExtractTrack
     end
 
-    subgraph AudioTrack["🎙️ 管线 3: 纯音频双层管线"]
-        Ingest["智能预处理<br>(比特率探测 / FFmpeg 预压缩)"]:::audioStyle
-        ASREngine{"语音识别引擎"}:::audioStyle
-        GTranscribe["【云端】Gemini 3.5 Transcribe<br>• 毫秒级词级时间戳<br>• 声学发言人分离 (Diarization)"]:::audioStyle
-        OfflineWhisper["【本地】MLX / Faster-Whisper<br>+ Sherpa-ONNX 声纹向量聚类"]:::audioStyle
-        Restructure["【语义重构】Gemini 3.8 Flash<br>• 专有名词与同音校正<br>• 角色收敛与语意流畅化"]:::audioStyle
+    subgraph Stage2Divergence["⚙️ Stage 2 结构化重构分流"]
+        subgraph LocalVideoStage2["🎬 本地视频: 多模态视觉融合"]
+            Stage2Video["Google Gemini 3.8 Flash<br>🤖 原生 Agentic Video Understanding<br>• 幻灯片/字卡视觉 OCR<br>• Speaker 1 -> 真实姓名职务映射<br>• 提炼第 1~5 节核心摘要"]:::fusionStyle
+            Deterministic["确定性 Python 组装<br>• 严格保留 Stage 1 物理时间戳<br>• 0 漂移、不跳句、零幻觉"]:::fusionStyle
+            Stage2Video --> Deterministic
+        end
 
-        Ingest --> ASREngine
-        ASREngine -- "云端 (默认)" --> GTranscribe --> Restructure
-        ASREngine -- "离线 (--engine whisper)" --> OfflineWhisper --> Restructure
-        O -. 注入上下文 .-> Ingest
+        subgraph AudioStage2["🎙️ 纯音频: 双轨语义重构"]
+            Restructure["Google Gemini 3.8 Flash<br>• Track A 摘要提炼 & Track B 逐字梳理<br>• 角色收敛与语意流畅化<br>• 无 Emoji 专业标题排版"]:::audioStyle
+        end
     end
 
-    Router -- "YouTube 网址" --> YMode
-    Router -- "本地视频" --> ExtractAudio
-    Router -- "纯音频 (或 --extract-audio)" --> Ingest
+    Router -- "YouTube 网址" --> GeminiFlash
+    Router -- "本地视频" --> ExtractTrack
+    Router -- "纯音频 (或 --extract-audio)" --> ExtractTrack
+
+    RawTranscript --> Stage2Video
+    V -. "720p 视频上传暂存" .-> Stage2Video
+    RawTranscript --> Deterministic
+
+    RawTranscript --> Restructure
 
     subgraph Delivery["📦 成果发布与播放器 (Delivery)"]
         MD["📄 结构化会议纪要.md<br>(基本信息 / 摘要 / 决策 / 待办 / 逐字稿)"]:::outputStyle
@@ -230,33 +223,30 @@ flowchart TD
 
 #### 步骤 2A：YouTube 多模态云端管线处理流程
 1. **云端直传与零下载**：直接将 YouTube URL 传入 Gemini 多模态 API，免本地下载、免 `yt-dlp`，彻底规避 YouTube 429 频率限制。
-2. **多模态端到端分析**：
-   - **默认模式 (静态采样)**：极速（约数十秒）同步完成演示 Slide OCR、现场座牌字卡与语音对齐。
-   - **Agentic 模式 (`--agentic`)**：启用动态视频帧导航与工具调用，专门深入探索数小时长视频的细节幻灯片与关键段落。
+2. **原生 Agentic Video Understanding**：
+   - 全面原生启用 `types.MediaProcessing.AGENTIC`：结合动态视频帧导航与工具调用，专门在关键时间点深入探索幻灯片、字卡与长官座牌，极速（数十秒）产出高精准度摘要。
 3. **一步到位提炼**：直接输出带真实姓名职务的 6 大章节会议记录与时间戳逐字稿。
 
 ---
 
 #### 步骤 2B：本地视频两阶段融合管线处理流程
-1. **第一阶段（专用声学 ASR 锚定）**：
+1. **第一阶段（共用专用声学 ASR 核心）**：
    - 自动抽取 16kHz mono 音频轨（具备缓存机制避免重复转码）。
-   - 调用 `gemini-3.5-transcribe`（云端）或 `mlx-whisper`（本地离线），产出毫秒级物理时间戳 `[MM:SS - MM:SS]` 与发言人分段。
+   - **与纯音频 100% 共用相同的 Stage 1 声学 ASR 核心**（48k AAC 预压缩、Cloud Storage 暂存，调用 `gemini-3.5-transcribe` 或本地 `whisper`），产出毫秒级物理时间戳 `[MM:SS - MM:SS]` 与发言人分段。完全支持 `--only-transcript` 提前输出逐字稿。
 2. **第二阶段（多模态视觉融合）**：
    - 视频压缩为 720p H.264 并上传至 Cloud Storage 暂存（处理后立即销毁）。
-   - 将视频与第一阶段文字稿一同送交 `gemini-3.8-flash`，观察画面桌牌、幻灯片 OCR，精确映射 `Speaker 1` 为真实讲者姓名，并产出第 1~5 节核心摘要。
+   - 将视频与第一阶段文字稿一同送交 `gemini-3.8-flash`，以**原生 Agentic Video Understanding** 观察画面桌牌、幻灯片 OCR，精确映射 `Speaker 1` 为真实讲者姓名，并产出第 1~5 节核心摘要。
 3. **确定性组装**：
    - Python 代码自动将视觉映射应用至物理逐字稿，时间戳 100% 绝对零漂移。
 
 ---
 
 #### 步骤 2C：纯音频双层处理流程 (纯语音录音)
-1. **智能预处理 (Smart Ingestion)**：自动探测音频比特率，低码率直传免转码；高码率音频自动以 FFmpeg 预压缩为 16kHz mono 最佳语音格式。
-2. **术语与角色预先探勘 (选填)**：若有传入议程大纲 (`--outline`)，提炼与会名单与专有名词对照表。
-3. **底层声学转录 (ASR & Diarization)**：
-   - **云端模式 (默认)**：通过 `gemini-3.5-transcribe` 进行声波物理分离与词级时间戳提取（Cloud Storage 暂存自动销毁）。
-   - **本地模式 (`--engine whisper`)**：在 Apple Silicon GPU 或 CPU 本地运行 Whisper 识别，并结合 Sherpa-ONNX 进行声学特征向量聚类与滑动窗口对齐。
-4. **上层语义重构 (Semantic Restructuring)**：
-   - 由 `gemini-3.8-flash` 进行前后文理解、同音字校正、角色名称收敛平滑与语意流畅化，提炼出决策摘要与待办表格。
+1. **第一阶段（共用专用声学 ASR 核心）**：
+   - 与本地视频共用相同的 Stage 1 声学 ASR 核心：比特率探测、自适应 48k AAC 预压缩，调用 `gemini-3.5-transcribe`（云端）或 `mlx-whisper` + Sherpa-ONNX（本地离线）。
+   - 支持术语与角色预先探勘 (`--outline`)。
+2. **第二阶段（上层语义重构）**：
+   - 由 `gemini-3.8-flash` 进行双轨并发重构（Track A 摘要提炼 & Track B 逐字梳理），上下文理解、同音字校正、角色名称收敛平滑，产出干净无 Emoji 的专业会议纪要。
 
 ---
 
@@ -420,17 +410,17 @@ meeting-transcribe-agent/
 
 ### 基本执行（YouTube 视频）
 ```bash
-# YouTube 视频直接转录与生成播放器（极速多模态模式）
+# YouTube 视频直接转录与生成播放器（原生 Agentic Video 模式）
 python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
-
-# 启用 Agentic Video Understanding 动态视频帧导航
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --agentic
 ```
 
-### 基本执行（音频与本地文件）
+### 基本执行（音频与本地视频文件）
 ```bash
 # 云端纯音频默认模式
 python3 meeting_transcribe.py "meeting_record.mp3"
+
+# 本地视频两阶段融合（抽取音频共用 Stage 1 ASR，暂存视频走 Agentic 视觉融合）
+python3 meeting_transcribe.py "presentation.mp4"
 
 # 本地离线备用执行（Apple Silicon GPU / Sherpa-ONNX）
 python3 meeting_transcribe.py "meeting_record.mp3" --engine whisper --whisper-backend auto
@@ -447,7 +437,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 | :--- | :--- | :--- |
 | `input_source` | 音频/视频文件路径 (mp3, m4a, wav, mp4, mov 等) 或 YouTube 网址 | *(必填)* |
 | `-o, --output` | 自定义 Markdown 会议记录输出路径 | `<文件名>_minutes.md` |
-| `--agentic` | 启用 Agentic Video Understanding 动态视频帧导航与工具调用（视频/YouTube） | `False` |
+| `--agentic` | 所有视频来源均默认原生启用 Agentic Video Understanding 动态视频帧导航 | `True` |
 | `--extract-audio` | 强制从视频文件抽取纯音频走纯音频流程 | `False` |
 | `--engine` | 纯音频转录引擎：`gemini` (云端默认) 或 `whisper` (本地备用) | `gemini` |
 | `--whisper-backend` | 离线模式后端：`auto` (自动探测 Apple Silicon MLX), `mlx`, `faster-whisper` | `auto` |
