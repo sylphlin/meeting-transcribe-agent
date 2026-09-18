@@ -464,6 +464,51 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 
 ---
 
+---
+
+## ☁️ Google Drive 雲端硬碟直通與 GCS Lifecycle 自動清理規則 (ADC 零金鑰直連)
+
+在企業與團隊協作中，Google Meet、Zoom 或現場錄音／錄影常直接自動儲存於 **Google Drive（個人雲端硬碟或團隊共用雲端硬碟 Shared Drives）**。`meeting-transcribe-agent` 支援透過 `gcloud` ADC（`drive.readonly` 權限）直接傳入 Google Drive 連結進行多模態會議記錄與逐字稿轉譯：
+
+### 1. 一鍵啟用雲端環境與 Google Drive 權限 (`./setup.sh`)
+```bash
+# 步驟 1：登入 ADC 並授予 Google Drive 唯讀權限
+gcloud auth application-default login \
+  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
+
+# 步驟 2：一鍵啟用 Vertex AI / GCS / Drive API、建立儲存桶並掛載雙層 Lifecycle 規則
+./setup.sh --project YOUR_GCP_PROJECT_ID
+```
+
+### 2. 📌 Google Drive 支援情境與實戰範例
+
+| 支援情境 | 輸入參數格式 | 智慧快取與自動處理行為 |
+| :--- | :--- | :--- |
+| **情境 A：Google Meet / Zoom 雲端錄影檔直通**<br/>*(自動儲存於 Google Drive 之 MP4/MOV)* | `python3 meeting_transcribe.py "https://drive.google.com/file/d/<FILE_ID>/view"` | 透過 Drive API v3 校驗 `md5Checksum` 後快取至本地 `gdrive_inputs/`，自動抽取內嵌字幕軌（若有）與 16kHz 音軌，並將壓縮視訊轉存至 GCS `raw/`（具備 `sha256` / `gdrive_md5` 比對快取免重傳），執行 Agentic 投影片/名牌視覺融合與產生互動式 HTML 播放器。 |
+| **情境 B：雲端硬碟純音訊錄音檔直通**<br/>*(手機錄音筆上傳之 M4A/MP3/WAV)* | `python3 meeting_transcribe.py "<Google Drive 音訊連結>" --outline agenda.md` | 自動從 Google Drive 拉取音檔並透過 Vertex AI Gemini 3.5 Transcribe 進行語者分離轉譯與執行長級會議紀要彙整。 |
+
+#### 💻 CLI 實戰指令範例：
+```bash
+# 【情境 A】直接貼上 Google Drive 上的會議錄影連結（執行 Agentic 視覺投影片融合 + 產出互動式播放器）：
+python3 meeting_transcribe.py "https://drive.google.com/file/d/1MeetingVideoIdxxxxxx/view?usp=sharing"
+
+# 【情境 B】Google Drive 錄音連結 + 搭配會議議程大綱 + 指定輸出繁體中文紀要：
+python3 meeting_transcribe.py "https://drive.google.com/file/d/1AudioRecordIdxxxxxx/view?usp=sharing" \
+  --outline agenda.txt --summary-language zh-TW
+```
+
+#### 💬 Antigravity Agent 自然語言對話範例：
+> 「幫我把這場放在 Google Drive 上的產品週會錄影轉成完整會議記錄與逐字稿，並產生互動式 HTML 播放器：`https://drive.google.com/file/d/1MeetingVideoIdxxxxxx/view?usp=sharing`」
+
+### 3. 🗑️ GCS Bucket Lifecycle 雙層自動清理規則 (`raw/` 2天 / 產出物 15天)
+
+| GCS 路徑前綴 (`matchesPrefix`) | 儲存檔案類型 | 保留期限 (`age`) | 規則說明 |
+| :--- | :--- | :--- | :--- |
+| **`raw/`** | 供 Vertex AI 多模態推論暫存之視訊與音訊 (`raw/<filename>`) | **2 天 (`age: 2`)** | 保留 2 天讓同專案重跑摘要或切換語言時秒級命中 `sha256` / `gdrive_md5` 快取免重傳，2 天後由 GCS 自動刪除。 |
+| **`minutes/`、`players/`、`output/`、`deliverables/`** | 雲端備份之會議記錄 (`.md`)、互動式播放器 (`.html`) 與相關產出物 | **15 天 (`age: 15`)** | 產出物保留 15 天供團隊成員跨裝置檢視與下載，15 天後自動清理。 |
+
+---
+
 ## 授權條款 (License)
 
 本專案採用 [MIT License](LICENSE) 開源授權。

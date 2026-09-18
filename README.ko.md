@@ -442,6 +442,26 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 
 ---
 
+---
+
+## ☁️ Google Drive 직결 시나리오 및 GCS 수명 주기 자동 삭제 규칙 (ADC 인증)
+
+Google Meet이나 Zoom 녹화본이 저장된 **Google Drive 공유 링크**를 `gcloud` ADC (`drive.readonly` 권한)를 통해 `meeting_transcribe.py`에 직접 전달할 수 있습니다.
+
+```bash
+# Step 1: Google Drive 읽기 권한을 포함하여 ADC 로그인
+gcloud auth application-default login \
+  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
+./setup.sh --project YOUR_GCP_PROJECT_ID
+
+# Step 2: Google Drive 회의 영상 링크를 직접 전달하여 회의록, 전문 전사 및 대화형 HTML 플레이어 생성
+python3 meeting_transcribe.py "https://drive.google.com/file/d/1MeetingVideoIdxxxxxx/view?usp=sharing"
+```
+
+- **GCS 2단계 수명 주기 규칙**: `raw/` (임시 스테이징 미디어)는 **2일 (`age: 2`)** 보관 후 자동 삭제되며, `minutes/`, `players/`, `output/`, `deliverables/` (회의록 및 플레이어 산출물)는 **15일 (`age: 15`)** 보관 후 자동 삭제됩니다.
+
+---
+
 ## 라이선스 (License)
 
 이 프로젝트는 [MIT License](LICENSE)를 따릅니다.

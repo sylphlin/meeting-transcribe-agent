@@ -183,6 +183,7 @@ echo "[*] Step 1: Enabling required Google Cloud APIs..."
 REQUIRED_APIS=(
     "aiplatform.googleapis.com"
     "storage.googleapis.com"
+    "drive.googleapis.com"
 )
 if [ "$CREATE_SA" = true ]; then
     REQUIRED_APIS+=("iam.googleapis.com")
@@ -236,7 +237,7 @@ EOF
 
     # Configure Lifecycle Rules:
     # - raw/: Delete after 2 days (ephemeral staging for multimodal transcription)
-    # - minutes/ & players/: Delete after 30 days (deliverable retention)
+    # - minutes/, players/, output/, deliverables/: Delete after 15 days (deliverable retention)
     echo "    [*] Configuring automatic lifecycle deletion rules on gs://$BUCKET_NAME..."
     LIFECYCLE_FILE="$(mktemp 2>/dev/null || echo "/tmp/lifecycle_$$.json")"
     cat << 'EOF' > "$LIFECYCLE_FILE"
@@ -252,8 +253,8 @@ EOF
     {
       "action": {"type": "Delete"},
       "condition": {
-        "age": 30,
-        "matchesPrefix": ["minutes/", "players/"]
+        "age": 15,
+        "matchesPrefix": ["minutes/", "players/", "output/", "deliverables/"]
       }
     }
   ]

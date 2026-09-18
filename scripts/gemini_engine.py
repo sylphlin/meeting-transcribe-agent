@@ -93,8 +93,8 @@ def get_gemini_client(project_id: str = None, location: str = None) -> genai.Cli
 
 
 def _unique_raw_blob_name(local_path: Path) -> str:
-    """Object key for an ephemeral raw/ upload; unique per call so concurrent uploads never collide."""
-    return f"raw/{uuid.uuid4().hex[:12]}_{local_path.name}"
+    """Deterministic object key under raw/ for SHA-256 / gdrive_md5 cache hits and 2-day Lifecycle cleanup."""
+    return f"raw/{local_path.name}"
 
 
 def _parse_offset_to_seconds(val) -> float:

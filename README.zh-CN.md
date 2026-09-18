@@ -467,3 +467,32 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 ## 开源许可证 (License)
 
 本项目采用 [MIT License](LICENSE) 开源授权。
+
+
+---
+
+## ☁️ Google Drive 云端硬盘直通与 GCS Lifecycle 自动清理规则 (ADC 零密钥直连)
+
+在团队协作中，Google Meet、Zoom 或现场录音／录像常直接保存在 **Google Drive（个人云端硬盘或共享云端硬盘 Shared Drives）**。`meeting-transcribe-agent` 支持通过 `gcloud` ADC（`drive.readonly` 权限）直接传入 Google Drive 分享链接生成多模态会议纪要与逐字稿：
+
+### 1. 一键启用云端环境与 Google Drive 权限 (`./setup.sh`)
+```bash
+gcloud auth application-default login \
+  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
+./setup.sh --project YOUR_GCP_PROJECT_ID
+```
+
+### 2. 📌 Google Drive 支持情境与实战范例
+```bash
+# 【情境 A】直接粘贴 Google Drive 上的会议录像链接（执行 Agentic 投影片视觉融合 + 生成交互式播放器）：
+python3 meeting_transcribe.py "https://drive.google.com/file/d/1MeetingVideoIdxxxxxx/view?usp=sharing"
+
+# 【情境 B】Google Drive 录音链接 + 会议议程大纲：
+python3 meeting_transcribe.py "https://drive.google.com/file/d/1AudioRecordIdxxxxxx/view?usp=sharing" --outline agenda.txt
+```
+
+### 3. 🗑️ GCS 存储桶双阶生命周期规则 (`raw/` 2天 / 产出物 15天)
+- **`raw/`**：保留 **2 天 (`age: 2`)**（供同项目重跑秒级命中 `sha256`/`gdrive_md5` 缓存，2 天后自动清除）。
+- **`minutes/`、`players/`、`output/`、`deliverables/`**：产出物保留 **15 天 (`age: 15`)** 供团队审阅下载。
+
+---

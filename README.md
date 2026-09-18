@@ -433,6 +433,51 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 
 ---
 
+---
+
+## ☁️ Google Drive Direct Links & GCS Lifecycle Policy (100% ADC Integration)
+
+In enterprise workflows, Google Meet, Zoom, and voice recorder files are frequently saved directly to **Google Drive (My Drive or Shared Drives)**. `meeting-transcribe-agent` natively accepts Google Drive share links via `gcloud` ADC (`drive.readonly` scope) with smart MD5/SHA-256 caching:
+
+### 1. One-Click Cloud & Google Drive Setup (`./setup.sh`)
+```bash
+# Step 1: Authenticate ADC with Google Drive Read-Only scope
+gcloud auth application-default login \
+  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
+
+# Step 2: Provision Vertex AI / GCS / Drive APIs, bucket, and two-tier Lifecycle rules
+./setup.sh --project YOUR_GCP_PROJECT_ID
+```
+
+### 2. 📌 Supported Google Drive Scenarios & Examples
+
+| Scenario | Input Command Syntax | Smart Caching & Automated Behavior |
+| :--- | :--- | :--- |
+| **Scenario A: Google Meet / Zoom Video on Google Drive**<br/>*(MP4/MOV saved in Drive)* | `python3 meeting_transcribe.py "https://drive.google.com/file/d/<FILE_ID>/view"` | Verifies remote `md5Checksum` via Drive API v3, caches in `gdrive_inputs/`, extracts embedded captions (if present) + 16kHz audio, stages video to GCS `raw/` (skipping upload if `sha256`/`gdrive_md5` matches), and runs Agentic slide/speaker OCR fusion + HTML player generation. |
+| **Scenario B: Voice Recording on Google Drive**<br/>*(M4A/MP3/WAV in Drive)* | `python3 meeting_transcribe.py "<GDRIVE_AUDIO_LINK>" --outline agenda.md` | Pulls the audio recording with MD5 caching and executes Gemini 3.5 Transcribe speaker diarization + Gemini 3.8 Flash executive minutes synthesis. |
+
+#### 💻 Practical CLI Examples:
+```bash
+# [Scenario A] Transcribe and analyze a meeting video directly from a Google Drive share link:
+python3 meeting_transcribe.py "https://drive.google.com/file/d/1MeetingVideoIdxxxxxx/view?usp=sharing"
+
+# [Scenario B] Google Drive audio link + meeting agenda outline + target summary language:
+python3 meeting_transcribe.py "https://drive.google.com/file/d/1AudioRecordIdxxxxxx/view?usp=sharing" \
+  --outline agenda.txt --summary-language en
+```
+
+#### 💬 Antigravity Agent Conversational Prompt Example:
+> *"Generate comprehensive meeting minutes, action items, verbatim transcript, and an interactive HTML player from this Google Meet recording on Google Drive: `https://drive.google.com/file/d/1MeetingVideoIdxxxxxx/view?usp=sharing`"*
+
+### 3. 🗑️ Two-Tier GCS Bucket Lifecycle Policy (`raw/` 2 Days / Deliverables 15 Days)
+
+| GCS Path Prefix (`matchesPrefix`) | Stored Assets | Retention Period (`age`) | Rationale |
+| :--- | :--- | :--- | :--- |
+| **`raw/`** | Ephemeral staged audio/video (`raw/<filename>`) | **2 Days (`age: 2`)** | Retains staged media for 2 days so re-running with different summary languages or outlines hits the `sha256`/`gdrive_md5` cache instantaneously, then auto-deletes. |
+| **`minutes/`**, **`players/`**, **`output/`**, **`deliverables/`** | Meeting minutes (`.md`), interactive players (`.html`), deliverables | **15 Days (`age: 15`)** | Retains deliverables for 15 days for team access before automatic cleanup. |
+
+---
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).

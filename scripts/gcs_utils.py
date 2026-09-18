@@ -16,6 +16,160 @@ from typing import Any
 from urllib.parse import urlparse
 from google.cloud import storage
 
+import hashlib
+import os
+import re
+
+GDRIVE_SCOPES = [
+    "https://www.googleapis.com/auth/cloud-platform",
+    "https://www.googleapis.com/auth/drive.readonly",
+]
+
+
+def compute_file_sha256(filepath: Path | str) -> str:
+    """Compute SHA-256 hex digest of a local file."""
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(8 * 1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def compute_file_md5(filepath: Path | str) -> str:
+    """Compute MD5 hex digest of a local file (matches Google Drive md5Checksum)."""
+    h = hashlib.md5()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(8 * 1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def is_gdrive_source(val: str | Path | None) -> bool:
+    """Return True if val is a Google Drive URL or gdrive:// URI."""
+    if not val:
+        return False
+    s = str(val).strip()
+    return (
+        "drive.google.com" in s
+        or "docs.google.com" in s
+        or s.startswith("gdrive://")
+    )
+
+
+def parse_gdrive_url(url_or_id: str) -> dict:
+    """
+    Parse a Google Drive file/folder URL or ID into {'id': <id>, 'type': 'file'|'folder'|'unknown'}.
+    """
+    s = str(url_or_id).strip()
+    if s.startswith("gdrive://"):
+        rest = s[len("gdrive://"):].strip("/")
+        if rest.startswith("folder/"):
+            return {"id": rest.split("/", 1)[1].split("?")[0], "type": "folder"}
+        if rest.startswith("file/"):
+            return {"id": rest.split("/", 1)[1].split("?")[0], "type": "file"}
+        return {"id": rest.split("?")[0], "type": "unknown"}
+
+    m_folder = re.search(r"/folders/([a-zA-Z0-9_-]{10,})", s)
+    if m_folder:
+        return {"id": m_folder.group(1), "type": "folder"}
+
+    m_file = re.search(r"/file/d/([a-zA-Z0-9_-]{10,})", s)
+    if m_file:
+        return {"id": m_file.group(1), "type": "file"}
+
+    m_id = re.search(r"[?&]id=([a-zA-Z0-9_-]{10,})", s)
+    if m_id:
+        return {"id": m_id.group(1), "type": "unknown"}
+
+    if re.match(r"^[a-zA-Z0-9_-]{15,}$", s) and not Path(s).exists():
+        return {"id": s, "type": "unknown"}
+
+    raise ValueError(f"Invalid Google Drive URL or ID: {url_or_id}")
+
+
+def get_gdrive_session(project_id: str = None):
+    """Return an AuthorizedSession authenticated with ADC and drive.readonly scope."""
+    import google.auth
+    from google.auth.transport.requests import AuthorizedSession
+
+    creds, default_proj = google.auth.default(scopes=GDRIVE_SCOPES)
+    quota_proj = (
+        project_id
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("GCP_PROJECT")
+        or default_proj
+    )
+    if quota_proj and hasattr(creds, "with_quota_project"):
+        creds = creds.with_quota_project(quota_proj)
+    session = AuthorizedSession(creds)
+    if quota_proj:
+        session.headers["X-Goog-User-Project"] = quota_proj
+    return session
+
+
+def get_gdrive_file_metadata(url_or_id: str, project_id: str = None, session=None) -> dict:
+    """Query Google Drive API v3 for file metadata (id, name, mimeType, size, md5Checksum)."""
+    parsed = parse_gdrive_url(url_or_id)
+    file_id = parsed["id"]
+    sess = session or get_gdrive_session(project_id=project_id)
+    api_url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
+    params = {
+        "fields": "id,name,mimeType,size,md5Checksum",
+        "supportsAllDrives": "true",
+    }
+    resp = sess.get(api_url, params=params, timeout=30)
+    if resp.status_code in (401, 403):
+        raise RuntimeError(
+            f"Google Drive API Permission Error ({resp.status_code}): {resp.text}\n"
+            f"Run the following command to authorize ADC for Google Drive:\n"
+            f"  gcloud auth application-default login --scopes=\"https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly\""
+        )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def download_gdrive_file_with_cache(
+    url_or_id: str,
+    target_dir: Path | str = None,
+    project_id: str = None,
+    force_download: bool = False,
+) -> Path:
+    """
+    Download a Google Drive media file via ADC into `target_dir`, verifying remote MD5
+    to skip re-downloading when a matching cached file already exists on disk.
+    """
+    sess = get_gdrive_session(project_id=project_id)
+    meta = get_gdrive_file_metadata(url_or_id, project_id=project_id, session=sess)
+    file_id = meta["id"]
+    filename = meta.get("name") or f"gdrive_{file_id}.mp4"
+    remote_md5 = meta.get("md5Checksum")
+    remote_size = int(meta.get("size", 0) or 0)
+
+    dest_dir = Path(target_dir or (Path.cwd() / "gdrive_inputs")).resolve()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    local_path = dest_dir / filename
+
+    if not force_download and local_path.is_file():
+        if remote_md5 and local_path.stat().st_size == remote_size:
+            if compute_file_md5(local_path) == remote_md5:
+                print(f"[GDrive Cache Hit] Local file MD5 matches Google Drive ({local_path.name}). Skipping download.")
+                return local_path
+
+    size_mb = remote_size / (1024 * 1024)
+    print(f"[*] [GDrive Download] Pulling '{filename}' ({size_mb:.1f} MB) from Google Drive via ADC...")
+    dl_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media&supportsAllDrives=true"
+    tmp_path = local_path.with_suffix(local_path.suffix + ".part")
+    with sess.get(dl_url, stream=True, timeout=600) as r:
+        r.raise_for_status()
+        with open(tmp_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8 * 1024 * 1024):
+                if chunk:
+                    f.write(chunk)
+    tmp_path.replace(local_path)
+    print(f"[✓] Google Drive download complete: {local_path}")
+    return local_path
+
+
 # Minimal extension -> MIME type map for the media types this project handles.
 # GCS does not infer content type from bytes the way the old Files API did,
 # so callers pass this explicitly at upload time (stored as the blob's
@@ -85,10 +239,36 @@ def upload_file_to_gcs(
     bucket = gcs_client.bucket(bucket_name)
     blob = bucket.blob(destination_blob_name, chunk_size=chunk_size)
 
+    try:
+        file_sha256 = compute_file_sha256(local_p)
+        file_md5 = compute_file_md5(local_p)
+        file_size = local_p.stat().st_size
+    except OSError:
+        file_sha256 = None
+        file_md5 = None
+        file_size = None
+
+    if file_sha256 and file_size is not None:
+        try:
+            if blob.exists():
+                blob.reload()
+                remote_meta = blob.metadata or {}
+                if blob.size == file_size and (
+                    remote_meta.get("sha256") == file_sha256
+                    or remote_meta.get("gdrive_md5") == file_md5
+                ):
+                    gcs_uri = f"gs://{bucket_name}/{destination_blob_name}"
+                    print(f"[✓] [GCS Cache Hit] Remote object hash matches ({gcs_uri}). Skipping upload!")
+                    return gcs_uri
+        except Exception:
+            pass
+
     if content_type:
         blob.content_type = content_type
+    if file_sha256:
+        blob.metadata = {"sha256": file_sha256, "gdrive_md5": file_md5}
 
-    file_size_mb = local_p.stat().st_size / (1024 * 1024)
+    file_size_mb = (file_size or 0) / (1024 * 1024)
     effective_timeout = max(timeout, int(file_size_mb * 5) + 60)
 
     print(

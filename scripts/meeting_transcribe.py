@@ -90,7 +90,16 @@ def generate_meeting_minutes_and_transcript(
     load_env_file()
     transcribe_model = transcribe_model or os.environ.get("TRANSCRIBE_MODEL") or "gemini-3.5-transcribe-preview"
     summary_model = summary_model or os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash"
+    from scripts.gcs_utils import is_gdrive_source, download_gdrive_file_with_cache
     source_str = str(input_source).strip()
+    if is_gdrive_source(source_str):
+        target_dl_dir = Path(output_file).resolve().parent / "gdrive_inputs" if output_file else Path.cwd() / "gdrive_inputs"
+        local_gdrive_path = download_gdrive_file_with_cache(
+            source_str,
+            target_dir=target_dl_dir,
+            project_id=project_id,
+        )
+        source_str = str(local_gdrive_path)
     is_yt = is_youtube_url(source_str)
     is_vid = is_video_file(source_str) if not is_yt else False
     resolved_bucket = (bucket_name or os.environ.get("MEETING_STORAGE_BUCKET", "")).removeprefix("gs://") or None
@@ -428,7 +437,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Meeting Transcribe Agent - Universal Cloud-Scale Intelligence & Offline Whisper Backup Suite"
     )
-    parser.add_argument("input_source", help="Path to audio/video file (mp3, m4a, wav, mp4, mov, mkv, etc.) or YouTube URL")
+    parser.add_argument("input_source", help="Path to audio/video file (mp3, m4a, wav, mp4, mov, mkv, etc.), Google Drive link (https://drive.google.com/... / gdrive://...), or YouTube URL")
     parser.add_argument("-o", "--output", help="Path to output Markdown file (default: <filename>_minutes.md)")
 
     parser.add_argument(
