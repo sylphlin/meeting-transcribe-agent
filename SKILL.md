@@ -26,11 +26,15 @@ Provides specialized pipelines tailored to input media:
 
 ## Directory Structure
 
-This skill strictly complies with the [Agent Skills Specification](https://agentskills.io/specification):
+This suite strictly complies with the [Agent Plugins 1.0](https://agent-plugins.org/) and [Agent Skills Specification](https://agentskills.io/specification):
 
 ```text
 meeting-transcribe-agent/
+├── plugin.json                       # Agent Plugins 1.0 manifest
+├── rules/
+│   └── AGENTS.md                     # Plugin runtime invariants (read-only execution & fail-fast)
 ├── SKILL.md                          # Skill definition and agent reference manual
+├── AGENTS.md                         # Project developer & maintenance operational rules
 ├── meeting_transcribe.py             # Primary CLI entrypoint forwarder
 ├── scripts/                          # Modular core components
 │   ├── __init__.py

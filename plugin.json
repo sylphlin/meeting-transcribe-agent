@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "meeting-transcribe-agent",
+  "version": "1.0.0",
+  "description": "Universal meeting intelligence and interactive verbatim transcription suite. Features native Multimodal Video Pipeline (YouTube URLs & local video files), Google Gemini 3.5 Transcribe (Cloud primary audio via Vertex AI), local Apple Silicon MLX/Whisper + Sherpa-ONNX diarization, Gemini 3.8 Flash minutes structuring, canonical speaker consolidation, and standalone zero-dependency interactive HTML playback player.",
+  "author": {
+    "name": "sylphlin",
+    "url": "https://github.com/sylphlin"
+  },
+  "homepage": "https://github.com/sylphlin/meeting-transcribe-agent",
+  "repository": "https://github.com/sylphlin/meeting-transcribe-agent",
+  "license": "MIT",
+  "keywords": [
+    "transcription",
+    "meeting-minutes",
+    "gemini",
+    "vertex-ai",
+    "whisper",
+    "diarization",
+    "speaker-identification",
+    "multimodal-video",
+    "youtube-transcript",
+    "agentic-video"
+  ]
+}

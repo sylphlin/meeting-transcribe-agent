@@ -1,12 +1,12 @@
-# Project Memory & Always-On Operational Rules (GEMINI.md)
+# Developer & Maintenance Operational Rules (AGENTS.md)
 
 This document serves as the project memory and permanent operational guidelines for the **Meeting Transcribe Agent** codebase. All agents and developers must strictly adhere to these invariant rules across all future tasks and iterations.
 
 ---
 
-## 1. Universal Multi-Language Support (No Hardcoded Language Branching)
+## 1. Universal Multi-Language Support (Core Target, Zero Hardcoded Branching)
 
-- **Universal Core**: This system is designed for universal multi-lingual meeting transcription and intelligence (English, Japanese, Traditional Chinese, Simplified Chinese, German, French, Spanish, etc.).
+- **Universal Core Target**: The system is designed for universal multi-lingual meeting transcription and intelligence (including English, Japanese, Traditional Chinese, Simplified Chinese, German, French, Spanish, etc.).
 - **Strictly Prohibited**: Never introduce language-specific hardcoded branching (e.g., `if is_chinese:`, `if lang == "zh":`) or hardcoded localized schemas/strings in Python code or prompt templates.
 - **Dynamic LLM-Driven Localization**:
   - The LLM dynamically adapts and translates all Section Headings (1 to 6), metadata field labels, and table column headers into the target language specified by the user or inferred from the meeting audio/video.
@@ -14,24 +14,34 @@ This document serves as the project memory and permanent operational guidelines 
 
 ---
 
-## 2. Prompts and Python Code Strictly in English
+## 2. Prompts and Python Code Strictly in ASD-STE100 English
 
-- **English for System & Engine Prompts**: All prompt templates (`assets/prompts/*.md` and inline prompts in `scripts/gemini_engine.py`) MUST be written strictly in English.
-- **English for Code Base**: All Python code (`*.py`), including variable names, class/function definitions, docstrings, comments, log output, error messages, and CLI help descriptions, MUST be written in professional, concise English.
+- **ASD-STE100 Standard**: All prompt templates (`assets/prompts/*.md`), inline prompts (`scripts/gemini_engine.py`), docstrings, and code comments MUST strictly follow **ASD-STE100 (Simplified Technical English)** principles:
+  - Use short, direct sentences (keep instructions below 20 words where possible).
+  - Use a restricted, controlled vocabulary with clear and unambiguous meanings.
+  - Use the imperative mood for instructions (e.g., "Do not change", "Verify the output", "Write clean Markdown").
+  - Maintain active voice; avoid passive voice, convoluted clauses, and vague adverbs.
+  - Give one instruction per sentence.
+- **English for Code Base**: All Python code (`*.py`), including variable names, class/function definitions, docstrings, comments, log output, error messages, and CLI help descriptions, MUST be written in professional, concise English adhering to ASD-STE100 principles.
 
 ---
 
-## 3. Strict Generality & Neutrality (Zero Test-Specific Information)
+## 3. Strict Generality & Neutrality (Zero Specific Name / Scenario Hardcoding)
 
-- **Completely Generic**: Documentation (`README.md`, localized READMEs, `SKILL.md`), scripts (`scripts/*.py`), and prompt files must remain completely generic and production-ready.
-- **Strictly Prohibited**: NEVER include test-specific meeting names, specific test URLs, or ad-hoc local testing assets in repo files:
-  - Do NOT use specific test meeting names such as "臺南市政府第 764 次市政會議" or any local municipal test cases.
-  - Do NOT use specific test video IDs (e.g., `Xff98Q5bki8`).
-  - Do NOT reference temporary test file paths or scratch artifacts.
+- **Zero Entity Hardcoding**:
+  - Never introduce hardcoded logic or special branches tailored to specific individual names (e.g., specific test attendees or participants like "John Doe", "Jane Smith"), specific organizations, municipalities, company names, or ad-hoc domain jargon.
+  - All speaker consolidation (canonicalization), table parsing, and entity alignments must rely on generic pattern matching, dynamic header-aware semantics, and broad heuristics that generalize across any enterprise, governmental, or academic meeting globally.
+- **Completely Generic Documentation**:
+  - Documentation (`README.md`, localized READMEs, `SKILL.md`), scripts (`scripts/*.py`), and prompt files must remain completely generic and production-ready.
+  - NEVER include test-specific meeting names, specific test URLs, or ad-hoc local testing assets in repo files:
+    - Do NOT use specific test meeting names (such as municipal city council test cases).
+    - Do NOT use specific test video IDs.
+    - Do NOT reference temporary test file paths or scratch artifacts.
 - **Standard Placeholders Only**: Always use generic, standard placeholders:
   - YouTube URLs: `https://www.youtube.com/watch?v=VIDEO_ID`
   - Meeting titles: `Executive_Board_Meeting`, `City_Council_Session`, `Product_Roadmap_Sync`
   - Audio/Video files: `meeting_recording.mp3`, `conference_video.mp4`
+  - Attendee names: `John Doe`, `Jane Smith`
 
 ---
 
@@ -69,7 +79,7 @@ This document serves as the project memory and permanent operational guidelines 
   - When reconciling drifts between `scripts/` and `gemini-enterprise/`, NEVER downgrade or overwrite upstream `scripts/` with stale downstream files. Always port upstream changes down to `gemini-enterprise/`.
 - **Strict Prohibition on Using Non-Designated Models**:
   - The agent is strictly prohibited from altering, substituting, downgrading, or introducing any model identifiers outside the designated models specified in `.env` / `.env.example`.
-  - Never autonomously switch or fallback to non-designated or invented model IDs (e.g. attempting to "fix" an error or sync divergence by picking another model).
+  - Never autonomously switch or fallback to non-designated or invented model IDs.
   - When models transition in the future (e.g., from preview to GA, or to newer model generations), changes must be governed exclusively via `.env` / `.env.example` configurations or explicit user instructions, never by agent speculation.
 - **Dynamic Configuration via Environment Variables**:
   - Models must always be loaded dynamically from environment variables:

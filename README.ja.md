@@ -281,16 +281,26 @@ Meeting Transcribe Agent は、2つの異なる実行・インストール形態
 
 ---
 
-### 方法 1：Google Antigravity インストール (ローカル AI Agent スキル & CLI)
+### 方法 1：Google Antigravity & Agent Plugins 1.0 インストール (ローカル AI Agent プラグイン、スキル & CLI)
 
-AI Agent のローカルスキルとして Antigravity に導入し、IDE や CLI から自然言語で会議録を生成、または Python CLI からスタンドアロンで実行します：
+[Agent Plugins 1.0](https://agent-plugins.org/) 準拠のプラグインまたは Agent スキルとして Antigravity や対応 AI クライアントに導入し、IDE や CLI から自然言語で会議録を生成、または Python CLI からスタンドアロンで実行します：
 
-1. **Skill を Antigravity にインストール**：
-   - **グローバルスキル (Global Skill)**（すべての作業スペースで利用可能、推奨）：
+1. **Agent プラグインとしてインストール（推奨：`plugin.json` および `rules/AGENTS.md` の読み取り専用保護ルールを自動適用）**：
+   - **グローバルプラグイン (Global Plugin)**（すべてのプロジェクトで利用可能、推奨）：
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
+     ```
+   - **ワークスペース専用プラグイン (Workspace Plugin)**（現在の作業スペースのみ）：
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agents/plugins/meeting-transcribe-agent
+     ```
+
+2. **または Agent スキルとしてインストール**：
+   - **グローバルスキル (Global Skill)**：
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/skills/meeting-transcribe-agent
      ```
-   - **ワークスペース専用スキル (Workspace Skill)**（現在の作業スペースのみ）：
+   - **ワークスペース専用スキル (Workspace Skill)**：
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
      ```

@@ -272,7 +272,7 @@ Meeting Transcribe Agent 支持两种不同的运作与安装部署流程：
 
 | 运行平台 | 安装部署方式 | 必要环境变量配置 | 主要使用交互界面 |
 | :--- | :--- | :--- | :--- |
-| **Google Antigravity** | 以 AI Agent Skill 形式安装至工作区 | 项目根目录 `.env` 配置文件 | Antigravity IDE / CLI 对话窗口自然语言调度 (`SKILL.md`) |
+| **Google Antigravity & Agent Plugins** | 本地 IDE / CLI / Agent Plugin & Skill | 项目根目录 `.env` 配置文件 | Antigravity IDE / CLI 对话窗口自然语言调度 (`SKILL.md`) |
 | **Gemini Enterprise** | 通过 `deploy.sh` 部署至 Vertex AI Agent Runtime | `deploy.sh` 参数或 `gemini-enterprise/.env` | Gemini Enterprise 企业网页界面、Vertex AI Agent Engine、A2A 协议 |
 
 ---
@@ -292,16 +292,26 @@ Meeting Transcribe Agent 支持两种不同的运作与安装部署流程：
 
 ---
 
-### 方式一：Google Antigravity 安装 (本地 AI Agent 技能与命令行)
+### 方式一：Google Antigravity 与 Agent Plugins 1.0 安装 (AI Agent 插件、技能与命令行)
 
-直接将项目作为 Agent 技能安装至 Antigravity，在 IDE 开发环境中通过自然语言对话进行会议记录转录，或通过 Python 命令行独立运行：
+可直接作为符合 [Agent Plugins 1.0](https://agent-plugins.org/) 规范的插件（Plugin）或 Agent Skill 安装至 Antigravity 与兼容的 AI Client 中，或通过 Python 命令行独立运行：
 
-1. **安装 Skill 至 Antigravity**：
-   - **全局技能 (Global Skill)**（所有项目工作区均可调用，推荐）：
+1. **安装为 Agent Plugin（推荐：自动加载 `plugin.json` 与 `rules/AGENTS.md` 只读保护规则）**：
+   - **全局插件 (Global Plugin)**（所有项目工作区均可调用，推荐）：
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
+     ```
+   - **工作区专属插件 (Workspace Plugin)**（仅当前项目工作区生效）：
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agents/plugins/meeting-transcribe-agent
+     ```
+
+2. **或安装为 Agent Skill**：
+   - **全局技能 (Global Skill)**：
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/skills/meeting-transcribe-agent
      ```
-   - **工作区专属技能 (Workspace Skill)**（仅当前项目工作区生效）：
+   - **工作区专属技能 (Workspace Skill)**：
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
      ```

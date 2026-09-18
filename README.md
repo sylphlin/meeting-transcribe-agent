@@ -271,13 +271,11 @@ The system categorizes processing into **Routing**, **Pipeline Execution**, and 
 
 ## Installation & Deployment
 
-## Installation & Deployment
-
 Meeting Transcribe Agent provides two installation and deployment methods:
 
 | Method | Target Environment | Setup Vehicle | Primary Interface |
 | :--- | :--- | :--- | :--- |
-| **Method 1: Google Antigravity** | Local IDE / CLI / Agent Skill | Python environment (`pip` / `uv`) & `.env` | Conversational chat in Antigravity IDE / CLI |
+| **Method 1: Google Antigravity & Agent Plugins** | Local IDE / CLI / Agent Plugin & Skill | Python environment (`pip` / `uv`) & `.env` | Conversational chat in Antigravity IDE / CLI |
 | **Method 2: Gemini Enterprise** | Cloud Vertex AI Agent Runtime | 100% native `gcloud` one-click `./deploy.sh` | Gemini Enterprise Web UI, Vertex AI Agent Engine, A2A |
 
 ---
@@ -297,16 +295,26 @@ Meeting Transcribe Agent provides two installation and deployment methods:
 
 ---
 
-### Method 1: Google Antigravity Installation (Local AI Agent Skill & CLI)
+### Method 1: Google Antigravity & Agent Plugins 1.0 Installation (Local AI Agent Plugin, Skill & CLI)
 
-Install directly into Google Antigravity as an Agent Skill for conversational meeting transcription in your IDE, or run standalone via Python CLI:
+Install directly into Google Antigravity or any [Agent Plugins 1.0](https://agent-plugins.org/) compatible client as an Agent Plugin/Skill, or run standalone via Python CLI:
 
-1. **Install Skill into Antigravity**:
-   - **Global Skill** (available across all projects and workspaces):
+1. **Install as an Agent Plugin (Recommended - automatically loads `plugin.json` and strict read-only execution invariants in `rules/AGENTS.md`)**:
+   - **Global Plugin** (available across all projects and workspaces, recommended):
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
+     ```
+   - **Workspace Plugin** (scoped to current workspace):
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agents/plugins/meeting-transcribe-agent
+     ```
+
+2. **Or Install as an Agent Skill**:
+   - **Global Skill**:
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/skills/meeting-transcribe-agent
      ```
-   - **Workspace Skill** (scoped to current workspace):
+   - **Workspace Skill**:
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
      ```
