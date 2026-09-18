@@ -33,6 +33,8 @@ meeting-transcribe-agent/
 ├── plugin.json                       # Agent Plugins 1.0 manifest
 ├── rules/
 │   └── AGENTS.md                     # Plugin runtime invariants (read-only execution & fail-fast)
+├── skills/
+│   └── meeting-transcribe-agent/     # Plugin skill bundle (SKILL.md, scripts, assets)
 ├── SKILL.md                          # Skill definition and agent reference manual
 ├── AGENTS.md                         # Project developer & maintenance operational rules
 ├── setup.sh                          # Automated Google Cloud environment setup (APIs, GCS, CORS/Lifecycle, .env)
