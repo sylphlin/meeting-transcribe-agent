@@ -35,6 +35,8 @@ meeting-transcribe-agent/
 │   └── AGENTS.md                     # Plugin runtime invariants (read-only execution & fail-fast)
 ├── SKILL.md                          # Skill definition and agent reference manual
 ├── AGENTS.md                         # Project developer & maintenance operational rules
+├── setup.sh                          # Automated Google Cloud environment setup (APIs, GCS, CORS/Lifecycle, .env)
+├── deploy.sh                         # Native gcloud deployment to Vertex AI Agent Runtime & Gemini Enterprise
 ├── meeting_transcribe.py             # Primary CLI entrypoint forwarder
 ├── scripts/                          # Modular core components
 │   ├── __init__.py
@@ -98,6 +100,7 @@ When Antigravity or any compatible agent is instructed by the user to transcribe
    - **DO NOT** attempt blind speculative retries or probing alternative buckets.
    - **DO NOT** silently switch to `--engine whisper`, extract container subtitles, or run local OCR workarounds.
    - Report the exact blocked error to the user with actionable remediation steps (e.g., `gcloud auth application-default login`, granting `roles/storage.objectUser`, or providing a bucket with `--bucket`) and wait for user direction.
+4. **Automated Cloud Environment Setup (`setup.sh`)**: When setting up a new environment or configuring Cloud Storage, the agent directly invokes `./setup.sh` to initialize the Google Cloud project, enable required APIs, configure the GCS bucket with CORS and automated lifecycle deletion rules, and generate `.env`.
 
 ### Branch A: Video Pipelines (YouTube or Local Video)
 For YouTube links (`https://www.youtube.com/...`) or local video files (`.mp4`, `.mov`, `.mkv`), the agent runs the appropriate video pipeline (both natively use Agentic Video Understanding):

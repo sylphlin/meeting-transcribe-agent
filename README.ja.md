@@ -305,29 +305,22 @@ Meeting Transcribe Agent は、2つの異なる実行・インストール形態
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
      ```
 
-2. **Python 依存パッケージのインストール**：
+3. **Python 依存パッケージのインストール**：
    ```bash
    pip install google-genai google-cloud-storage
    ```
    *（オフライン Whisper バックアップ利用時は `pip install mlx-whisper sherpa-onnx` または `pip install faster-whisper sherpa-onnx`）。*
 
-3. **環境変数の設定 (`.env`)**：
-   `.env.example` を `.env` にコピーし、モデル location を `global`、クラウドリソース region を `us-central1` に指定します：
+4. **Google Cloud 環境の自動セットアップ (`./setup.sh`)**：
+   自動セットアップスクリプトを実行して、認証の確認、必要 API (`aiplatform.googleapis.com`, `storage.googleapis.com`) の有効化、Cloud Storage バケットの作成と設定（CORS および 2日/30日の自動ライフサイクル削除）、および `.env` の自動生成を行います：
    ```bash
-   cp .env.example .env
+   chmod +x setup.sh
+   ./setup.sh
    ```
-   `.env` 設定例：
-   ```bash
-   GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-   GOOGLE_CLOUD_LOCATION=global
-   GCP_REGION=us-central1
-   MEETING_STORAGE_BUCKET=meeting-transcribe-your-gcp-project-id
-   TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
-   SUMMARY_MODEL=gemini-3.8-flash
-   ```
-   *（クラウド Gemini でローカルファイルを処理する場合、事前にバケットを作成できます：`gcloud storage buckets create gs://meeting-transcribe-your-gcp-project-id --location=us-central1`）。*
+   *（オプション指定例：`./setup.sh -p your-gcp-project-id -r us-central1`）。*
+   Antigravity 内で利用する場合、エージェントが `./setup.sh` を直接呼び出して環境設定を完了できるため、手動作業は不要です。
 
-4. **Antigravity での利用**：
+5. **Antigravity での利用**：
    Antigravity が `SKILL.md` を自動検出します。チャット欄で自然言語で依頼するだけで完了します：
    > 「役員定例会の録音 `meeting.mp3` を文字起こしして、重要要約、決定事項、逐字録プレイヤーを生成してください。」
 
@@ -345,16 +338,11 @@ Google ADK 2.0 および `agents-cli` を使用し、Vertex AI Agent Runtime（A
    ```
 
 2. **`./deploy.sh` による自動ワンクリックデプロイ**：
-   内蔵のデプロイスクリプトがエンドツーエンドのデプロイを完全自動で処理します：
-   - GCS バケット `gs://meeting-transcribe-${PROJECT_ID}` の作成/検証、24 時間 CORS 設定、および自動ライフサイクル削除ルール（`raw/` 一時ファイルは 2 日後に自動削除、議事録とプレイヤーは 30 日保存）。
-   - 専用サービスアカウント `meeting-transcribe-sa` の作成と最小権限の付与 (`roles/storage.objectUser`, `roles/aiplatform.user`, `roles/logging.logWriter`)。
-   - `agents-cli deploy` による Vertex AI Agent Runtime へのコードパッケージとデプロイ。
-   - Gemini Enterprise へのエージェント自動検出と拡張機能登録。
-
+   デプロイスクリプトは関心の分離に従い、クラウドインフラの構築を `./setup.sh` に自動委任（API 有効化、バケット作成、CORS/Lifecycle 設定、サービスアカウント権限付与）した上で、`agents-cli deploy` により Vertex AI Agent Runtime へデプロイし、Gemini Enterprise への登録を行います：
    ```bash
-   chmod +x deploy.sh
+   chmod +x setup.sh deploy.sh
 
-   # 自動デプロイ（.env を読み込み、gcloud でクラウドリソースを作成、デプロイ、Gemini Enterprise 連携を一括実行）：
+   # 自動デプロイ（setup.sh でクラウド環境を構築し、デプロイと Gemini Enterprise 連携を一括実行）：
    ./deploy.sh
 
    # またはプロジェクトとリージョンを指定：

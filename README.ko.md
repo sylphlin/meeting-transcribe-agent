@@ -305,29 +305,22 @@ Meeting Transcribe Agent는 두 가지 서로 다른 실행 및 설치/배포 �
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
      ```
 
-2. **Python 의존 패키지 설치**:
+3. **Python 의존 패키지 설치**:
    ```bash
    pip install google-genai google-cloud-storage
    ```
    *(선택 사항: 오프라인 Whisper 백업 실행 시 `pip install mlx-whisper sherpa-onnx` 또는 `pip install faster-whisper sherpa-onnx`)*.
 
-3. **환경 변수 설정 (`.env`)**:
-   `.env.example`을 `.env`로 복사하고 모델 location을 `global`, 클라우드 인프라 region을 `us-central1`로 설정합니다:
+4. **Google Cloud 환경 자동 설정 (`./setup.sh`)**:
+   자동 환경 설정 스크립트를 실행하여 인증 확인, 필수 API(`aiplatform.googleapis.com`, `storage.googleapis.com`) 활성화, Cloud Storage 버킷 생성 및 설정(CORS 및 2일/30일 자동 수명 주기 삭제), 그리고 `.env` 자동 생성을 완료합니다:
    ```bash
-   cp .env.example .env
+   chmod +x setup.sh
+   ./setup.sh
    ```
-   `.env` 파일 예시:
-   ```bash
-   GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-   GOOGLE_CLOUD_LOCATION=global
-   GCP_REGION=us-central1
-   MEETING_STORAGE_BUCKET=meeting-transcribe-your-gcp-project-id
-   TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
-   SUMMARY_MODEL=gemini-3.8-flash
-   ```
-   *(클라우드 Gemini로 로컬 파일을 처리할 경우 사전에 버킷을 생성할 수 있습니다: `gcloud storage buckets create gs://meeting-transcribe-your-gcp-project-id --location=us-central1`).*
+   *(옵션 지정 예시: `./setup.sh -p your-gcp-project-id -r us-central1`)*.
+   Antigravity 내에서 실행 시 에이전트가 `./setup.sh`를 직접 호출하여 클라우드 환경을 초기화하므로 수동 설정 번거로움이 없습니다.
 
-4. **Antigravity에서 사용하기**:
+5. **Antigravity에서 사용하기**:
    Antigravity가 `SKILL.md`를 자동으로 색인합니다. 대화창에서 자연어로 요청하기만 하면 됩니다:
    > "임원 회의 녹음 파일 `meeting.mp3`를 전사하고 핵심 요약, 결정 사항, 플레이어를 만들어줘."
 
@@ -345,16 +338,11 @@ Google ADK 2.0 및 `agents-cli`를 사용하여 Vertex AI Agent Runtime(Agent En
    ```
 
 2. **`./deploy.sh`를 통한 원클릭 자동 배포**:
-   내장된 배포 스크립트가 엔드투엔드 배포 라이프사이클을 전자동으로 처리합니다:
-   - GCS 버킷 `gs://meeting-transcribe-${PROJECT_ID}` 생성/검증, 24시간 CORS 설정 및 자동 수명 주기 삭제 규칙 적용(`raw/` 임시 파일은 2일 후 자동 파기, 회의록 및 플레이어는 30일 보존).
-   - 전용 서비스 계정 `meeting-transcribe-sa` 생성 및 최소 권한 부여 (`roles/storage.objectUser`, `roles/aiplatform.user`, `roles/logging.logWriter`).
-   - `agents-cli deploy`를 통한 코드 패키징 및 Vertex AI Agent Runtime 배포.
-   - 기업 Gemini Enterprise 확장에 에이전트 자동 등록 및 연결.
-
+   배포 스크립트는 책임 분리 원칙에 따라 클라우드 인프라 구성을 `./setup.sh`에 자동 위임(API 활성화, 버킷 생성, CORS/Lifecycle 설정, 서비스 계정 IAM 바인딩)한 후, `agents-cli deploy`를 통해 Vertex AI Agent Runtime으로 배포하고 Gemini Enterprise에 자동 등록합니다:
    ```bash
-   chmod +x deploy.sh
+   chmod +x setup.sh deploy.sh
 
-   # 자동 배포 (.env 로드, gcloud 기반 클라우드 리소스 전자동 생성, 배포 및 Gemini Enterprise 연동 일괄 실행):
+   # 자동 배포 (setup.sh에 인프라 구성을 위임하고 배포 및 Gemini Enterprise 연동 일괄 실행):
    ./deploy.sh
 
    # 또는 프로젝트 및 리전 지정:

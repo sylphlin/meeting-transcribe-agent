@@ -319,29 +319,22 @@ Install directly into Google Antigravity or any [Agent Plugins 1.0](https://agen
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
      ```
 
-2. **Install Python Dependencies**:
+3. **Install Python Dependencies**:
    ```bash
    pip install google-genai google-cloud-storage
    ```
    *(Optional offline Whisper backup: `pip install mlx-whisper sherpa-onnx` on Apple Silicon, or `pip install faster-whisper sherpa-onnx` on Linux/Windows).*
 
-3. **Configure Environment Variables (`.env`)**:
-   Copy `.env.example` to `.env` in the repository or skill root:
+4. **Initialize Google Cloud Environment (`./setup.sh`)**:
+   Run the automated setup script to verify authentication, enable required APIs (`aiplatform.googleapis.com`, `storage.googleapis.com`), create and configure the Cloud Storage bucket (with CORS and automated 2-day/30-day lifecycle cleanup), and auto-generate `.env`:
    ```bash
-   cp .env.example .env
+   chmod +x setup.sh
+   ./setup.sh
    ```
-   Example `.env`:
-   ```bash
-   GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-   GOOGLE_CLOUD_LOCATION=global
-   GCP_REGION=us-central1
-   MEETING_STORAGE_BUCKET=meeting-transcribe-your-gcp-project-id
-   TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
-   SUMMARY_MODEL=gemini-3.8-flash
-   ```
-   *(If processing local files with cloud Gemini, create your bucket via: `gcloud storage buckets create gs://meeting-transcribe-your-gcp-project-id --location=us-central1`).*
+   *(Options: `./setup.sh -p your-gcp-project-id -r us-central1`).*
+   When used inside Antigravity, the agent directly invokes `./setup.sh` to initialize the cloud environment with zero manual friction.
 
-4. **Usage in Antigravity**:
+5. **Usage in Antigravity**:
    Antigravity automatically discovers and loads `SKILL.md`. Simply instruct the agent in the chat:
    > "Please transcribe this meeting recording `meeting.mp3` and generate executive minutes and the interactive player."
 
@@ -359,16 +352,11 @@ This deployment is **100% native `gcloud`**—requiring zero external tools (no 
    ```
 
 2. **One-Click Automated Deployment (`./deploy.sh`)**:
-   The automated deployment script handles the entire lifecycle end-to-end:
-   - Provisions/verifies GCS bucket `gs://meeting-transcribe-${PROJECT_ID}` with 24-hour CORS and automated lifecycle deletion rules (2 days for `raw/` ephemeral uploads, 30 days for minutes and interactive players).
-   - Creates dedicated service account `meeting-transcribe-sa` with least-privilege IAM bindings (`roles/storage.objectUser`, `roles/aiplatform.user`, `roles/logging.logWriter`).
-   - Packages and deploys code to Vertex AI Agent Runtime via `agents-cli deploy`.
-   - Automatically registers and binds the extension into Gemini Enterprise.
-
+   The deployment script follows clean separation of concerns: it automatically delegates cloud resource provisioning to `./setup.sh` (enabling APIs, creating GCS bucket with CORS/Lifecycle, and configuring Service Account IAM bindings), packages the agent to Vertex AI Agent Runtime via `agents-cli deploy`, and registers it with Gemini Enterprise:
    ```bash
-   chmod +x deploy.sh
+   chmod +x setup.sh deploy.sh
 
-   # Automated deployment (reads .env, provisions cloud resources via gcloud, deploys, and links to Gemini Enterprise):
+   # Automated deployment (delegates cloud infrastructure to setup.sh, deploys, and links to Gemini Enterprise):
    ./deploy.sh
 
    # Or specify explicit project and region:

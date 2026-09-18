@@ -186,134 +186,31 @@ echo "[✓] Storage Bucket:     gs://$BUCKET_NAME"
 echo "[✓] Service Account:    $SERVICE_ACCOUNT"
 
 # ------------------------------------------------------------------------------
-# 4. Step 1: Storage Bucket & Dedicated Service Account Provisioning (Pure gcloud)
+# 4. Step 1: Provision Google Cloud Infrastructure via setup.sh
 # ------------------------------------------------------------------------------
 echo ""
-echo "[*] Step 1: Provisioning / Verifying GCS Storage & Dedicated Service Account..."
+echo "[*] Step 1: Provisioning Google Cloud infrastructure via ./setup.sh..."
 
-# 1. Storage Bucket
-if [ "$DRY_RUN" = false ]; then
-    if ! gcloud storage buckets describe "gs://$BUCKET_NAME" --project="$PROJECT_ID" &>/dev/null; then
-        echo "    [*] Creating GCS bucket: gs://$BUCKET_NAME..."
-        gcloud storage buckets create "gs://$BUCKET_NAME" \
-            --project="$PROJECT_ID" \
-            --location="$REGION" \
-            --uniform-bucket-level-access \
-            --public-access-prevention \
-            --quiet
-    else
-        echo "    [✓] Storage bucket gs://$BUCKET_NAME already exists."
-    fi
+SETUP_CMD=(
+    "$REPO_ROOT/setup.sh"
+    --project "$PROJECT_ID"
+    --region "$REGION"
+    --bucket "$BUCKET_NAME"
+    --service-account "$SERVICE_ACCOUNT"
+    --create-sa
+)
 
-    # Configure CORS for interactive web player signed URL streaming
-    CORS_FILE="$(mktemp 2>/dev/null || echo "/tmp/cors_$$.json")"
-    cat << 'EOF' > "$CORS_FILE"
-[
-  {
-    "origin": ["*"],
-    "responseHeader": ["*"],
-    "method": ["GET", "HEAD"],
-    "maxAgeSeconds": 86400
-  }
-]
-EOF
-    gcloud storage buckets update "gs://$BUCKET_NAME" --cors-file="$CORS_FILE" --quiet 2>/dev/null || true
-    rm -f "$CORS_FILE"
-
-    # Configure Lifecycle Rules:
-    # - raw/: Delete after 2 days (ephemeral staging for multimodal transcription)
-    # - minutes/ & players/: Delete after 30 days (deliverable retention)
-    LIFECYCLE_FILE="$(mktemp 2>/dev/null || echo "/tmp/lifecycle_$$.json")"
-    cat << 'EOF' > "$LIFECYCLE_FILE"
-{
-  "rule": [
-    {
-      "action": {"type": "Delete"},
-      "condition": {
-        "age": 2,
-        "matchesPrefix": ["raw/"]
-      }
-    },
-    {
-      "action": {"type": "Delete"},
-      "condition": {
-        "age": 30,
-        "matchesPrefix": ["minutes/", "players/"]
-      }
-    }
-  ]
-}
-EOF
-    gcloud storage buckets update "gs://$BUCKET_NAME" --lifecycle-file="$LIFECYCLE_FILE" --quiet 2>/dev/null || true
-    rm -f "$LIFECYCLE_FILE"
-else
-    echo "    [Dry-Run] Would ensure GCS bucket gs://$BUCKET_NAME exists with CORS & Lifecycle rules."
+if [ "$DRY_RUN" = true ]; then
+    SETUP_CMD+=(--dry-run)
 fi
 
-# 2. Service Account
-SA_NAME="${SERVICE_ACCOUNT%%@*}"
-if [ "$DRY_RUN" = false ]; then
-    if ! gcloud iam service-accounts describe "$SERVICE_ACCOUNT" --project="$PROJECT_ID" &>/dev/null; then
-        echo "    [*] Creating dedicated service account: $SERVICE_ACCOUNT..."
-        gcloud iam service-accounts create "$SA_NAME" \
-            --display-name="Meeting Transcribe Agent Service Account" \
-            --project="$PROJECT_ID" \
-            --quiet 2>/dev/null || true
-    else
-        echo "    [✓] Dedicated service account $SERVICE_ACCOUNT already exists."
-    fi
-
-    # Ensure required Project-Level IAM roles
-    echo "    [*] Verifying project IAM bindings for $SERVICE_ACCOUNT..."
-    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-        --member="serviceAccount:$SERVICE_ACCOUNT" \
-        --role="roles/aiplatform.user" \
-        --condition=None --quiet 2>/dev/null || true
-    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-        --member="serviceAccount:$SERVICE_ACCOUNT" \
-        --role="roles/logging.logWriter" \
-        --condition=None --quiet 2>/dev/null || true
-else
-    echo "    [Dry-Run] Would ensure service account $SERVICE_ACCOUNT exists with roles/aiplatform.user and roles/logging.logWriter."
-fi
+"${SETUP_CMD[@]}"
 
 # ------------------------------------------------------------------------------
-# 5. Step 2: Ensure Least-Privilege IAM (roles/storage.objectUser)
-# ------------------------------------------------------------------------------
-if [ "$DRY_RUN" = false ]; then
-    echo ""
-    echo "[*] Step 2: Ensuring least-privilege IAM permissions (roles/storage.objectUser) on gs://$BUCKET_NAME..."
-
-    # 1. Grant to Dedicated Agent Service Account
-    echo "    Granting roles/storage.objectUser to $SERVICE_ACCOUNT..."
-    gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_NAME" \
-        --member="serviceAccount:$SERVICE_ACCOUNT" \
-        --role="roles/storage.objectUser" --quiet 2>/dev/null || true
-
-    # 2. Grant to Vertex AI Service Agents
-    if [ -n "$PROJECT_NUMBER" ]; then
-        RE_AGENTS=(
-            "service-${PROJECT_NUMBER}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
-            "service-${PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com"
-            "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-        )
-        for sa in "${RE_AGENTS[@]}"; do
-            echo "    Granting roles/storage.objectUser to $sa..."
-            gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_NAME" \
-                --member="serviceAccount:$sa" \
-                --role="roles/storage.objectUser" --quiet 2>/dev/null || true
-        done
-    fi
-else
-    echo ""
-    echo "[*] [Dry-Run] Step 2: Would grant roles/storage.objectUser on gs://$BUCKET_NAME to $SERVICE_ACCOUNT and Vertex AI service agents."
-fi
-
-# ------------------------------------------------------------------------------
-# 6. Step 3: Deploy Agent to Vertex AI Agent Runtime
+# 5. Step 2: Deploy Agent to Vertex AI Agent Runtime
 # ------------------------------------------------------------------------------
 echo ""
-echo "[*] Step 3: Deploying Agent to Vertex AI Agent Runtime..."
+echo "[*] Step 2: Deploying Agent to Vertex AI Agent Runtime..."
 
 SERVICE_NAME="${SERVICE_NAME:-meeting-transcribe-agent}"
 DEPLOY_CMD=(agents-cli deploy -d agent_runtime --project "$PROJECT_ID" --region "$REGION" --service-name "$SERVICE_NAME")

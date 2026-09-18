@@ -316,29 +316,22 @@ Meeting Transcribe Agent 支持两种不同的运作与安装部署流程：
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
      ```
 
-2. **安装 Python 运行环境依赖**：
+3. **安装 Python 运行环境依赖**：
    ```bash
    pip install google-genai google-cloud-storage
    ```
    *（可选离线 Whisper 备用：Apple Silicon 请安装 `pip install mlx-whisper sherpa-onnx`，Linux/Windows 请安装 `pip install faster-whisper sherpa-onnx`）。*
 
-3. **配置环境变量 (`.env`)**：
-   复制项目根目录的 `.env.example` 为 `.env`，并将模型 location 设为 `global`、云端基础设施 region 设为 `us-central1`：
+4. **初始化 Google Cloud 环境 (`./setup.sh`)**：
+   运行自动化环境配置脚本，验证认证、启用必要 API (`aiplatform.googleapis.com`、`storage.googleapis.com`)、创建并配置 Cloud Storage 存储桶（自动应用 CORS 与 2天/30天生命周期销毁规则），并自动生成 `.env`：
    ```bash
-   cp .env.example .env
+   chmod +x setup.sh
+   ./setup.sh
    ```
-   `.env` 内容示例：
-   ```bash
-   GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-   GOOGLE_CLOUD_LOCATION=global
-   GCP_REGION=us-central1
-   MEETING_STORAGE_BUCKET=meeting-transcribe-your-gcp-project-id
-   TRANSCRIBE_MODEL=gemini-3.5-transcribe-preview
-   SUMMARY_MODEL=gemini-3.8-flash
-   ```
-   *（如需使用云端 Gemini 处理本地文件，可直接通过指令创建存储桶：`gcloud storage buckets create gs://meeting-transcribe-your-gcp-project-id --location=us-central1`）。*
+   *（亦可指定参数：`./setup.sh -p your-gcp-project-id -r us-central1`）。*
+   在 Antigravity 中运行时，Agent 可直接调用 `./setup.sh` 完成云端环境与配置初始化，分层负责、免除手动配置负担。
 
-4. **在 Antigravity 中使用**：
+5. **在 Antigravity 中使用**：
    Antigravity 会自动索引并读取 `SKILL.md`，您只需在对话窗口中提出需求：
    > “请帮我转录这份主管会议录音 `meeting.mp3`，生成重点摘要、决策事项与逐字稿播放器。”
 
@@ -356,16 +349,11 @@ Meeting Transcribe Agent 支持两种不同的运作与安装部署流程：
    ```
 
 2. **通过 `./deploy.sh` 一键自动部署**：
-   项目内置的一键部署脚本会全自动处理端到端部署流程：
-   - 创建并检验 GCS 存储桶 `gs://meeting-transcribe-${PROJECT_ID}`，自动应用 24 小时 CORS 与生命周期规则（`raw/` 暂存文件 2 天自动销毁，会议记录与播放器保存 30 天）。
-   - 创建专属服务账号 `meeting-transcribe-sa` 并配置最小权限 (`roles/storage.objectUser`, `roles/aiplatform.user`, `roles/logging.logWriter`)。
-   - 调用 `agents-cli deploy` 打包代码并部署至 Vertex AI Agent Runtime。
-   - 自动发现并将 Agent 注册关联至企业的 Gemini Enterprise 扩展中。
-
+   项目内置的一键部署脚本遵循分层负责原则：底层 GCP 基础设施交由 `./setup.sh` 自动构建（启用 API、创建存储桶与 CORS/Lifecycle、配置服务账号 IAM 权限），接着调用 `agents-cli deploy` 打包部署至 Vertex AI Agent Runtime 并自动注册至 Gemini Enterprise：
    ```bash
-   chmod +x deploy.sh
+   chmod +x setup.sh deploy.sh
 
-   # 自动化部署（读取 .env，通过 gcloud 全自动创建云端资源、部署并自动关联 Gemini Enterprise）：
+   # 自动化部署（委托 setup.sh 构建云端基础设施、部署并自动关联 Gemini Enterprise）：
    ./deploy.sh
 
    # 或指定项目与区域：
