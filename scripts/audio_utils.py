@@ -167,7 +167,14 @@ def optimize_video_for_upload(video_path: Path, output_path: Path = None, max_si
 
 
 def get_audio_duration(audio_path: Path) -> float:
-    """Get audio duration in seconds via ffprobe."""
+    """
+    Get audio duration in seconds via multi-layer probing:
+    1. Container format duration (format=duration)
+    2. Audio stream duration (stream=duration)
+    3. Fallback calculation via file size and detected bitrate
+    """
+    audio_path = Path(audio_path)
+    # Layer 1: format=duration
     try:
         cmd = [
             "ffprobe", "-v", "error",
@@ -176,9 +183,146 @@ def get_audio_duration(audio_path: Path) -> float:
             str(audio_path)
         ]
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-        return float(res.stdout.strip())
+        val = res.stdout.strip()
+        if val and val.lower() != "n/a":
+            d = float(val)
+            if d > 0:
+                return d
     except Exception:
-        return 0.0
+        pass
+
+    # Layer 2: stream=duration
+    try:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "a:0",
+            "-show_entries", "stream=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(audio_path)
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        val = res.stdout.strip()
+        if val and val.lower() != "n/a":
+            d = float(val)
+            if d > 0:
+                return d
+    except Exception:
+        pass
+
+    # Layer 3: Calculate from bitrate if available
+    try:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "a:0",
+            "-show_entries", "stream=bit_rate",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(audio_path)
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        val = res.stdout.strip()
+        if val.isdigit() and int(val) > 0:
+            bitrate = int(val)
+            size_bytes = audio_path.stat().st_size
+            return float((size_bytes * 8) / bitrate)
+    except Exception:
+        pass
+
+    return 0.0
+
+
+def detect_silence_in_window(
+    audio_path: Path,
+    win_start: float,
+    win_dur: float,
+    noise_db: str = "-30dB",
+    min_silence_sec: float = 0.3
+) -> list[tuple[float, float]]:
+    """
+    Detect silence intervals in a specific time window using ffmpeg silencedetect filter.
+    Returns list of (start_sec, end_sec) relative to win_start.
+    """
+    cmd = [
+        "ffmpeg", "-v", "info",
+        "-ss", str(win_start),
+        "-t", str(win_dur),
+        "-i", str(audio_path),
+        "-af", f"silencedetect=noise={noise_db}:d={min_silence_sec}",
+        "-f", "null", "-"
+    ]
+    try:
+        res = subprocess.run(cmd, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, check=False)
+        intervals = []
+        cur_start = None
+        for line in res.stderr.splitlines():
+            if "silence_start:" in line:
+                m = re.search(r'silence_start:\s*([0-9.]+)', line)
+                if m:
+                    cur_start = float(m.group(1))
+            elif "silence_end:" in line:
+                m = re.search(r'silence_end:\s*([0-9.]+)', line)
+                if m and cur_start is not None:
+                    intervals.append((cur_start, float(m.group(1))))
+                    cur_start = None
+        if cur_start is not None:
+            intervals.append((cur_start, win_dur))
+        return intervals
+    except Exception:
+        return []
+
+
+def find_silence_cut_points(
+    audio_path: Path,
+    total_duration: float,
+    max_chunk_sec: float = 840.0,
+    search_window_sec: float = 60.0
+) -> list[tuple[float, float]]:
+    """
+    Greedy forward split:
+    Target chunk duration is max_chunk_sec (default 14 minutes = 840s).
+    From current_start, if remaining <= max_chunk_sec, process as final chunk.
+    Otherwise, search in [current_start + max_chunk_sec - search_window_sec, current_start + max_chunk_sec]
+    (e.g. 13m ~ 14m) for the best silence interval using FFmpeg silencedetect.
+    Splits at the midpoint of that silence interval.
+    If no silence is found, safely falls back to current_start + max_chunk_sec - (search_window_sec / 2.0).
+    Returns list of (chunk_start, chunk_end) in seconds.
+    """
+    if total_duration <= max_chunk_sec:
+        return [(0.0, total_duration)]
+
+    chunks = []
+    current_start = 0.0
+
+    while current_start < total_duration:
+        remaining = total_duration - current_start
+        if remaining <= max_chunk_sec:
+            chunks.append((current_start, total_duration))
+            break
+
+        win_start = current_start + max_chunk_sec - search_window_sec
+        win_dur = min(search_window_sec, total_duration - win_start)
+
+        # 1. Search for silence at -30dB (standard speech pause)
+        intervals = detect_silence_in_window(audio_path, win_start, win_dur, noise_db="-30dB", min_silence_sec=0.3)
+        # 2. Relax to -25dB if no silence detected
+        if not intervals:
+            intervals = detect_silence_in_window(audio_path, win_start, win_dur, noise_db="-25dB", min_silence_sec=0.2)
+
+        if intervals:
+            # Pick the silence interval closest to the end of the window to maximize segment capacity
+            # while guaranteeing the chunk stays <= max_chunk_sec
+            best_interval = intervals[-1]
+            split_pt = win_start + (best_interval[0] + best_interval[1]) / 2.0
+        else:
+            # Safe deterministic fallback: middle of the search window (e.g. 13.5 min)
+            split_pt = win_start + (win_dur / 2.0)
+
+        # Clamp split_pt to stay strictly within (current_start, total_duration) and <= current_start + max_chunk_sec
+        split_pt = max(current_start + 60.0, min(split_pt, current_start + max_chunk_sec, total_duration))
+
+        chunks.append((current_start, split_pt))
+        current_start = split_pt
+
+    return chunks
 
 
 def get_audio_bitrate(audio_path: Path) -> int:

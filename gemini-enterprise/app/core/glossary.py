@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 from .audio_utils import safe_ascii_upload_path
 from .gcs_utils import upload_file_to_gcs, delete_gcs_blob, guess_mime_type
+from .gemini_engine import call_gemini_with_retry
 
 
 def extract_keywords_from_glossary(glossary_text: str, max_keywords: int = 40) -> str:
@@ -151,9 +152,12 @@ Analyze this audio recording and extract an authoritative Global Consistency Glo
             )
 
         file_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=mime_type)
-        response = client.models.generate_content(
-            model=model,
-            contents=[file_part, prompt],
+        response = call_gemini_with_retry(
+            lambda: client.models.generate_content(
+                model=model,
+                contents=[file_part, prompt],
+            ),
+            op_name="Glossary entity discovery"
         )
         glossary_content = response.text or ""
         duration = time.time() - t0

@@ -116,7 +116,7 @@ def generate_meeting_minutes_and_transcript(
             video_source=source_str,
             bucket_name=resolved_bucket,
             summary_model=summary_model,
-            use_agentic=True,
+            use_agentic=agentic,
             summary_language=summary_language,
             outline_path=Path(outline) if outline else None,
         )
@@ -293,19 +293,16 @@ def generate_meeting_minutes_and_transcript(
         if is_local_video:
             print(f"\n--- [Stage 2/2] Multimodal Vision & Minutes Fusion ({summary_model} Agentic) ---")
             try:
-                sections_1_5, summary_time = analyze_video_with_transcript(
+                final_markdown, summary_time = analyze_video_with_transcript(
                     client=client,
                     video_path=video_p,
                     raw_transcript_text=raw_transcript_text,
                     bucket_name=resolved_bucket,
                     summary_model=summary_model,
-                    use_agentic=True,
+                    use_agentic=agentic,
                     summary_language=summary_language,
                     outline_path=Path(outline) if outline else None,
                 )
-                combined_raw = f"{sections_1_5.strip()}\n\n{raw_transcript_text.strip()}\n"
-                print(f"[*] Consolidating canonical speaker identities from visual mapping...")
-                final_markdown = consolidate_meeting_minutes(combined_raw)
             except Exception as e:
                 print(f"[!] Warning: Multimodal video fusion failed ({e}). Falling back to standalone acoustic transcript.")
                 final_markdown = ""
@@ -320,8 +317,6 @@ def generate_meeting_minutes_and_transcript(
                     summary_model=summary_model,
                     summary_language=summary_language
                 )
-                print(f"[*] Consolidating canonical speaker identities and sequential turns...")
-                final_markdown = consolidate_meeting_minutes(final_markdown)
             except Exception as e:
                 print(f"[!] Warning: Gemini minutes structuring unavailable ({e}). Falling back to standalone verbatim transcript.")
                 final_markdown = ""
@@ -332,7 +327,7 @@ def generate_meeting_minutes_and_transcript(
         dur_str = format_offset(duration_sec)
         eng_label = f"Local Whisper ({whisper_backend}/{whisper_model})" if engine.lower() == "whisper" else transcribe_model
         source_label = f"**Video File**: `{video_p.name}`" if is_local_video else f"**Audio File**: `{audio_path.name}`"
-        sec6_heading = "## 6. Full Verbatim Transcript" if is_local_video else "## 🎙️ Verbatim Transcript"
+        sec6_heading = "## 6. Full Verbatim Transcript"
         final_markdown = (
             f"# Meeting Minutes & Transcript: {default_out_stem}\n\n"
             f"- {source_label}\n"

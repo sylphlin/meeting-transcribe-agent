@@ -16,6 +16,7 @@ from ..core.gcs_utils import (
     upload_file_to_gcs,
     download_file_from_gcs,
     generate_signed_download_url,
+    guess_mime_type,
 )
 from .drive_tool import (
     stream_drive_file_to_gcs,
@@ -62,7 +63,7 @@ def process_meeting_transcription(
     source: str,
     bucket_name: str = None,
     summary_language: str = None,
-    agentic: bool = False,
+    agentic: bool = True,
     extract_audio: bool = False,
     export_to_drive: bool = False,
     drive_folder_id: str = None,
@@ -148,8 +149,39 @@ def process_meeting_transcription(
         content_type="text/markdown; charset=utf-8"
     )
 
+    gcs_media_uri = None
+    media_signed_url = None
+    upload_player_path = generated_html_path
+
+    if not is_yt and local_media_source:
+        media_p = Path(local_media_source).resolve()
+        if media_p.exists():
+            media_blob_name = f"media/{media_p.name}"
+            media_mime = guess_mime_type(media_p)
+            gcs_media_uri = upload_file_to_gcs(
+                local_path=media_p,
+                bucket_name=target_bucket,
+                destination_blob_name=media_blob_name,
+                content_type=media_mime,
+            )
+            media_signed_url = generate_signed_download_url(
+                bucket_name=target_bucket,
+                blob_name=media_blob_name,
+                expiration_hours=24,
+            )
+
+            # Inject the 24-hour signed media URL into a cloud-ready HTML player copy
+            # so browsers viewing the signed player URL can stream the private GCS media directly.
+            html_text = generated_html_path.read_text(encoding="utf-8")
+            cloud_html_text = html_text.replace(f'"{media_p.name}"', f'"{media_signed_url}"')
+            cloud_html_text = cloud_html_text.replace(f'src="{media_p.name}"', f'src="{media_signed_url}"')
+            cloud_html_text = cloud_html_text.replace(f"src='{media_p.name}'", f"src='{media_signed_url}'")
+            cloud_player_path = work_dir / f"cloud_{generated_html_path.name}"
+            cloud_player_path.write_text(cloud_html_text, encoding="utf-8")
+            upload_player_path = cloud_player_path
+
     gcs_player_uri = upload_file_to_gcs(
-        local_path=generated_html_path,
+        local_path=upload_player_path,
         bucket_name=target_bucket,
         destination_blob_name=player_blob_name,
         content_type="text/html; charset=utf-8"
@@ -194,8 +226,10 @@ def process_meeting_transcription(
         "target_bucket": target_bucket,
         "gcs_minutes_uri": gcs_minutes_uri,
         "gcs_player_uri": gcs_player_uri,
+        "gcs_media_uri": gcs_media_uri,
         "player_signed_url": player_signed_url,
         "minutes_signed_url": minutes_signed_url,
+        "media_signed_url": media_signed_url,
         "drive_minutes_link": drive_minutes_link,
         "executive_summary_preview": summary_snippet,
     }

@@ -4,13 +4,17 @@ Handles Stage 1 Cloud ASR, Stage 2 Minutes Generation, Cloud Storage upload stag
 Uses Vertex AI with Application Default Credentials exclusively -- no AI Studio API key.
 """
 
+import concurrent.futures
 import json
+import math
 import os
+from pathlib import Path
+import random
 import re
+import subprocess
+import tempfile
 import time
 import uuid
-from pathlib import Path
-import concurrent.futures
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
@@ -18,11 +22,14 @@ from google.genai import types
 from scripts.audio_utils import (
     format_offset,
     compress_audio_for_upload,
+    get_audio_duration,
+    find_silence_cut_points,
     safe_ascii_upload_path,
     should_compress_audio,
     is_youtube_url,
     optimize_video_for_upload,
 )
+from scripts.canonicalizer import consolidate_meeting_minutes
 from scripts.gcs_utils import (
     upload_file_to_gcs,
     delete_gcs_blob,
@@ -98,7 +105,13 @@ def _parse_offset_to_seconds(val) -> float:
     return float(s) if s else 0.0
 
 
-def _extract_transcription_parts(parts, lines: list, raw_parts: list) -> bool:
+def _extract_transcription_parts(
+    parts,
+    lines: list,
+    raw_parts: list,
+    time_offset: float = 0.0,
+    speaker_offset: int = 0,
+) -> bool:
     """
     Extract audio_transcription (diarized turn) or plain text parts from a Gemini
     response's content parts, appending into `lines`/`raw_parts` in place. Shared by
@@ -111,12 +124,21 @@ def _extract_transcription_parts(parts, lines: list, raw_parts: list) -> bool:
             has_at = True
             at = part.audio_transcription
             spk_raw = at.speaker_label or "spk:0"
-            spk_clean = spk_raw.replace(":", "_")
+            clean = spk_raw.replace(":", "_")
+            if speaker_offset > 0:
+                parts_spk = clean.split("_")
+                if len(parts_spk) >= 2 and parts_spk[-1].isdigit():
+                    spk_clean = f"spk_{speaker_offset + int(parts_spk[-1])}"
+                else:
+                    spk_clean = f"spk_{speaker_offset}_{clean}"
+            else:
+                spk_clean = clean
+
             start_str = "00:00"
             end_str = "00:00"
             if at.words:
-                s_sec = _parse_offset_to_seconds(at.words[0].start_offset)
-                e_sec = _parse_offset_to_seconds(at.words[-1].end_offset)
+                s_sec = _parse_offset_to_seconds(at.words[0].start_offset) + time_offset
+                e_sec = _parse_offset_to_seconds(at.words[-1].end_offset) + time_offset
                 start_str = format_offset(s_sec)
                 end_str = format_offset(e_sec)
             text = (at.text or "").strip()
@@ -174,6 +196,71 @@ def normalize_verbatim_timestamps(text: str) -> str:
     return _BRACKET_UNIT_PAIR_RE.sub(_replace, text)
 
 
+def call_gemini_with_retry(
+    fn,
+    *args,
+    max_retries: int = 4,
+    initial_delay: float = 2.0,
+    backoff_factor: float = 2.0,
+    op_name: str = "Gemini API call",
+    **kwargs,
+):
+    """
+    Execute a Gemini API call with exponential backoff and randomized jitter.
+    Automatically retries on HTTP 429 (Resource Exhausted / Rate Limit), 500, 502, 503, 504,
+    and transient network errors.
+    Strictly fails fast on HTTP 401 and 403 (Authentication / Permission Denied) per Rule 8.
+    """
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            return fn(*args, **kwargs)
+        except genai_errors.APIError as e:
+            code = getattr(e, "code", None)
+            if code in (401, 403):
+                # Fail-fast immediately on auth / permission errors (Rule 8)
+                raise
+            err_str = str(e)
+            is_retryable = (
+                code in (429, 500, 502, 503, 504)
+                or "RESOURCE_EXHAUSTED" in err_str
+                or "quota" in err_str.lower()
+                or "rate limit" in err_str.lower()
+                or "overloaded" in err_str.lower()
+            )
+            if is_retryable:
+                last_err = e
+                if attempt == max_retries - 1:
+                    raise
+                jitter_val = random.uniform(-0.2, 0.2)
+                sleep_sec = max(0.5, (initial_delay * (backoff_factor ** attempt)) * (1.0 + jitter_val))
+                status_desc = f"HTTP {code}" if code else "Resource Exhausted / Rate Limit"
+                print(f"[!] {op_name}: encountered {status_desc}. Retrying in {sleep_sec:.1f}s (attempt {attempt + 1}/{max_retries})...")
+                time.sleep(sleep_sec)
+            else:
+                raise
+        except (ConnectionError, TimeoutError, Exception) as e:
+            err_name = type(e).__name__
+            is_net_err = (
+                "Timeout" in err_name
+                or "Connect" in err_name
+                or "Network" in err_name
+                or "Reset" in err_name
+            )
+            if is_net_err:
+                last_err = e
+                if attempt == max_retries - 1:
+                    raise
+                jitter_val = random.uniform(-0.2, 0.2)
+                sleep_sec = max(0.5, (initial_delay * (backoff_factor ** attempt)) * (1.0 + jitter_val))
+                print(f"[!] {op_name}: network error ({e}). Retrying in {sleep_sec:.1f}s (attempt {attempt + 1}/{max_retries})...")
+                time.sleep(sleep_sec)
+            else:
+                raise
+    if last_err:
+        raise last_err
+
+
 def transcribe_with_gemini_cloud(
     client: genai.Client,
     audio_path: Path,
@@ -197,6 +284,129 @@ def transcribe_with_gemini_cloud(
             upload_file_path = temp_compressed
         else:
             print(f"[*] Skipping audio compression: {reason}.")
+
+    # Check total audio duration to see if segmenting is required for dedicated transcribe models.
+    # gemini-3.5-transcribe-preview accepts up to 22,500 audio tokens (~900 seconds / 15 minutes).
+    total_duration = get_audio_duration(upload_file_path)
+    chunk_threshold_sec = 840.0  # 14 minutes safety threshold (< 15 min / 22,500 tokens limit)
+
+    if "transcribe" in model_name.lower() and total_duration > chunk_threshold_sec:
+        cut_points = find_silence_cut_points(
+            upload_file_path,
+            total_duration,
+            max_chunk_sec=chunk_threshold_sec,
+            search_window_sec=60.0
+        )
+        num_chunks = len(cut_points)
+        print(f"[*] Audio duration is {format_offset(total_duration)} (> 14 min). Splitting into {num_chunks} silence-bounded segments for `{model_name}`...")
+
+        at_kwargs = {
+            "diarization": True,
+            "word_timestamp": True,
+        }
+        if language and language.lower() != "auto":
+            at_kwargs["language_codes"] = [language]
+
+        def _process_chunk(chunk_idx: int) -> tuple[int, list]:
+            chunk_start, chunk_end = cut_points[chunk_idx]
+            chunk_dur = chunk_end - chunk_start
+            print(f"[*] Preparing segment {chunk_idx + 1}/{num_chunks}: [{format_offset(chunk_start)} - {format_offset(chunk_end)}] ({format_offset(chunk_dur)})...")
+
+            temp_chunk = Path(tempfile.gettempdir()) / f"chunk_{uuid.uuid4().hex[:8]}_{chunk_idx}.m4a"
+            reenc_cmd = [
+                "ffmpeg", "-y",
+                "-ss", str(chunk_start),
+                "-t", str(chunk_dur),
+                "-i", str(upload_file_path),
+                "-vn", "-ac", "1", "-ar", "16000",
+                "-c:a", "aac", "-b:a", "48k",
+                str(temp_chunk)
+            ]
+            subprocess.run(reenc_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+            seg_gcs_uri = None
+            try:
+                mime_type = guess_mime_type(temp_chunk)
+                with safe_ascii_upload_path(temp_chunk) as safe_upload_path:
+                    seg_gcs_uri = upload_file_to_gcs(
+                        local_path=safe_upload_path,
+                        bucket_name=bucket_name,
+                        destination_blob_name=_unique_raw_blob_name(safe_upload_path),
+                        content_type=mime_type,
+                    )
+                file_part = types.Part.from_uri(file_uri=seg_gcs_uri, mime_type=mime_type)
+                request_kwargs = {
+                    "model": model_name,
+                    "contents": [file_part],
+                    "config": types.GenerateContentConfig(
+                        audio_transcription_config=types.AudioTranscriptionConfig(**at_kwargs)
+                    ),
+                }
+
+                def _do_chunk_generate():
+                    resp_obj = client.models.generate_content(**request_kwargs)
+                    if (not resp_obj.candidates or not resp_obj.candidates[0].content) and chunk_dur > 5.0:
+                        raise genai_errors.APIError(code=503, response_json={}, response=None)
+                    return resp_obj
+
+                resp = call_gemini_with_retry(
+                    _do_chunk_generate,
+                    op_name=f"Segment {chunk_idx + 1}/{num_chunks} transcription"
+                )
+                seg_lines = []
+                raw_parts = []
+                if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
+                    _extract_transcription_parts(
+                        resp.candidates[0].content.parts,
+                        seg_lines,
+                        raw_parts,
+                        time_offset=chunk_start,
+                        speaker_offset=chunk_idx * 50,
+                    )
+                if not seg_lines and raw_parts:
+                    # Fallback: if structured audio_transcription was omitted, retain text from raw_parts
+                    seg_lines = [p.strip() for p in raw_parts if p.strip()]
+
+                if not seg_lines:
+                    print(f"[*] Notice: Segment {chunk_idx + 1}/{num_chunks} [{format_offset(chunk_start)} - {format_offset(chunk_end)}] contains no speech turns.")
+                else:
+                    print(f"[✓] Segment {chunk_idx + 1}/{num_chunks} transcribed ({len(seg_lines)} turns).")
+                return chunk_idx, seg_lines
+            finally:
+                if seg_gcs_uri:
+                    try:
+                        delete_gcs_blob(seg_gcs_uri)
+                    except Exception:
+                        pass
+                if temp_chunk.exists():
+                    try:
+                        temp_chunk.unlink()
+                    except Exception:
+                        pass
+
+        max_workers = min(num_chunks, 4)
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_process_chunk, idx) for idx in range(num_chunks)]
+            for fut in concurrent.futures.as_completed(futures):
+                results.append(fut.result())
+
+        results.sort(key=lambda x: x[0])
+        all_lines = []
+        for _, seg_lines in results:
+            all_lines.extend(seg_lines)
+
+        raw_text = "\n\n".join(all_lines)
+        duration = time.time() - t0
+        print(f"[*] ✓ Cloud segmented transcription complete in {duration:.1f}s ({len(raw_text)} chars, {len(all_lines)} turns).")
+
+        if temp_compressed and temp_compressed.exists():
+            try:
+                temp_compressed.unlink()
+            except Exception:
+                pass
+
+        return raw_text, duration
 
     gcs_uri = None
     try:
@@ -233,8 +443,14 @@ def transcribe_with_gemini_cloud(
             }
             # Dedicated transcribe models produce dense multi-byte CJK audio transcription tokens
             # which can get split across SSE chunk boundaries in the Python SDK, causing JSONDecodeError.
-            # Directly use non-streaming generate_content to guarantee reliable single-pass execution.
-            resp = client.models.generate_content(**request_kwargs)
+            # Directly use non-streaming generate_content with retry to guarantee reliable single-pass execution.
+            def _do_single_pass():
+                resp_obj = client.models.generate_content(**request_kwargs)
+                if (not resp_obj.candidates or not resp_obj.candidates[0].content) and total_duration > 5.0:
+                    raise genai_errors.APIError(code=503, response_json={}, response=None)
+                return resp_obj
+
+            resp = call_gemini_with_retry(_do_single_pass, op_name=f"Transcription ({model_name})")
             if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
                 has_at = _extract_transcription_parts(resp.candidates[0].content.parts, lines, raw_parts)
             elif resp.text:
@@ -263,7 +479,10 @@ def transcribe_with_gemini_cloud(
                 lines = []
                 raw_parts = []
                 has_at = False
-                resp = client.models.generate_content(**request_kwargs)
+                resp = call_gemini_with_retry(
+                    lambda: client.models.generate_content(**request_kwargs),
+                    op_name=f"Non-streaming transcription ({model_name})"
+                )
                 if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
                     has_at = _extract_transcription_parts(resp.candidates[0].content.parts, lines, raw_parts)
                 elif resp.text:
@@ -271,8 +490,10 @@ def transcribe_with_gemini_cloud(
 
         if has_at:
             raw_text = "\n\n".join(lines)
+        elif raw_parts:
+            raw_text = "\n\n".join([p.strip() for p in raw_parts if p.strip()])
         else:
-            raw_text = "".join(raw_parts)
+            raw_text = ""
 
         duration = time.time() - t0
         print(f"[*] ✓ Cloud transcription complete in {duration:.1f}s ({len(raw_text)} chars).")
@@ -299,8 +520,12 @@ def generate_minutes_with_gemini(
 ) -> tuple[str, float]:
     """
     Executes Stage 2: Generates complete 6-section meeting minutes and verbatim transcript.
-    Uses Dual-Track Concurrency (Track A: Sections 1-5; Track B: Section 6 verbatim localization)
-    to minimize wall-clock latency while preserving 100% transcript quality.
+    Synthesizes structured executive sections 1 through 5 (Metadata & Speaker Mapping Table,
+    Executive Summary, Key Topics with Speaker Perspectives, Decisions, and Action Items)
+    plus the localized Section 6 heading via Gemini 3.8 Flash.
+    Section 6 verbatim dialogue turns are deterministically assembled downstream by Python
+    with canonical speaker consolidation to maintain 100% physical acoustic clock fidelity
+    and avoid output token limits.
     """
     load_env_file()
     summary_model = summary_model or os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash"
@@ -324,10 +549,10 @@ Strictly adhere to the spelling, names, titles, organizations, and technical ter
         f"  Must be written in fluent, native, professional {target_lang}.\n"
         f"- **Universal Language Adaptation (CRITICAL)**:\n"
         f"  1. Translate and adapt all section headings (1 to 6), metadata field labels, and table column headers naturally into {target_lang}. This template's English labels (\"Meeting Metadata & Attendees\", \"Executive Summary\", \"Key Discussion Topics\", etc.) are placeholders describing what belongs in each section -- they are NOT literal heading text to copy verbatim. Leaving any heading in English when {target_lang} is not English is a critical error.\n"
-        f"  2. **STRICTLY FORBIDDEN to include ANY emojis or icons** (e.g. no 📌, 🎯, 💡, ⚖️, 📋, 🎙️) in any section headings, sub-headings, or table headers. Use clean, plain text markdown headings only (e.g. `## 1. `, `## 2. `)."
-    )
-    verbatim_lang_instruction = (
-        "Faithfully preserve original spoken dialogue and language of each speaker without translation."
+        f"  2. **STRICTLY FORBIDDEN to include ANY emojis or icons** (e.g. no 📌, 🎯, 💡, ⚖️, 📋, 🎙️) in any section headings, sub-headings, or table headers. Use clean, plain text markdown headings only (e.g. `## 1. `, `## 2. `).\n"
+        f"- **Section 6 Heading (CRITICAL)**:\n"
+        f"  At the very end of your response, output ONLY the localized Markdown heading for Section 6 (e.g., `## 6. Full Verbatim Transcript` in English, `## 6. 完整逐字記錄` in Traditional Chinese, `## 6. 全文逐字録` in Japanese), followed by nothing else.\n"
+        f"  Section 6 verbatim dialogue turns are deterministically assembled downstream by Python to preserve 100% physical acoustic clock fidelity and avoid output token limits."
     )
 
     def _call_gemini_track(prompt_content: str, label: str) -> str:
@@ -339,71 +564,12 @@ Strictly adhere to the spelling, names, titles, organizations, and technical ter
                 )
             except Exception:
                 pass
-        print(f"[*] [Dual-Track Stage 2] Launching {label} with `{summary_model}` (thinking_budget=0)...")
-        resp = client.models.generate_content(**gen_kwargs)
+        print(f"[*] [Stage 2] Launching {label} with `{summary_model}` (thinking_budget=0)...")
+        resp = call_gemini_with_retry(
+            lambda: client.models.generate_content(**gen_kwargs),
+            op_name=label
+        )
         return resp.text or ""
-
-    # Track A0: Resolve one authoritative Speaker Mapping Table before Sections 1-5 (Track A)
-    # and Section 6 (Track B) diverge into independent concurrent calls. Without this, each
-    # track may independently guess different names/roles for the same spk_X identifier.
-    speaker_table_block = ""
-    if prompt_template_path is None:
-        speaker_id_prompt = f"""# Role & Objective
-You are a speaker identification specialist. Read the draft transcript below and resolve every distinct speaker identifier (`spk_X`, `spk-X`, or `Speaker X`) to its most likely real name or role, using dialogue context (self-introductions, direct address, reporting hierarchies) and the glossary.
-
-{glossary_injection}
-
----
-# Draft Transcript
-{raw_transcript_text}
-
----
-# Output Format
-Output ONLY a markdown table with this exact structure, no other text or explanation:
-| Speaker ID | Role / Title | Name | Organization / Team |
-| :--- | :--- | :--- | :--- |
-"""
-        try:
-            speaker_table_block = _call_gemini_track(speaker_id_prompt, "Track A0 (Speaker Identity Resolution)").strip()
-        except Exception as e:
-            print(f"[!] Warning: Speaker identity pre-resolution failed ({e}); Tracks A and B will resolve speaker identities independently.")
-            speaker_table_block = ""
-
-    speaker_table_instruction = (
-        f"Use EXACTLY the following pre-determined Speaker Mapping Table (authoritative — do not alter names, roles, or add/remove rows):\n{speaker_table_block}"
-        if speaker_table_block else
-        "Cross-reference dialogue context and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role:"
-    )
-
-    s1_s5_schema = f"""## 1. Meeting Metadata & Attendees
-- **Meeting Title**: Inferred or established title
-- **Audio Source**: `{audio_path.name}`
-- **Estimated Date / Time**: Inferred from context or agenda
-- **Chairperson / Host**: Identified meeting leader
-- **Speaker Mapping Table**:
-  {speaker_table_instruction}
-  | Speaker ID | Role / Title | Name | Organization / Team |
-  | :--- | :--- | :--- | :--- |
-  | `spk_0, spk_1` | [Role/Title] | [Name or Inferred Name] | [Department / Org] |
-
-## 2. Executive Summary
-- A high-level, 200–300 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
-
-## 3. Key Discussion Topics & Agenda Items
-- Structured breakdown for each topic discussed:
-  - **Context & Motivation**: Background and why this issue was raised.
-  - **Key Arguments & Data**: Evidence, metrics, or points presented by participants.
-  - **Discussion Flow & Speaker Perspectives**: Contributions from different leaders/members organized per speaker.
-  - **Outcome / Consensus**: Conclusion reached on this specific topic.
-
-## 4. Key Decisions & Resolutions
-- Bulleted list of formal decisions, policy directives, approved motions, or consensus reached.
-
-## 5. Action Items & Next Steps
-- Structured Markdown table assigning clear ownership and timelines:
-  | # | Action Item / Task | Owner / Assignee | Due Date / Timeline | Status / Notes |
-  | :--- | :--- | :--- | :--- | :--- |
-  | 1 | [Clear, actionable task description] | [Name / Role] | [Timeline] | [Notes] |"""
 
     if prompt_template_path is not None:
         template_text = Path(prompt_template_path).read_text(encoding="utf-8")
@@ -416,8 +582,8 @@ Output ONLY a markdown table with this exact structure, no other text or explana
         duration = time.time() - t0
         return final_text, duration
 
-    prompt_a = f"""# Role & Objective
-You are an elite, highly professional executive meeting secretary. Your mission is to analyze the draft transcript of a recorded meeting and produce Sections 1 to 5 of an impeccably formatted, executive-ready meeting record in Markdown.
+    prompt = f"""# Role & Objective
+You are an elite, highly professional executive meeting secretary and intelligence analyst. Your mission is to analyze the draft transcript of a recorded meeting and produce Sections 1 to 5 of an impeccably formatted, executive-ready meeting record in Markdown, followed by the localized Section 6 heading.
 
 {glossary_injection}
 
@@ -430,74 +596,57 @@ You are an elite, highly professional executive meeting secretary. Your mission 
 {summary_lang_instruction}
 
 ---
-# Output Structure (Sections 1 to 5 ONLY)
-Output strictly and exclusively Sections 1 to 5 (DO NOT include any emojis or icons in headings):
+# Output Structure (Sections 1 to 5 + Section 6 Heading ONLY)
+Output strictly and exclusively Sections 1 to 5, ending immediately with the localized Section 6 heading (DO NOT include any emojis or icons in headings):
 
-{s1_s5_schema}
+## 1. Meeting Metadata & Attendees
+- **Meeting Title**: (Inferred or established title)
+- **Audio Source**: `{audio_path.name}`
+- **Estimated Date / Time**: (Inferred from context or agenda)
+- **Chairperson / Host**: (Identified meeting leader)
+- **Speaker Mapping Table**:
+  Cross-reference dialogue context, self-introductions, titles, organizations, and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role (comma-separated if multiple IDs belong to the same person, e.g. `spk_0, spk_50`):
+  | Speaker ID | Role / Title | Name | Organization / Team |
+  | :--- | :--- | :--- | :--- |
+  | `spk_0, spk_50` | [Role/Title] | [Name or Inferred Name] | [Department / Org] |
+- **Phonetic & Entity Corrections Table**:
+  Identify any proper names, participant names, or technical terms in the draft transcript that were mistranscribed due to acoustic phonetic slips or rare name mishearings (e.g., mistranscribing 'Sylph' as 'Yusuf' when addressing speaker Sylph Lin):
+  | Mistranscribed Term | Corrected Name / Term | Target Speaker / Context |
+  | :--- | :--- | :--- |
 
-IMPORTANT: Stop immediately after Section 5. Do NOT output Section 6.
-"""
+## 2. Executive Summary
+- A high-level, 300–400 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
 
-    verbatim_speaker_instruction = (
-        "Use EXACTLY the following pre-determined Speaker Mapping Table to substitute each speaker ID "
-        "with its Role/Name (do not invent alternate identities or spellings):\n" + speaker_table_block
-        if speaker_table_block else
-        "Map every speaker ID (`spk_X`, `spk-X`, or `Speaker X`) to their identified Role / Name based on "
-        "dialogue context (e.g. Chair, Host, Presenter, Department Head, or identified Name)."
-    )
+## 3. Key Discussion Topics & Agenda Items
+- Structured breakdown for each topic discussed:
+  - **Context & Motivation**: Background and why this issue was raised.
+  - **Key Arguments & Data**: Evidence, metrics, or points presented by participants.
+  - **Discussion Flow & Speaker Perspectives**: Contributions organized per speaker (【Role / Name】: Key arguments, metrics, or positions).
+  - **Outcome / Consensus**: Conclusion reached on this specific topic.
 
-    prompt_b = f"""# Role & Objective
-You are an elite verbatim meeting transcription editor. Your mission is to transform the draft transcript into Section 6 (Full Verbatim Transcript), localized appropriately into {target_lang}.
+## 4. Key Decisions & Resolutions
+- Bulleted list of formal decisions, policy directives, approved motions, or consensus reached.
 
-{glossary_injection}
+## 5. Action Items & Next Steps
+- Structured Markdown table assigning clear ownership and timelines:
+  | # | Action Item / Task | Owner / Assignee | Due Date / Timeline | Status / Notes |
+  | :--- | :--- | :--- | :--- | :--- |
+  | 1 | [Clear, actionable task description] | [Name / Role] | [Timeline] | [Notes] |
 
----
-# Draft Transcript
-{raw_transcript_text}
-
----
-# Instructions
-1. {verbatim_speaker_instruction}
-2. Faithfully preserve all spoken dialogue turns, words, numbers, and chronological order without dropping or truncating sentences.
-3. {verbatim_lang_instruction}
-4. **Paragraph-Level Turn Consolidation**:
-   - When the same speaker continues talking without interruption, do NOT fragment their speech into one turn per raw sentence/utterance from the draft transcript.
-   - Instead, regroup it into semantically coherent paragraph-length turns (a natural unit of thought, typically a few sentences), starting a new turn whenever the point/topic shifts or the floor changes to a different speaker.
-   - Each paragraph-level turn MUST keep its own accurate `[start - end]` timestamp spanning only that paragraph. NEVER collapse an entire multi-minute speech into a single timestamp range spanning several unrelated paragraphs — every distinct paragraph is its own turn line with its own timestamps.
-5. **Mandatory Timestamp Syntax Contract**:
-   - Every single dialogue turn MUST strictly preserve and begin with its exact time interval `[MM:SS - MM:SS]` (or `[HH:MM:SS - HH:MM:SS]` for recordings >= 1 hour), using plain colon-separated digits ONLY.
-   - STRICTLY FORBIDDEN to omit timestamps, produce plain script format without bracketed times, or invent any alternate duration notation (e.g. `0m0s962ms`, `1h2m3s`) -- an automated parser downstream matches this exact bracket syntax and will corrupt the interactive transcript player if it deviates.
-   - Format: `[MM:SS - MM:SS] (or [HH:MM:SS - HH:MM:SS]) **Role / Name**: Spoken utterance`
-   - Valid: `[01:15 - 01:45] **Alex Smith (Chair)**: Good morning everyone, let us begin the session.`
-   - Invalid: `[0m1s15ms - 0m1s45ms] **Alex Smith**: ...` (wrong notation) or `**Alex Smith**: Good morning...` (missing timestamp).
-
----
-# Output Format
-Output strictly and exclusively Section 6 (translate heading to {target_lang}, DO NOT include any emojis or icons):
 ## 6. Full Verbatim Transcript
-
-[MM:SS - MM:SS] **Role / Name**: Utterance
+(Output ONLY the localized Section 6 heading translated into the target language. Stop immediately after this heading line. Do NOT output any transcript lines!)
 """
 
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            fut_a = executor.submit(_call_gemini_track, prompt_a, "Track A (Executive Synthesis & Metadata)")
-            fut_b = executor.submit(_call_gemini_track, prompt_b, "Track B (Verbatim Transcript Localization)")
-            
-            text_a = fut_a.result()
-            text_b = normalize_verbatim_timestamps(fut_b.result())
+    sections_1_5 = _call_gemini_track(prompt, "Stage 2 Executive Synthesis & Speaker Identification")
+    if not re.search(r'(?m)^##\s*6\.\s*', sections_1_5):
+        sections_1_5 = f"{sections_1_5.strip()}\n\n## 6. Full Verbatim Transcript"
 
-        final_text = f"{text_a.strip()}\n\n---\n\n{text_b.strip()}\n"
-        duration = time.time() - t0
-        print(f"[*] ✓ [Dual-Track Stage 2] Both tracks successfully completed in {duration:.1f}s.")
-        return final_text, duration
-
-    except Exception as e:
-        print(f"[!] Dual-track concurrent generation encountered error ({e}). Falling back to single-prompt execution...")
-        single_prompt = f"{prompt_a}\n\n---\n\n{prompt_b}"
-        final_text = normalize_verbatim_timestamps(_call_gemini_track(single_prompt, "Fallback Single-Prompt"))
-        duration = time.time() - t0
-        return final_text, duration
+    combined_raw = f"{sections_1_5.strip()}\n\n{raw_transcript_text.strip()}\n"
+    print(f"[*] Consolidating canonical speaker identities and sequential turns...")
+    final_text = consolidate_meeting_minutes(combined_raw)
+    duration = time.time() - t0
+    print(f"[*] ✓ [Stage 2] Meeting minutes structuring successfully completed in {duration:.1f}s.")
+    return final_text, duration
 
 
 def process_video_meeting_end_to_end(
@@ -649,9 +798,9 @@ Output strictly the following 6 sections in Markdown (DO NOT include any emojis 
             )
 
         print(f"[*] Dispatching single-request video analysis to {summary_model}...")
-        resp = client.models.generate_content(
-            model=summary_model,
-            contents=[part, prompt]
+        resp = call_gemini_with_retry(
+            lambda: client.models.generate_content(model=summary_model, contents=[part, prompt]),
+            op_name=f"End-to-end video analysis ({summary_model})"
         )
         duration = time.time() - t0
 
@@ -767,6 +916,10 @@ def analyze_video_with_transcript(
   Cross-reference the draft transcript's dialogue turns with video frames, presentation slides, attendee video boxes, nameplates, and lower-third titles:
   | Speaker ID | Role / Title | Name | Organization / Department | Remarks / Key Presentation Topic |
   | :--- | :--- | :--- | :--- | :--- |
+- **Phonetic & Entity Corrections Table**:
+  Cross-reference visual slide text, nameplates, and titles with the acoustic draft transcript. Identify any proper names, participant names, or technical terms that were mistranscribed due to acoustic phonetic slips or rare name mishearings (e.g., mistranscribing 'Sylph' as 'Yusuf' when addressing speaker Sylph Lin):
+  | Mistranscribed Term | Corrected Name / Term | Target Speaker / Context |
+  | :--- | :--- | :--- |
 
 ## 2. Executive Summary
 - A high-level, 300–400 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
@@ -845,9 +998,9 @@ Output strictly the following structure in Markdown (DO NOT include any emojis o
         )
 
         print(f"[*] Dispatching multimodal video + transcript fusion analysis to {summary_model}...")
-        resp = client.models.generate_content(
-            model=summary_model,
-            contents=[part, prompt]
+        resp = call_gemini_with_retry(
+            lambda: client.models.generate_content(model=summary_model, contents=[part, prompt]),
+            op_name=f"Multimodal video + transcript fusion ({summary_model})"
         )
         duration = time.time() - t0
 
@@ -872,6 +1025,14 @@ Output strictly the following structure in Markdown (DO NOT include any emojis o
 
         output_text = normalize_verbatim_timestamps(output_text)
 
+        # Defensively ensure Section 6 heading exists before stitching
+        if not re.search(r'(?m)^##\s*6\.\s*', output_text):
+            output_text = f"{output_text.strip()}\n\n## 6. Full Verbatim Transcript"
+
+        combined_raw = f"{output_text.strip()}\n\n{raw_transcript_text.strip()}\n"
+        print(f"[*] Consolidating canonical speaker identities, entity corrections, and sequential turns...")
+        final_text = consolidate_meeting_minutes(combined_raw)
+
         # Print token usage accounting
         if hasattr(resp, "usage_metadata") and resp.usage_metadata:
             u = resp.usage_metadata
@@ -883,8 +1044,8 @@ Output strictly the following structure in Markdown (DO NOT include any emojis o
             if getattr(u, 'tool_use_prompt_token_count', None):
                 print(f"    (Tool Navigation Tokens: {u.tool_use_prompt_token_count})")
 
-        print(f"[✓] Multimodal video + transcript analysis completed in {duration:.1f}s (Output: {len(output_text)} chars)")
-        return output_text, duration
+        print(f"[✓] Multimodal video + transcript analysis completed in {duration:.1f}s (Output: {len(final_text)} chars)")
+        return final_text, duration
 
     finally:
         if gcs_uri is not None:
