@@ -30,10 +30,11 @@ CRITICAL FORMATTING RULES:
 - **Estimated Date / Time**: Inferred from context or agenda.
 - **Chairperson / Host**: Identified meeting leader.
 - **Speaker Mapping Table**:
-  Cross-reference dialogue context (self-introductions, direct address, reporting hierarchies) and acoustic clues to map every `spk_X` or `Speaker X` identifier to a real person and role:
-  | Speaker ID | Role / Title | Name | Organization / Team |
-  | :--- | :--- | :--- | :--- |
-  | `spk_1, spk_3` | [Role/Title, e.g., Host / Chair / VP / Lead] | [Real Name or Inferred Name] | [Department / Org] |
+  Cross-reference dialogue context (self-introductions, direct address, reporting hierarchies) and acoustic clues to map every `spk_X` or `Speaker X` identifier to a real person and role (if multiple people share the same acoustic ID across different time segments, specify the approximate Time Range):
+  | Speaker ID | Time Range (optional if unique) | Role / Title | Name | Organization / Team |
+  | :--- | :--- | :--- | :--- | :--- |
+  | `spk_0` | `00:00 - 00:04` | Meeting Host | Alice Smith | Executive Board |
+  | `spk_0` | `07:35 - 10:20` | Keynote Speaker | Bob Jones | Architecture Dept |
 
 ## 2. Executive Summary
 - A high-level, 200–300 word executive overview synthesizing the core strategic purpose, major discussion themes, pivotal agreements, and overarching outcomes.

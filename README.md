@@ -19,9 +19,10 @@
    - **Picture-in-Picture YouTube Dock Player**: Standalone zero-dependency HTML player with bidirectional synchronization, seeking, and real-time karaoke scrolling.
 
 2. **Local Video Two-Stage Fusion Pipeline (Audio Extraction + Multimodal Vision Fusion)**:
+   - **Embedded Subtitle Ground Truth Extraction**: Automatically probes video containers for WebRTC embedded captions (`mov_text`, `srt`, `vtt`) or sidecar `.srt` files. Extracted captions serve as ground-truth attendee registers and macro agendas, while Stage 1 ASR retains 100% authority over spoken text and physical timestamps ("Text is text, speakers are speakers").
    - **Stage 1 (Acoustic Ground Truth ASR)**: Extracts 16kHz mono audio and runs speech transcription via **Google Gemini 3.5 Transcribe** (Cloud Primary) or **Local Apple Silicon MLX/Whisper + Sherpa-ONNX Diarization** (Offline Mode) to establish millisecond-accurate physical timestamps `[MM:SS - MM:SS]` and speaker turns.
-   - **Stage 2 (Multimodal Vision & Minutes Fusion)**: Ingests the 720p video file alongside the Stage 1 transcript into **Gemini 3.8 Flash**. Reads visual presentation slides, architecture diagrams, and speaker nameplates to map real identities (`Speaker 1` -> Real Name/Title) and synthesize Executive Sections 1–5.
-   - **Deterministic Assembly**: Python code combines Sections 1–5 with the verbatim Section 6, applying visual speaker mappings while strictly preserving physical timestamps with 0 drift.
+   - **Stage 2 (Multimodal Vision & Minutes Fusion)**: Ingests the 720p video file alongside the Stage 1 transcript and auto-extracted agenda into **Gemini 3.8 Flash**. Reads visual presentation slides, architecture diagrams, and speaker nameplates, outputting time-scoped speaker mappings (`Speaker ID` + `Time Range` -> Real Name/Title) to eliminate acoustic under-clustering and synthesize Executive Sections 1–5.
+   - **3-Level Hierarchical Alignment & Deterministic Assembly**: Python code deterministically reconciles speaker identities using a 3-level hierarchy (Level 1: Subtitle Event Overlap -> Level 2: Multimodal Scoped Rules -> Level 3: Forward Handover Calibration), applying phonetic entity corrections while strictly preserving physical timestamps with 0 drift.
 
 3. **Pure Audio High-Precision Pipeline (Voice Recorders / Podcasts / Audio Files)**:
    - **Acoustic Transcription (Gemini 3.5 Transcribe)**: Millisecond word-level timestamps and physical acoustic diarization, ensuring every spoken word is physically anchored.
@@ -64,6 +65,8 @@ In real-world meeting transcription, visual video feeds and pure audio streams c
 
 ### Key Features
 - **Direct YouTube URL & Video File Support**: Paste YouTube URLs or local video paths for one-click markdown minutes and interactive playback.
+- **Embedded Subtitle Ground Truth Extraction**: Automatically probes video containers for WebRTC embedded captions (`mov_text`/`srt`) or sidecar SRTs to establish confirmed attendee registers and macro timelines without emojis.
+- **Hierarchical Speaker Alignment & Scoped Mapping**: Resolves acoustic under-clustering via time-scoped rules (`spk_0` across time ranges) and 3-level hierarchical alignment (SRT overlap -> multimodal rules -> handover calibration) while strictly preserving Stage 1 acoustic text.
 - **Visual Nameplate & Slide OCR Recognition**: Automatically derives real participant names and official titles from screen lower thirds, desk nameplates, and slides.
 - **Precise Speaker Diarization & Verbatim Transcription**: Distinctly maps each participant's speech interval and name.
 - **Contextual Understanding & Natural Fluency**: Corrects homophone errors and terminology via LLM context awareness, producing naturally flowing text in the target language.

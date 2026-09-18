@@ -441,3 +441,79 @@ def safe_ascii_upload_path(file_path: Path):
                     temp_link.unlink()
                 except Exception:
                     pass
+
+
+def detect_embedded_subtitles(video_path: Path | str) -> str | None:
+    """
+    Detect whether the video contains any embedded subtitle stream (e.g. mov_text, subrip, srt, webvtt).
+    Returns codec name if detected (e.g. 'mov_text', 'subrip'), otherwise None.
+    """
+    video_p = Path(video_path).resolve()
+    if not video_p.is_file():
+        return None
+    try:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "s",
+            "-show_entries", "stream=codec_name",
+            "-of", "csv=p=0",
+            str(video_p)
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        codecs = [line.strip() for line in res.stdout.strip().splitlines() if line.strip()]
+        if codecs:
+            return codecs[0]
+    except Exception:
+        pass
+    return None
+
+
+def extract_embedded_subtitles(video_path: Path | str, output_path: Path | str = None) -> Path | None:
+    """
+    Extract embedded subtitle stream from video to an SRT file using ffmpeg.
+    Returns the Path to the extracted .srt file if successful, or None if no subtitle stream or error.
+    """
+    video_p = Path(video_path).resolve()
+    if not video_p.is_file():
+        return None
+
+    codec = detect_embedded_subtitles(video_p)
+    if not codec:
+        return None
+
+    if output_path is None:
+        safe_hash = hashlib.md5(video_p.name.encode("utf-8")).hexdigest()[:8]
+        out_p = video_p.parent / f"{video_p.stem}_{safe_hash}_subtitles.srt"
+    else:
+        out_p = Path(output_path).resolve()
+
+    if out_p.exists() and out_p.stat().st_size > 0:
+        print(f"[✓] Reusing existing extracted subtitles: {out_p.name}")
+        return out_p
+
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+    print(f"[*] Extracting embedded subtitle stream ({codec}): {video_p.name} -> {out_p.name}...")
+    try:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_p),
+            "-map", "0:s:0",
+            "-c:s", "srt",
+            str(out_p)
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if res.returncode == 0 and out_p.exists() and out_p.stat().st_size > 0:
+            print(f"[✓] Subtitle extraction successful: {out_p.name} ({out_p.stat().st_size} bytes)")
+            return out_p
+        else:
+            if out_p.exists():
+                out_p.unlink()
+    except Exception as e:
+        print(f"[!] Warning: Subtitle extraction failed ({e}).")
+        if out_p.exists():
+            try:
+                out_p.unlink()
+            except Exception:
+                pass
+    return None
+

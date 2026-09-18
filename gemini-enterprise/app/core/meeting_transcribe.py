@@ -10,6 +10,7 @@ import sys
 import time
 import argparse
 from pathlib import Path
+from typing import Optional
 
 # Add project root to sys.path
 root_dir = Path(__file__).parent.parent.resolve()
@@ -24,6 +25,8 @@ from .audio_utils import (
     extract_youtube_id,
     is_video_file,
     extract_audio_from_video,
+    detect_embedded_subtitles,
+    extract_embedded_subtitles,
 )
 from .diarization import transcribe_with_local_whisper_and_diarization
 from .gemini_engine import (
@@ -38,7 +41,10 @@ from .glossary import (
     extract_global_consistency_glossary,
     extract_keywords_from_glossary,
 )
-from .canonicalizer import consolidate_meeting_minutes
+from .canonicalizer import (
+    consolidate_meeting_minutes,
+    generate_auto_outline_from_srt,
+)
 from .html_generator import generate_interactive_html
 
 
@@ -163,6 +169,8 @@ def generate_meeting_minutes_and_transcript(
 
     # Branch 2 & 3: Local Video & Audio Pipelines (Unified Stage 1 ASR Core)
     is_local_video = is_vid and not extract_audio
+    subtitles_path: Optional[Path] = None
+
     if is_vid:
         video_p = Path(source_str).resolve()
         if not video_p.exists():
@@ -172,6 +180,25 @@ def generate_meeting_minutes_and_transcript(
         play_media = video_p if is_local_video else audio_path
         default_out_stem = video_p.stem
         out_parent = video_p.parent
+
+        # Check for embedded WebRTC/captions stream to use as speaker ground truth
+        detected_codec = detect_embedded_subtitles(video_p)
+        if detected_codec:
+            print(f"[*] Detected embedded subtitles stream (codec: {detected_codec}). Extracting metadata ground truth...")
+            scratch_dir = out_parent / "scratch"
+            scratch_dir.mkdir(parents=True, exist_ok=True)
+            srt_candidate = scratch_dir / f"{video_p.stem}_embedded.srt"
+            subtitles_path = extract_embedded_subtitles(video_p, srt_candidate)
+            if subtitles_path and subtitles_path.exists():
+                print(f"[✓] Embedded subtitles successfully extracted: {subtitles_path.name}")
+                if not outline:
+                    auto_outline_path = scratch_dir / f"{video_p.stem}_auto_outline.md"
+                    try:
+                        generate_auto_outline_from_srt(subtitles_path, auto_outline_path)
+                        outline = auto_outline_path
+                        print(f"[✓] Auto-generated meeting agenda outline from subtitles: {auto_outline_path.name}")
+                    except Exception as e:
+                        print(f"[!] Warning: Could not generate auto-outline from subtitles ({e}).")
     elif is_yt and extract_audio:
         raise ValueError("Cannot extract local audio from YouTube URL directly. Please use default YouTube Multimodal mode.")
     else:
@@ -181,6 +208,13 @@ def generate_meeting_minutes_and_transcript(
         play_media = audio_path
         default_out_stem = audio_path.stem
         out_parent = audio_path.parent
+
+    # Detect sidecar SRT if no embedded subtitles were extracted
+    if not subtitles_path:
+        sidecar_srt = out_parent / f"{default_out_stem}.srt"
+        if sidecar_srt.is_file():
+            subtitles_path = sidecar_srt
+            print(f"[*] Found sidecar subtitles file: {sidecar_srt.name}")
 
     print(f"\n========================================================")
     if is_local_video:
@@ -302,6 +336,7 @@ def generate_meeting_minutes_and_transcript(
                     use_agentic=agentic,
                     summary_language=summary_language,
                     outline_path=Path(outline) if outline else None,
+                    srt_path=subtitles_path,
                 )
             except Exception as e:
                 print(f"[!] Warning: Multimodal video fusion failed ({e}). Falling back to standalone acoustic transcript.")
@@ -315,7 +350,8 @@ def generate_meeting_minutes_and_transcript(
                     raw_transcript_text=raw_transcript_text,
                     global_glossary=global_glossary,
                     summary_model=summary_model,
-                    summary_language=summary_language
+                    summary_language=summary_language,
+                    srt_path=subtitles_path,
                 )
             except Exception as e:
                 print(f"[!] Warning: Gemini minutes structuring unavailable ({e}). Falling back to standalone verbatim transcript.")
@@ -337,7 +373,7 @@ def generate_meeting_minutes_and_transcript(
             f"{sec6_heading}\n\n"
             f"{raw_transcript_text.strip()}\n"
         )
-        final_markdown = consolidate_meeting_minutes(final_markdown)
+        final_markdown = consolidate_meeting_minutes(final_markdown, srt_path=subtitles_path)
 
     total_time = time.time() - t_total_start
 

@@ -516,7 +516,8 @@ def generate_minutes_with_gemini(
     global_glossary: str,
     summary_model: str = None,
     prompt_template_path: Path = None,
-    summary_language: str = None
+    summary_language: str = None,
+    srt_path: Path | str = None,
 ) -> tuple[str, float]:
     """
     Executes Stage 2: Generates complete 6-section meeting minutes and verbatim transcript.
@@ -605,12 +606,13 @@ Output strictly and exclusively Sections 1 to 5, ending immediately with the loc
 - **Estimated Date / Time**: (Inferred from context or agenda)
 - **Chairperson / Host**: (Identified meeting leader)
 - **Speaker Mapping Table**:
-  Cross-reference dialogue context, self-introductions, titles, organizations, and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role (comma-separated if multiple IDs belong to the same person, e.g. `spk_0, spk_50`):
-  | Speaker ID | Role / Title | Name | Organization / Team |
-  | :--- | :--- | :--- | :--- |
-  | `spk_0, spk_50` | [Role/Title] | [Name or Inferred Name] | [Department / Org] |
+  Cross-reference dialogue context, self-introductions, titles, organizations, and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role (if an acoustic ID is shared across different segments, provide the approximate Time Range):
+  | Speaker ID | Time Range (optional if unique) | Role / Title | Name | Organization / Team |
+  | :--- | :--- | :--- | :--- | :--- |
+  | `spk_0` | `00:00 - 00:04` | Meeting Host | Alice Smith | Executive Board |
+  | `spk_0` | `07:35 - 10:20` | Keynote Speaker | Bob Jones | Architecture Dept |
 - **Phonetic & Entity Corrections Table**:
-  Identify any proper names, participant names, or technical terms in the draft transcript that were mistranscribed due to acoustic phonetic slips or rare name mishearings (e.g., mistranscribing 'Sylph' as 'Yusuf' when addressing speaker Sylph Lin):
+  Identify any proper names, participant names, or technical terms in the draft transcript that were mistranscribed due to acoustic phonetic slips or rare name mishearings:
   | Mistranscribed Term | Corrected Name / Term | Target Speaker / Context |
   | :--- | :--- | :--- |
 
@@ -642,8 +644,8 @@ Output strictly and exclusively Sections 1 to 5, ending immediately with the loc
         sections_1_5 = f"{sections_1_5.strip()}\n\n## 6. Full Verbatim Transcript"
 
     combined_raw = f"{sections_1_5.strip()}\n\n{raw_transcript_text.strip()}\n"
-    print(f"[*] Consolidating canonical speaker identities and sequential turns...")
-    final_text = consolidate_meeting_minutes(combined_raw)
+    print(f"[*] Consolidating canonical speaker identities, entity corrections, and sequential turns...")
+    final_text = consolidate_meeting_minutes(combined_raw, srt_path=srt_path)
     duration = time.time() - t0
     print(f"[*] ✓ [Stage 2] Meeting minutes structuring successfully completed in {duration:.1f}s.")
     return final_text, duration
@@ -858,6 +860,7 @@ def analyze_video_with_transcript(
     use_agentic: bool = False,
     summary_language: str = None,
     outline_path: Path = None,
+    srt_path: Path | str = None,
 ) -> tuple[str, float]:
     """
     Stage 2 of the Local Video Pipeline: Multimodal Vision + Transcript Fusion.
@@ -913,11 +916,14 @@ def analyze_video_with_transcript(
 - **Estimated Date / Time**: (Inferred from slides or dialogue)
 - **Chairperson / Host**: (Identified meeting leader)
 - **Speaker Mapping Table**:
-  Cross-reference the draft transcript's dialogue turns with video frames, presentation slides, attendee video boxes, nameplates, and lower-third titles:
-  | Speaker ID | Role / Title | Name | Organization / Department | Remarks / Key Presentation Topic |
-  | :--- | :--- | :--- | :--- | :--- |
+  Cross-reference the draft transcript's dialogue turns with video frames, presentation slides, attendee video boxes, nameplates, and lower-third titles.
+  If multiple people share the same acoustic ID across different time segments (under-clustering), specify the approximate Time Range for each segment:
+  | Speaker ID | Time Range (optional if unique) | Role / Title | Name | Organization / Department | Remarks / Context |
+  | :--- | :--- | :--- | :--- | :--- | :--- |
+  | `spk_0` | `00:00 - 00:04` | Meeting Host | Alice Smith | Executive Board | Opening remarks |
+  | `spk_0` | `07:35 - 10:20` | Keynote Speaker | Bob Jones | Architecture Dept | System overview presentation |
 - **Phonetic & Entity Corrections Table**:
-  Cross-reference visual slide text, nameplates, and titles with the acoustic draft transcript. Identify any proper names, participant names, or technical terms that were mistranscribed due to acoustic phonetic slips or rare name mishearings (e.g., mistranscribing 'Sylph' as 'Yusuf' when addressing speaker Sylph Lin):
+  Cross-reference visual slide text, nameplates, and titles with the acoustic draft transcript. Identify any proper names, participant names, or technical terms that were mistranscribed due to acoustic phonetic slips or rare name mishearings:
   | Mistranscribed Term | Corrected Name / Term | Target Speaker / Context |
   | :--- | :--- | :--- |
 
@@ -961,6 +967,7 @@ The following is the verbatim acoustic transcript with physical timestamps and i
 1. **Visual Speaker Grounding & Mapping**:
    - Cross-reference the draft transcript's dialogue turns with video frames, presentation slides, attendee video boxes, nameplates, and lower-third titles.
    - Accurately map every speaker ID from the draft transcript (e.g. `Speaker 1`, `Speaker 2`, `spk_0`, `spk_1`) to their real Name, Official Title / Role, and Organization / Department.
+   - When a single acoustic cluster ID (e.g. `spk_0`) is erroneously reused for multiple distinct speakers across different parts of the meeting (acoustic under-clustering), list separate rows with distinct Time Ranges (e.g. `00:00 - 00:04` for Alice Smith, `07:35 - 10:20` for Bob Jones) in the Speaker Mapping Table.
    - Populate the **Speaker Mapping Table** in Section 1 with these mapped identities.
 2. **Slide & Visual Deck Synthesis**:
    - In Section 3 (Key Discussion Topics & Agenda Items), incorporate key data, metrics, architecture diagrams, and slide points visible on screen.
@@ -1031,7 +1038,7 @@ Output strictly the following structure in Markdown (DO NOT include any emojis o
 
         combined_raw = f"{output_text.strip()}\n\n{raw_transcript_text.strip()}\n"
         print(f"[*] Consolidating canonical speaker identities, entity corrections, and sequential turns...")
-        final_text = consolidate_meeting_minutes(combined_raw)
+        final_text = consolidate_meeting_minutes(combined_raw, srt_path=srt_path)
 
         # Print token usage accounting
         if hasattr(resp, "usage_metadata") and resp.usage_metadata:
