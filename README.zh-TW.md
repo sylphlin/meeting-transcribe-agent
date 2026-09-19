@@ -473,8 +473,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 ### 1. 一鍵啟用雲端環境與 Google Drive 權限 (`./setup.sh`)
 ```bash
 # 步驟 1：登入 ADC 並授予 Google Drive 唯讀權限
-gcloud auth application-default login \
-  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
+gcloud auth application-default login
 
 # 步驟 2：一鍵啟用 Vertex AI / GCS / Drive API、建立儲存桶並掛載雙層 Lifecycle 規則
 ./setup.sh --project YOUR_GCP_PROJECT_ID

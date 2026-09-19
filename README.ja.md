@@ -450,8 +450,7 @@ Google Meet や Zoom の録画データが保存された **Google Drive 共有�
 
 ```bash
 # Step 1: Google Drive 読み取り権限を含めて ADC ログイン
-gcloud auth application-default login \
-  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
+gcloud auth application-default login
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 
 # Step 2: Google Drive 上の会議録画リンクを直接指定して議事録・全文文字起こし・HTMLプレイヤーを生成

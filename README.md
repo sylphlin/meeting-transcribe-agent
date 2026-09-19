@@ -442,8 +442,7 @@ In enterprise workflows, Google Meet, Zoom, and voice recorder files are frequen
 ### 1. One-Click Cloud & Google Drive Setup (`./setup.sh`)
 ```bash
 # Step 1: Authenticate ADC with Google Drive Read-Only scope
-gcloud auth application-default login \
-  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
+gcloud auth application-default login
 
 # Step 2: Provision Vertex AI / GCS / Drive APIs, bucket, and two-tier Lifecycle rules
 ./setup.sh --project YOUR_GCP_PROJECT_ID

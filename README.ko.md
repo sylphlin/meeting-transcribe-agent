@@ -450,8 +450,7 @@ Google Meet이나 Zoom 녹화본이 저장된 **Google Drive 공유 링크**를 
 
 ```bash
 # Step 1: Google Drive 읽기 권한을 포함하여 ADC 로그인
-gcloud auth application-default login \
-  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
+gcloud auth application-default login
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 
 # Step 2: Google Drive 회의 영상 링크를 직접 전달하여 회의록, 전문 전사 및 대화형 HTML 플레이어 생성

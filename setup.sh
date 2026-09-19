@@ -183,7 +183,7 @@ echo "[*] Step 1: Enabling required Google Cloud APIs..."
 REQUIRED_APIS=(
     "aiplatform.googleapis.com"
     "storage.googleapis.com"
-    "drive.googleapis.com"
+    "drive.googleapis.com iamcredentials.googleapis.com"
 )
 if [ "$CREATE_SA" = true ]; then
     REQUIRED_APIS+=("iam.googleapis.com")

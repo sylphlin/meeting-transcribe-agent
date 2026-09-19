@@ -188,7 +188,7 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 ## ☁️ Google Drive Direct Link & GCS Smart Caching (ADC)
 
 `meeting-transcribe-agent` natively supports passing Google Drive file links (`https://drive.google.com/file/d/.../view` or `gdrive://...`) directly as `input_source`:
-- Authenticated 100% via Application Default Credentials (`gcloud auth application-default login --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"`).
+- Authenticated 100% via Application Default Credentials (`gcloud auth application-default login`).
 - Automatically checks remote MD5 (`md5Checksum`) to cache locally in `gdrive_inputs/` (supporting embedded WebRTC captions extraction, audio extraction, and interactive HTML player synchronization) and checks `sha256` / `gdrive_md5` metadata on `gs://${MEETING_STORAGE_BUCKET}/raw/` to skip redundant GCS uploads.
 - Example:
   ```bash

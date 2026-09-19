@@ -477,8 +477,7 @@ python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summ
 
 ### 1. 一键启用云端环境与 Google Drive 权限 (`./setup.sh`)
 ```bash
-gcloud auth application-default login \
-  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
+gcloud auth application-default login
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
