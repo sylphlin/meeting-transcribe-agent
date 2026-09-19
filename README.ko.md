@@ -7,460 +7,120 @@
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
-## 프로젝트 개요 (Overview)
+## 개요 (Overview)
 
-**Meeting Transcribe Agent**는 **Gemini 3.5 Transcribe** 및 **Gemini Agentic Video Understanding**을 기반으로 구축된 올인원 영상 및 음성 회의록 생성 AI 에이전트입니다. "멀티모달 비디오 처리 (YouTube URL 및 로컬 영상)"와 "고정밀 순수 오디오 2계층 파이프라인"을 갖추고 있으며, 공공 시정 회의, 글로벌 테크 싱크업, 심층 인터뷰 및 법적 증언 녹취 등 "밀리초 단위의 정확한 타임스탬프", "화자 분리 (Diarization)", "구조화된 회의록 요약"이 필수적인 전문 업무 환경을 위해 설계되었습니다.
+**Meeting Transcribe Agent**는 **Google Gemini 3.5 Transcribe**와 **Gemini 3.8 Flash**를 기반으로 구축된 멀티모달 회의록 및 전문 녹취록 생성 시스템입니다. YouTube URL, 로컬 비디오 파일, Google Drive 공유 링크 및 오디오 녹음 파일을 처리합니다. 실행할 때마다 구조화된 Markdown 회의록과 독립 실행형 인터랙티브 HTML 플레이어를 생성합니다.
 
-### 미디어 유형별 듀얼 트랙 파이프라인：
+### 3가지 전용 처리 파이프라인
 
-1. **YouTube 멀티모달 클라우드 파이프라인 (YouTube 클라우드 네이티브 분석)**:
-   - **단일 Request 극상의 효율**: **Gemini 3.8 Flash**를 통해 엔드투엔드 시각-음성 멀티모달 분석을 직접 수행합니다. 발표 슬라이드(Slide OCR), 발표자 명패 및 자막을 동시에 인식하여 화자의 이름과 직함을 100% 식별하며, 토큰 소모와 대기 시간을 50% 절감합니다 (32분 영상 기준 약 44초 소요).
-   - **Agentic Video Understanding (`--agentic`)**: 동적 프레임 탐색 및 도구 호출을 지원하여, 수 시간 분량의 장시간 영상이나 복잡한 아키텍처 슬라이드를 심층 분석합니다.
-   - **PIP(화면 속 화면) 지원 YouTube 플레이어**: 생성된 단일 독립형 HTML 플레이어에 YouTube IFrame 컨트롤러를 내장하여 타임스탬프 클릭 이동 및 노래방 스타일 실시간 하이라이트를 지원합니다.
+1. **YouTube 멀티모달 클라우드 파이프라인 (Cloud Direct Ingestion)**:
+   - **클라우드 직접 스트리밍**: 로컬 비디오 다운로드 없이 YouTube URL을 **Gemini 3.8 Flash**로 직접 전송합니다.
+   - **Agentic 비디오 이해 (`--agentic`)**: 주요 비디오 프레임을 탐색하여 발표 슬라이드, 명패, 화면 하단 자막(Lower-Thirds)을 OCR로 인식합니다.
+   - **인터랙티브 YouTube 플레이어**: 녹취록 동기화 스크롤 및 타임스탬프 탐색을 지원하는 3단 HTML 플레이어를 생성합니다.
 
-2. **로컬 비디오 2단계 융합 파이프라인 (오디오 추출 + 멀티모달 시각 융합)**:
-   - **내장 자막 그라운드 트루스 자동 추출**: 비디오 컨테이너에서 WebRTC 내장 자막 트랙(`mov_text`, `srt`, `vtt`) 또는 외부 `.srt`를 자동 추출하여 확정 참석자 명단과 거시적 안건을 생성합니다. "텍스트는 텍스트대로, 화자는 화자대로" 원칙에 따라 축어록 본문과 물리적 타임스탬프는 100% 1단계 ASR이 유지합니다.
-   - **1단계 (전용 음향 ASR 불변 타임스탬프)**: 16kHz mono 오디오를 추출하여, **Google Gemini 3.5 Transcribe** (클라우드 기본) 또는 **Apple Silicon MLX/Whisper + Sherpa-ONNX Diarization** (로컬 오프라인)으로 밀리초 단위 물리적 타임스탬프 `[MM:SS - MM:SS]`와 화자 발언 구간을 확정합니다.
-   - **2단계 (멀티모달 시각 및 회의록 융합)**: 720p 영상과 1단계 전사본, 자동 아웃라인을 **Gemini 3.8 Flash**에 입력하여 화면 슬라이드와 명패를 확인하고, 시간 범위 지원 화자 매핑표(`Speaker ID` + `Time Range` -> 실제 이름/직책)를 출력하여 음향 과소 클러스터링을 해소하며 제1~5절 핵심 회의록을 생성합니다.
-   - **3단계 계층적 정렬 및 결정론적 결합**: Python 코드가 3계층(Level 1: 자막 중첩 진릿값 -> Level 2: 멀티모달 시간 범위 규칙 -> Level 3: 대화 인수인계 교정)으로 화자를 정렬하고 전문 용어를 교정하며 타임스탬프 오차 0을 달성합니다.
+2. **로컬 비디오 2단계 융합 파이프라인 (Acoustic Ground Truth + Vision Fusion)**:
+   - **내장 자막 추출**: 비디오 컨테이너의 자막 트랙(`mov_text`, `srt`, `vtt`) 또는 `.srt` 파일을 감지하여 참석자 명단 및 안건 참조로 활용합니다.
+   - **Stage 0 (전문 용어집 및 언어 코드 감지)**: 도메인 용어집을 구축하고 주요 음성 `BCP-47` 언어 코드(예: `ko-KR`, `cmn-Hant-TW`, `en-US`, `ja-JP`)를 감지합니다.
+   - **Stage 1 (음향 기준 ASR 전사)**: 16 kHz 모노 오디오를 추출하고 **Gemini 3.5 Transcribe**(기본값) 또는 **로컬 Whisper + Sherpa-ONNX**(`--engine whisper`)를 통해 물리적 타임스탬프 `[MM:SS - MM:SS]`와 화자 구간을 고정합니다.
+   - **Stage 2 (멀티모달 비전 융합 및 청크 교정)**: 720p 비디오와 Stage 1 녹취록을 **Gemini 3.8 Flash**에 전달합니다. 슬라이드와 명패를 읽어 섹션 1–5 요약을 생성하고, 섹션 6 전문 녹취록을 60줄 단위 병렬 배치로 표기법 및 용어 교정을 수행합니다(원본 타임스탬프는 엄격히 유지됨).
 
-3. **순수 오디오 고정밀 2계층 파이프라인 (녹음기 / 팟캐스트 / 음성 파일)**:
-   - **하위 음향 전사 (Gemini 3.5 Transcribe)**: 밀리초 단위의 단어 수준 타임스탬프(Word Timestamps)와 물리 음향 기반 화자 분리(Diarization)를 수행하여 음성 누락을 완벽히 차단합니다.
-   - **상위 의미론적 재구성 (Gemini 3.8 Flash)**: 문맥 이해를 바탕으로 동음이의어 및 전문 용어를 교정하고 화자명을 정규화하여 구조화된 결정 사항과 액션 아이템을 도출합니다.
-   - **로컬 오프라인 백업**: Apple Silicon GPU (MLX) / faster-whisper와 Sherpa-ONNX 음향 성문 클러스터링을 통한 로컬 실행을 지원합니다.
-
----
-
-### 왜 아키텍처에서 "YouTube", "로컬 영상 파일", "순수 오디오"를 명확히 구분하는가?
-
-실제 회의 전사 환경에서 각 매체별 인프라와 정보 밀도는 근본적인 차이가 있습니다:
-
-1. **YouTube (클라우드 네이티브, 사전 인덱싱된 음향 클록)**:
-   - Google 클라우드 백본에 YouTube ASR 자동 자막과 시간 인덱스가 구축되어 있어, Gemini 3.8 Flash의 직접 분석으로 다운로드 없이 초고속 분석과 정확한 타임스탬프를 달성합니다.
-2. **로컬 영상 파일 (2단계 융합, 100% 음향-화면 동기화 및 슬라이드 독해)**:
-   - 로컬 영상은 사전 구축된 음향 클록이 없으므로, LLM 단독 분석 시 심각한 시간 드리프트와 출력 길이 제한이 발생합니다. 전용 ASR로 불변의 타임스탬프를 확보하고 시각 모델로 화면 정보를 분석하는 2단계 융합이 최적의 해법입니다.
-3. **순수 오디오 모드 (음향 물리 분리 및 토큰 비용 최적화)**:
-   - 녹음기나 팟캐스트는 영상이 없습니다. 전용 음향 모델(Gemini 3.5 Transcribe / 오프라인 Whisper)이 초당 약 32 토큰의 최소 비용으로 정밀한 타임스탬프와 화자 분리를 제공합니다.
+3. **순수 오디오 고정밀 파이프라인 (Voice Recorders & Podcasts)**:
+   - **Stage 0 (전문 용어집 및 언어 코드 감지)**: 오디오에서 전문 용어와 주요 발화 언어 코드를 추출합니다.
+   - **Stage 1 (음향 음성 전사)**: **Gemini 3.5 Transcribe**(또는 오프라인 Whisper + Sherpa-ONNX)로 타임스탬프가 포함된 발화 기록을 생성합니다.
+   - **Stage 2 (핵심 요약 및 표기 교정)**: **Gemini 3.8 Flash**를 사용하여 임원 요약과 실행 항목을 생성하고 섹션 6 전문 녹취록의 표기를 교정합니다.
 
 ---
 
-### 토큰 소비량 추정치 (경험적 벤치마크)
+## 듀얼 엔진 아키텍처 (Dual-Engine Architecture)
 
-> [!NOTE]
-> 실제 토큰 소비량은 발언 밀도, 화면 움직임, 슬라이드 복잡도에 따라 달라집니다. 아래 배율은 장시간 회의 실측에 기반한 아키텍처 참고용 추정치입니다:
+### 1. 클라우드 Vertex AI 모드 (`--engine gemini`, 기본값)
+* **모델 연동**: 음향 전사에는 **Gemini 3.5 Transcribe**(`TRANSCRIBE_MODEL`), 멀티모달 분석 및 교정에는 **Gemini 3.8 Flash**(`SUMMARY_MODEL`)를 사용합니다.
+* **적응형 오디오 전처리**: 25분을 초과하는 장시간 오디오는 무음 구간을 기준으로 20분 청크로 분할하여 병렬 전사합니다.
+* **결정론적 접두사 잠금**: 섹션 6의 모든 교정된 발화에 Stage 1의 `[MM:SS - MM:SS] **spk_X**:` 접두사를 재결합하여 타임스탬프 오차나 출력 잘림을 방지합니다.
+* **GCS 2단계 수명 주기 관리**: `gs://<bucket>/raw/`에 스테이징된 원본 미디어는 **2일 후** 자동 삭제되며, 최종 결과물은 **15일간** 보관됩니다.
 
-* **1. 순수 오디오 2계층 파이프라인 (Pure Audio Pipeline) — `~1x` 기준 소비량**:
-  - **작동 원리 및 소비량**: 음성은 초당 약 32 토큰을 소모합니다 (1시간 기준 수만~십수만 토큰 수준).
-  - **포지셔닝**: **가장 경제적이며 토큰을 극대화하여 절약**. 영상이 필요 없는 녹음기, 팟캐스트, 인터뷰 등에 특화되어 전용 음향 모델이 단어 타임스탬프와 화자 분리를 엄격하게 처리합니다.
-* **2. Gemini Agentic Video Understanding — `~2x` 소비량**:
-  - **작동 원리 및 소비량**: Google의 최신 [Gemini Agentic Video](https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-agentic-video-in-gemini/) 기술을 적용했습니다. 소비량은 순수 오디오 기준 **약 2배 수준**입니다.
-  - **포지셔닝**: **본 프로젝트 모든 영상 파이프라인의 네이티브 기본 모드**. 모든 프레임을 무차별 스캔하는 대신 씽킹 캐시(Thinking Cache)와 동적 도구 호출을 결합하여 필요한 순간에만 고해상도 프레임을 탐색합니다. 수 시간 길이의 영상이나 복잡한 슬라이드 분석에 최적화되어 있습니다.
-* **3. Traditional Gemini Video Understanding — `~3x` 소비량**:
-  - **작동 원리 및 소비량**: 기존 영상 멀티모달은 초당 1프레임(1 FPS Uniform Sampling)을 고정 샘플링하므로 토큰 소모량이 가장 큽니다 (순수 오디오 대비 **약 3배 이상**).
-  - **포지셔닝**: **【본 프로젝트 미적용, 비교 참조용】**. 고정 주기 샘플링은 정지 화면이나 불필요한 프레임을 과도하게 전송하여 토큰과 대기 시간을 낭비합니다. 본 프로젝트는 모든 영상에서 Agentic 탐색 기술(`media_processing=types.MediaProcessing.AGENTIC`)을 네이티브 기본으로 채택하여 기존 방식을 완전히 대체했습니다.
+### 2. 로컬 오프라인 모드 (`--engine whisper`, 명시적 지정 전용)
+* **명시적 활성화**: `--engine whisper` 플래그를 지정한 경우에만 실행되며, 클라우드 오류 시 임의로 로컬 모드로 전환하지 않습니다.
+* **하드웨어 가속**: Apple Silicon GPU(`mlx-whisper`) 및 CPU/CUDA(`faster-whisper`)를 지원합니다.
+* **음향 성문 클러스터링**: **Sherpa-ONNX**(`eres2net` / `cam++`)로 화자 임베딩을 추출하고 단어 타임스탬프와 화자 구간을 정렬합니다.
 
 ---
 
-## 핵심 기능 및 적용 시나리오
+## 설치 및 배포 (Installation & Deployment)
 
-### 주요 기능
-- **YouTube 링크 및 비디오 파일 직접 지원**: URL 또는 영상 파일 경로를 입력하면 구조화된 회의록과 대화형 플레이어를 원클릭으로 생성합니다.
-- **내장 자막 그라운드 트루스 추출 및 이모지 미사용 구조화 아웃라인**: 비디오 컨테이너 자막(`mov_text`/`srt`)을 자동 감지하여 확정 참석자 명단과 타임라인을 생성하고 LLM 추론을 보조합니다.
-- **계층적 화자 정렬 및 시간 범위 매핑**: 시간 범위 지원 Scoped Mapping과 3계층 정렬(자막 중첩 -> 시각 시간 범위 -> 대화 인수인계)로 음향 과소 클러스터링과 사전 덮어쓰기 오류를 완벽히 해결합니다.
-- **시각적 명패 및 슬라이드 OCR 인식**: 영상 화면의 자막, 명패, 발표 자료를 분석하여 발언자의 실명과 직책을 자동 매핑합니다.
-- **정밀한 화자 분리 및 타임스탬프 전사**: 각 참석자의 발언 구간과 발언 내용을 명확하게 정리합니다.
-- **문맥 이해 및 자연스러운 문장 다듬기**: LLM의 문맥 이해를 통해 전문 용어와 동음이의어를 교정하고 매끄러운 텍스트를 완성합니다.
-- **임원급 구조화 회의록**: 회의 개요, 핵심 요약, 주요 결정 사항, 안건별 논의 분석 및 액션 아이템(ToDo)을 제공합니다.
-- **외부 의존성 제로 대화형 HTML 플레이어**: 클릭 이동, 화자별 색상 구분, 실시간 검색, 다국어 UI 전환이 가능한 단일 HTML 파일을 생성합니다.
-
-### 추천 활용 시나리오
-1. **지자체 및 공공기관 공개 회의**: YouTube 라이브 스트리밍 영상을 다운로드 없이 바로 입력하여 단체장 및 간부들의 명패를 인식하고 회의록 작성.
-2. **기술 세미나 및 제품 발표회**: 발표 자료와 음성을 통합하여 핵심 기술 요약 도출.
-3. **다자간 대면 회의 녹음**: 다수의 참석자가 번갈아 발언하는 장시간 회의에서도 음향 성문 드리프트를 억제하여 기록.
-4. **로컬 전사 백업 요구 환경**: 네트워크가 제한된 환경에서 오프라인 Whisper + Sherpa-ONNX를 활용하여 로컬 전사 수행.
-
----
-
-## 듀얼 엔진 아키텍처
-
-### 1. 클라우드 고속 모드 (기본)
-* **듀얼 모델 협업**: **Google Gemini 3.5 Transcribe** (음향 전사 및 화자 분리) + **Gemini 3.8 Flash** (구조화 및 회의록 작성).
-* **스마트 오디오 전처리 (Smart Ingestion)**: 비트레이트를 자동 감지하여 저비트레이트는 원본 전송, 고비트레이트는 16kHz mono로 최적 압축.
-* **듀얼 트랙 비동기 병렬 처리 (화자 식별 통일)**: 먼저 하나의 권위 있는 화자 매핑 표를 확정한 뒤, "요약/결정사항"과 "장문 전사 교정"을 병렬로 분리 생성 — 두 트랙이 동일한 화자 식별을 공유하므로 표기가 어긋나지 않으며, 응답 대기 시간도 단축.
-* **데이터 잔여물 제로 (Zero-Retention)**: Google Cloud Storage에 임시 업로드된 데이터는 처리가 끝나면 `finally` 블록에서 자동 영구 삭제.
-
-### 2. 로컬 음성 전사 백업 모드 (Whisper + Sherpa-ONNX)
-* **로컬 음향 전사 백업**: 클라우드 연결이 불가능하거나 로컬 처리가 필요할 때 1단계 전사 및 화자 분리를 로컬에서 수행.
-* **하드웨어 가속**: Apple Silicon GPU (`mlx-whisper`) 또는 CPU/CUDA (`faster-whisper`) 가속 지원.
-* **성문 벡터 클러스터링**: **Sherpa-ONNX (3D-Speaker / PyAnnote)**를 통합하여 로컬 성문 추출 수행.
-* **슬라이딩 윈도우 정렬**: 선형 듀얼 포인터 스캔을 통해 단어 타임스탬프와 성문 구간을 밀리초 단위로 정합.
-
----
-
-## 에이전트 대화 프롬프트 가이드
-
-본 프로젝트는 **AI Agent Skill**로 사용하는 것을 권장합니다. 복잡한 명령어를 외울 필요 없이 채팅창에서 에이전트에게 자연어로 요청하면 됩니다:
-
-### 추천 프롬프트 예시:
-
-1. **YouTube 영상 회의 전사 (명패 및 슬라이드 시각 인식)**:
-   > "YouTube의 이 시정 회의 `https://www.youtube.com/watch?v=VIDEO_ID`를 전사해줘. 화면 속 명패와 슬라이드를 참조하여 구조화된 회의록과 대화형 플레이어를 만들어줘."
-
-2. **YouTube 장시간 회의 심층 분석 (Agentic Video Understanding)**:
-   > "3시간짜리 YouTube 세미나 `https://www.youtube.com/watch?v=...`야. Agentic Video 모드를 사용해서 주요 발표 슬라이드를 탐색하고 핵심 결론을 정리해줘."
-
-3. **로컬 영상 파일 처리 (슬라이드 내용 추출)**:
-   > "회의 영상 `tech_summit.mp4`를 전사해줘. 화면의 프레젠테이션 자료를 확인해서 전문 용어와 화자 이름을 정확히 반영해줘."
-
-4. **영상에서 음성만 추출하여 처리 (토큰 절약)**:
-   > "이 영상 `interview.mp4`는 고정 앵글이라 화면 정보가 중요하지 않아. 음성만 추출해서 순수 오디오 파이프라인으로 돌려줘."
-
-5. **표준 오디오 회의 전사 (클라우드 고속 처리)**:
-   > "회의 녹음 파일 `meeting.mp3`를 전사하고 핵심 요약, 결정 사항, 플레이어를 만들어줘."
-
-6. **회의 안건/식순 사전 제공 (추천: 이름 및 용어 정확도 극대화)**:
-   > "기술 회의 녹음 `backend_sync.m4a`와 안건 파일 `agenda.md`야. 참석자 직함과 기술 용어를 대조하면서 전사해줘."
-
-7. **회의록 출력 언어 지정 (다국적 팀 지원)**:
-   > "Please transcribe `executive_call.mp3`. Keep the verbatim transcript in original languages, but generate the executive summary and action items in Korean."
-
----
-
-## 파이프라인 아키텍처
-
-```mermaid
-flowchart TD
-    classDef inputStyle fill:#2D3748,stroke:#4A5568,stroke-width:2px,color:#fff;
-    classDef routerStyle fill:#D69E2E,stroke:#B7791F,stroke-width:2px,color:#fff;
-    classDef videoStyle fill:#2B6CB0,stroke:#2C5282,stroke-width:2px,color:#fff;
-    classDef fusionStyle fill:#4C51BF,stroke:#3C366B,stroke-width:2px,color:#fff;
-    classDef audioStyle fill:#2C7A7B,stroke:#234E52,stroke-width:2px,color:#fff;
-    classDef asrStyle fill:#319795,stroke:#285E61,stroke-width:2px,color:#fff;
-    classDef outputStyle fill:#276749,stroke:#1C4532,stroke-width:2px,color:#fff;
-
-    subgraph Input["📥 다원 미디어 입력 (Multi-Source Input)"]
-        Y["YouTube URL (Watch / Shorts / Live)"]:::inputStyle
-        V["로컬 영상 파일 (.mp4 / .mov / .mkv)"]:::inputStyle
-        A["순수 오디오 파일 (.mp3 / .m4a / .wav / .aac)"]:::inputStyle
-        O["회의 안건 자료 (선택 --outline)"]:::inputStyle
-    end
-
-    Router{"미디어 분기 라우터<br>(Smart Router)"}:::routerStyle
-
-    Y --> Router
-    V --> Router
-    A --> Router
-
-    subgraph YouTubeTrack["🎥 파이프라인 1: YouTube 멀티모달 클라우드"]
-        GeminiFlash["Google Gemini 3.8 Flash<br>🤖 네이티브 Agentic Video Understanding<br>• 동적 프레임 탐색 및 심층 분석<br>• 자막, 명패, 슬라이드 OCR"]:::videoStyle
-    end
-
-    subgraph SharedASR["🎙️ 공통 Stage 1 전용 음향 ASR 코어 (로컬 영상 & 순수 오디오)"]
-        ExtractTrack["오디오 추출 및 전처리<br>• 영상에서 16kHz mono 오디오 자동 추출<br>• 48k AAC 적응형 압축<br>• 용어 사전 탐색 (선택)"]:::asrStyle
-        ASREngine{"음향 인식 엔진"}:::asrStyle
-        ASR_Gemini["【클라우드 기본】Gemini 3.5 Transcribe<br>• 밀리초 단위 물리적 타임스탬프<br>• 네이티브 음향 화자 분리 (Diarization)"]:::asrStyle
-        ASR_Whisper["【오프라인 지정】로컬 Whisper<br>• Apple Silicon MLX / Faster-Whisper<br>• Sherpa-ONNX 성문 클러스터링"]:::asrStyle
-        RawTranscript["물리 음향 타임스탬프 원본 전사본<br>• [MM:SS - MM:SS] 불변 클록<br>• 화자 구간 분리 (Speaker Clustering)"]:::asrStyle
-
-        ExtractTrack --> ASREngine
-        ASREngine -- "클라우드 (기본)" --> ASR_Gemini --> RawTranscript
-        ASREngine -- "오프라인 (--engine whisper)" --> ASR_Whisper --> RawTranscript
-        O -. 문맥 주입 .-> ExtractTrack
-    end
-
-    subgraph Stage2Divergence["⚙️ Stage 2 구조화 및 요약 분기"]
-        subgraph LocalVideoStage2["🎬 로컬 영상: 시각 멀티모달 융합"]
-            Stage2Video["Google Gemini 3.8 Flash<br>🤖 네이티브 Agentic Video Understanding<br>• 슬라이드/명패 시각 OCR<br>• Speaker 1 -> 실제 참석자 매핑<br>• 제1~5절 핵심 회의록 생성"]:::fusionStyle
-            Deterministic["결정론적 Python 결합<br>• Stage 1 물리적 타임스탬프 100% 보존<br>• 드리프트·누락·환각 제로"]:::fusionStyle
-            Stage2Video --> Deterministic
-        end
-
-        subgraph AudioStage2["🎙️ 순수 오디오: 2트랙 문맥 구조화"]
-            Restructure["Google Gemini 3.8 Flash<br>• Track A 요약 추출 & Track B 전사 정제<br>• 화자 통합 & 자연스러운 문장화<br>• 이모지 없는 전문적 표기"]:::audioStyle
-        end
-    end
-
-    Router -- "YouTube URL" --> GeminiFlash
-    Router -- "로컬 영상" --> ExtractTrack
-    Router -- "오디오 (또는 --extract-audio)" --> ExtractTrack
-
-    RawTranscript --> Stage2Video
-    V -. "720p 영상 업로드 임시 배치" .-> Stage2Video
-    RawTranscript --> Deterministic
-
-    RawTranscript --> Restructure
-
-    subgraph Delivery["📦 결과물 생성 및 플레이어"]
-        MD["📄 구조화 회의록.md<br>(기본 정보 / 요약 / 결정사항 / ToDo / 전사본)"]:::outputStyle
-        HTML["🌐 독립형 3분할 / 2분할 대화형 플레이어.html"]:::outputStyle
-        YTDock["🎬 PIP 지원 YouTube 도크<br>(정확한 클릭 이동 & 노래방 싱크)"]:::outputStyle
-        VPlayer["🎬 HTML5 비디오 플레이어<br>(음향-영상 동기화 타임스탬프 이동)"]:::outputStyle
-        AudioPlayer["🎵 네이티브 오디오 플레이어<br>(진행 바 타임스탬프 이동)"]:::outputStyle
-
-        MD --> HTML
-        HTML --> YTDock
-        HTML --> VPlayer
-        HTML --> AudioPlayer
-    end
-
-    GeminiFlash --> MD
-    GeminiFlash -. YouTube 영상 로드 .-> YTDock
-    Deterministic --> MD
-    Deterministic -. 로컬 영상 로드 .-> VPlayer
-    Restructure --> MD
-    Restructure -. 오디오 로드 .-> AudioPlayer
-```
-
-### 처리 파이프라인 단계 설명 (Pipeline Steps Explained)
-
-#### 1단계: 입력 미디어 감지 및 스마트 라우팅
-- **YouTube URL**：**🎥 파이프라인 1: YouTube 멀티모달 클라우드** 로 라우팅.
-- **로컬 영상 파일**(`.mp4`, `.mov`, `.mkv`, `.webm`)：**🎬 파이프라인 2: 로컬 비디오 2단계 융합 파이프라인** 으로 라우팅.
-- **오디오 파일**(`.mp3`, `.m4a`, `.wav`) 또는 `--extract-audio` 지정 시：**🎙️ 파이프라인 3: 순수 오디오 2계층 파이프라인** 으로 라우팅.
-
----
-
-#### 2A단계: YouTube 멀티모달 클라우드 파이프라인
-1. **클라우드 직접 스트리밍 및 다운로드 불필요**: API로 URL을 직접 전달하여 429 요청 제한을 회피합니다.
-2. **네이티브 Agentic Video Understanding**:
-   - `types.MediaProcessing.AGENTIC`을 전면 표준 적용합니다. 동적 프레임 탐색과 도구 호출을 결합하여 슬라이드, 명패, 자막을 중요한 순간에 고정밀 OCR하여 수십 초 만에 고품질 요약을 생성합니다.
-3. **원스톱 추출**: 실제 참석자 명단 및 직함이 반영된 6대 챕터 회의록과 타임스탬프 전사본을 한 번에 산출합니다.
-
----
-
-#### 2B단계: 로컬 비디오 2단계 융합 파이프라인
-1. **1단계 (공통 전용 음향 ASR 코어)**:
-   - 16kHz mono 오디오를 자동으로 추출합니다 (캐싱 메커니즘으로 중복 추출 방지).
-   - **순수 오디오 파이프라인과 100% 동일한 Stage 1 음향 ASR 코어를 공유**합니다 (48k AAC 압축, Cloud Storage 임시 업로드, `gemini-3.5-transcribe` 또는 로컬 `whisper`). 밀리초 단위 물리적 타임스탬프 `[MM:SS - MM:SS]`를 생성하며, `--only-transcript`를 통한 전사본 선행 출력도 완벽히 지원합니다.
-2. **2단계 (멀티모달 시각 융합)**:
-   - 720p H.264로 압축하여 Cloud Storage에 임시 업로드합니다 (완료 후 즉시 자동 삭제).
-   - 영상과 1단계 전사본을 `gemini-3.8-flash`에 전달하여 **네이티브 Agentic Video Understanding**으로 화면 명패 및 슬라이드 OCR을 확인하고, `Speaker 1`을 실제 참석자 이름으로 매핑하며 제1~5절 핵심 회의록을 생성합니다.
-3. **결정론적 결합**:
-   - Python 코드가 시각적 매핑을 물리적 전사본에 적용하여 타임스탬프 드리프트 0을 달성합니다.
-
----
-
-#### 2C단계: 순수 오디오 2계층 파이프라인 (순수 오디오 녹음)
-1. **1단계 (공통 전용 음향 ASR 코어)**:
-   - 로컬 영상과 완전히 동일한 Stage 1 음향 ASR 코어 사용: 비트레이트 감지, 48k AAC 압축, `gemini-3.5-transcribe`(클라우드) 또는 `mlx-whisper` + Sherpa-ONNX(로컬 오프라인).
-   - 안건 대조 및 인명 사전 탐색(`--outline`) 지원.
-2. **2단계 (문맥 구조화)**:
-   - `gemini-3.8-flash` 기반 2트랙 병렬 구조화 (Track A 요약 추출 & Track B 전사 정제). 동음이의어 교정, 화자 통합, 이모지 없는 전문적 회의록 생성.
-
----
-
-#### 3단계: 결과물 생성 (Delivery)
-- **구조화된 회의록 Markdown**: `<파일명>_會議記錄.md`로 저장.
-- **대화형 HTML 플레이어**: `<파일명>_player.html`로 저장 (YouTube PIP 창, 로컬 비디오 플레이어 및 오디오 컨트롤러 내장).
-
----
-
-## 설치 및 배포 가이드 (Installation & Deployment)
-
-Meeting Transcribe Agent는 두 가지 서로 다른 실행 및 설치/배포 방식을 지원합니다:
-
-| 실행 플랫폼 | 설치/배포 방식 | 필수 환경 변수 구성 | 주요 사용자 인터페이스 |
+| 방법 | 대상 환경 | 설정 도구 | 주요 인터페이스 |
 | :--- | :--- | :--- | :--- |
-| **Google Antigravity** | AI Agent Skill 형태로 작업 공간에 설치 | 프로젝트 루트 `.env` 설정 파일 | Antigravity IDE / CLI 대화창 (자연어 지시 `SKILL.md`) |
-| **Gemini Enterprise** | `deploy.sh`를 통해 Vertex AI Agent Runtime으로 배포 | `deploy.sh` 인자 또는 `gemini-enterprise/.env` | Gemini Enterprise 포털 웹 UI, Vertex AI Agent Engine, A2A 프로토콜 |
+| **방법 1: Google Antigravity & Agent Plugins** | 로컬 IDE, Agent Skill, Python CLI | `pip` / `uv` + `./setup.sh` | Antigravity IDE 채팅 또는 터미널 CLI |
+| **방법 2: Gemini Enterprise** | Cloud Vertex AI Agent Runtime | `./deploy.sh` (네이티브 `gcloud`) | Gemini Enterprise Web UI, Agent Engine, A2A |
 
----
+### 시스템 사전 요구 사항
 
-### 기본 환경 요구사항 (Common Prerequisites)
-
-1. **FFmpeg** (오디오/영상 포맷 탐지 및 가변 비트레이트 전처리):
+1. **FFmpeg 설치**:
    - **macOS**: `brew install ffmpeg`
-   - **Ubuntu/Debian**: `sudo apt update && sudo apt install ffmpeg`
+   - **Ubuntu / Debian**: `sudo apt update && sudo apt install ffmpeg`
    - **Windows**: `winget install Gyan.FFmpeg`
 
-2. **Google Cloud 인증 (ADC)**:
-   Gemini API는 Vertex AI 및 Application Default Credentials (ADC)를 사용합니다:
+2. **Google Cloud ADC 인증**:
    ```bash
    gcloud auth application-default login
    ```
 
----
+### 방법 1: Google Antigravity Plugin / Skill / 로컬 CLI 설정
 
-### 방식 1: Google Antigravity & Agent Plugins 1.0 설치 (로컬 AI Agent 플러그인, 스킬 & CLI)
-
-[Agent Plugins 1.0](https://agent-plugins.org/) 호환 플러그인 또는 Agent 스킬로 Antigravity 및 호환 AI 클라이언트에 설치하여 IDE 환경에서 대화형으로 회의록을 생성하거나 Python CLI로 독립 실행합니다:
-
-1. **Agent 플러그인으로 설치 (권장: `plugin.json` 및 `rules/AGENTS.md` 읽기 전용 보호 규칙 자동 적용)**:
-   - **글로벌 플러그인 (Global Plugin)** (모든 프로젝트에서 사용 가능, 권장):
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
-     ```
-   - **워크스페이스 전용 플러그인 (Workspace Plugin)** (현재 프로젝트에서만 사용):
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agents/plugins/meeting-transcribe-agent
-     ```
-
-2. **또는 Agent 스킬로 설치**:
-   - **글로벌 스킬 (Global Skill)**:
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/skills/meeting-transcribe-agent
-     ```
-   - **워크스페이스 전용 스킬 (Workspace Skill)**:
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
-     ```
-
-3. **Python 의존 패키지 설치**:
+1. **Agent Plugin으로 클론 (권장)**:
    ```bash
-   pip install google-genai google-cloud-storage
+   git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
    ```
-   *(선택 사항: 오프라인 Whisper 백업 실행 시 `pip install mlx-whisper sherpa-onnx` 또는 `pip install faster-whisper sherpa-onnx`)*.
-
-4. **Google Cloud 환경 자동 설정 (`./setup.sh`)**:
-   자동 환경 설정 스크립트를 실행하여 인증 확인, 필수 API(`aiplatform.googleapis.com`, `storage.googleapis.com`) 활성화, Cloud Storage 버킷 생성 및 설정(CORS 및 2일/30일 자동 수명 주기 삭제), 그리고 `.env` 자동 생성을 완료합니다:
+2. **Python 의존성 패키지 설치**:
+   ```bash
+   pip install google-genai google-cloud-storage requests
+   ```
+3. **Google Cloud 환경 초기화 (`./setup.sh`)**:
    ```bash
    chmod +x setup.sh
-   ./setup.sh
-   ```
-   *(옵션 지정 예시: `./setup.sh -p your-gcp-project-id -r us-central1`)*.
-   Antigravity 내에서 실행 시 에이전트가 `./setup.sh`를 직접 호출하여 클라우드 환경을 초기화하므로 수동 설정 번거로움이 없습니다.
-
-5. **Antigravity에서 사용하기**:
-   Antigravity가 `SKILL.md`를 자동으로 색인합니다. 대화창에서 자연어로 요청하기만 하면 됩니다:
-   > "임원 회의 녹음 파일 `meeting.mp3`를 전사하고 핵심 요약, 결정 사항, 플레이어를 만들어줘."
-
----
-
-### 방식 2: Gemini Enterprise 설치 (클라우드 Vertex AI Agent Runtime 배포)
-
-Google ADK 2.0 및 `agents-cli`를 사용하여 Vertex AI Agent Runtime(Agent Engine / Reasoning Engine)에 엔터프라이즈 매니지드 서비스로 배포합니다.
-
-본 배포 프로세스는 **100% 네이티브 `gcloud`** 명령어로 리소스를 프로비저닝하므로 Terraform 등 외부 도구 의존성이 없으며, Google Cloud Shell에서 바로 원클릭 배포할 수 있습니다:
-
-1. **배포 CLI 도구 설치 (`uv` 및 `google-agents-cli`)**:
-   ```bash
-   uv tool install google-agents-cli
+   ./setup.sh --project YOUR_GCP_PROJECT_ID
    ```
 
-2. **`./deploy.sh`를 통한 원클릭 자동 배포**:
-   배포 스크립트는 책임 분리 원칙에 따라 클라우드 인프라 구성을 `./setup.sh`에 자동 위임(API 활성화, 버킷 생성, CORS/Lifecycle 설정, 서비스 계정 IAM 바인딩)한 후, `agents-cli deploy`를 통해 Vertex AI Agent Runtime으로 배포하고 Gemini Enterprise에 자동 등록합니다:
-   ```bash
-   chmod +x setup.sh deploy.sh
-
-   # 자동 배포 (setup.sh에 인프라 구성을 위임하고 배포 및 Gemini Enterprise 연동 일괄 실행):
-   ./deploy.sh
-
-   # 또는 프로젝트 및 리전 지정:
-   ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
-
-   # 시뮬레이션 실행 (Dry-Run):
-   ./deploy.sh --dry-run
-   ```
-
-3. **엔터프라이즈 연동 및 산출물 공유**:
-   - **웹 인터페이스**: Gemini Enterprise 공식 포털의 에이전트 목록에서 직접 선택하여 호출할 수 있습니다.
-   - **클라우드 Agent Engine**: Vertex AI Reasoning Engine API 또는 Agent-to-Agent (A2A) 프로토콜을 통해 다른 에이전트와 연동 가능합니다.
-   - **안전한 산출물 공유**: 생성된 Markdown 회의록과 HTML 플레이어는 GCS에 업로드되며 **24시간 유효한 서명된 URL (Signed URLs)**이 반환되어 로그인 없이 브라우저에서 즉시 검토할 수 있습니다.
-
----
-
-## 프로젝트 디렉터리 구조
-
-```text
-meeting-transcribe-agent/
-├── SKILL.md                          # Agent Skill 전용 매뉴얼 및 매개변수 정의
-├── README.md                         # 영문 프로젝트 개요 및 아키텍처
-├── README.ko.md                      # 한국어 프로젝트 문서
-├── LICENSE                           # MIT 라이선스
-├── .gitignore                        # 테스트 미디어 및 로컬 캐시 제외 설정
-├── .env.example                      # Antigravity Skill용 환경 변수 샘플
-├── meeting_transcribe.py             # 루트 CLI 엔트리포인트
-├── deploy.sh                         # 100% 네이티브 gcloud 원클릭 배포 스크립트 (Cloud Shell 지원)
-├── scripts/                          # 핵심 모듈
-│   ├── __init__.py
-│   ├── meeting_transcribe.py         # 메인 파이프라인 컨트롤러
-│   ├── audio_utils.py                # 비트레이트 탐지 및 FFmpeg 전처리
-│   ├── gemini_engine.py              # Gemini 3.5 Transcribe 및 3.8 Flash 재구성
-│   ├── diarization.py                # 로컬 화자 분리 (Sherpa-ONNX)
-│   ├── glossary.py                   # 고유 명사 및 인명 탐색
-│   ├── canonicalizer.py              # 화자명 정규화
-│   └── html_generator.py             # 독립형 대화형 HTML 플레이어 생성
-├── assets/                           # 템플릿 및 프롬프트
-│   ├── audio_player_template.html    # 오디오 2패널 플레이어 템플릿
-│   ├── video_player_template.html    # 영상 3패널 플레이어 템플릿
-│   └── prompts/                      # 프롬프트 템플릿 디렉터리
-└── gemini-enterprise/                # Gemini Enterprise (ADK 2.0 / Vertex AI) 배포 패키지
-    ├── deploy.sh                     # 루트 deploy.sh로 전달하는 스크립트
-    ├── agents-cli-manifest.yaml      # agents-cli 배포 명세서
-    └── app/                          # 엔터프라이즈 에이전트 모듈
-```
-
----
-
-## 고급: 개발자 및 CLI 명령어 가이드 (Developer & Headless CLI)
-
-> [!TIP]
-> **일반 사용자 안내**: AI Agent(Antigravity 등)를 통해 사용할 경우 **명령어를 수동으로 입력할 필요가 없습니다**. 에이전트가 대화 맥락을 기반으로 `SKILL.md`를 읽고 최적의 매개변수를 자동 구성합니다.
-
-### 기본 실행 (YouTube 영상)
-```bash
-# YouTube 영상 직접 전사 및 플레이어 생성 (네이티브 Agentic Video 모드)
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
-```
-
-### 기본 실행 (오디오 및 로컬 영상 파일)
-```bash
-# 클라우드 기본 모드 (순수 오디오)
-python3 meeting_transcribe.py "meeting_recording.mp3"
-
-# 로컬 영상 2단계 융합 (오디오 추출 후 Stage 1 ASR 공용, 영상 스테이징 후 Agentic 시각 융합)
-python3 meeting_transcribe.py "presentation.mp4"
-
-# 로컬 오프라인 백업 실행 (Apple Silicon GPU / Sherpa-ONNX)
-python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
-```
-
-### 주요 매개변수 안내
-
-| 매개변수 | 설명 | 기본값 |
-| :--- | :--- | :--- |
-| `input_source` | 오디오/영상 파일 경로 또는 YouTube URL | *(필수)* |
-| `-o, --output` | 회의록 출력 Markdown 경로 | `<파일명>_minutes.md` |
-| `--agentic` | 모든 영상 소스에서 Agentic Video 이해 모드가 기본적으로 네이티브 활성화 | `True` |
-| `--extract-audio` | 영상 파일에서 음원을 추출하여 오디오 파이프라인으로 강제 전환 | `False` |
-| `--engine` | 오디오 전사 엔진: `gemini` (클라우드) 또는 `whisper` (로컬) | `gemini` |
-| `--whisper-backend` | 오프라인 백엔드: `auto`, `mlx`, `faster-whisper` | `auto` |
-| `--whisper-model` | Whisper 모델 크기 (`tiny`, `base`, `small`, `medium`, `large-v3`) | `small` |
-| `--no-diarization` | 화자 분리 비활성화 | `False` |
-| `--clustering-threshold` | Sherpa-ONNX 클러스터링 임계값 | `0.68` |
-| `--num-speakers` | 참석자 수 (알고 있는 경우 지정, -1은 자동 감지) | `-1` |
-| `--embedding-type` | Sherpa-ONNX 음향 성문 모델 (`eres2net`, `cam++`) | `eres2net` |
-| `--project` | Vertex AI용 Google Cloud 프로젝트 ID | `None` (ADC/환경 변수) |
-| `--region` | Vertex AI용 Google Cloud 리전 | `global` |
-| `--bucket` | 로컬 오디오/영상 스테이징용 GCS 버킷 이름 | `MEETING_STORAGE_BUCKET` 환경 변수 |
-| `--transcribe-model` | 클라우드 음향 음성인식 모델 (기본값: `TRANSCRIBE_MODEL`) | `gemini-3.5-transcribe-preview` |
-| `--summary-model` | 구조화 회의록 및 시각 모델 (기본값: `SUMMARY_MODEL`) | `gemini-3.8-flash` |
-| `--outline` | 회의 안건/식순 파일 경로 (.txt / .md) | `None` |
-| `--no-player` | 대화형 HTML 플레이어 생성 비활성화 | `False` |
-| `--summary-language` | 회의록 생성 언어 지정 (`auto`, `ko`, `en`, `zh-TW` 등) | `None` (auto) |
-| `--serve` | 로컬 HTTP 서버를 자동 시작하고 브라우저 열기 (YouTube 영상 재생 권장) | `False` |
-
----
-
----
-
-## ☁️ Google Drive 직결 시나리오 및 GCS 수명 주기 자동 삭제 규칙 (ADC 인증)
-
-Google Meet이나 Zoom 녹화본이 저장된 **Google Drive 공유 링크**를 `gcloud` ADC (`drive.readonly` 권한)를 통해 `meeting_transcribe.py`에 직접 전달할 수 있습니다.
+### 방법 2: Gemini Enterprise 클라우드 배포 (`./deploy.sh`)
 
 ```bash
-# Step 1: Google Drive 읽기 권한을 포함하여 ADC 로그인
-gcloud auth application-default login
-./setup.sh --project YOUR_GCP_PROJECT_ID
-
-# Step 2: Google Drive 회의 영상 링크를 직접 전달하여 회의록, 전문 전사 및 대화형 HTML 플레이어 생성
-python3 meeting_transcribe.py "https://drive.google.com/file/d/1MeetingVideoIdxxxxxx/view?usp=sharing"
+uv tool install google-agents-cli
+chmod +x setup.sh deploy.sh
+./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
 ```
 
-- **GCS 2단계 수명 주기 규칙**: `raw/` (임시 스테이징 미디어)는 **2일 (`age: 2`)** 보관 후 자동 삭제되며, `minutes/`, `players/`, `output/`, `deliverables/` (회의록 및 플레이어 산출물)는 **15일 (`age: 15`)** 보관 후 자동 삭제됩니다.
+---
+
+## 명령줄 사용법 (Standalone CLI)
+
+```bash
+# YouTube 비디오 처리
+python3 scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
+
+# 로컬 오디오 파일 처리 (클라우드 기본값)
+python3 scripts/meeting_transcribe.py "meeting_recording.mp3"
+
+# 로컬 비디오 2단계 융합 처리
+python3 scripts/meeting_transcribe.py "conference_video.mp4"
+
+# Google Drive 공유 링크 직접 처리
+python3 scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view?usp=sharing"
+
+# 오프라인 Whisper 모드 명시적 실행
+python3 scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
+```
+
+---
+
+## Google Drive 연동 및 GCS 수명 주기 정책
+
+| GCS 경로 접두사 (`matchesPrefix`) | 저장 객체 | 보관 기간 (`age`) | 목적 |
+| :--- | :--- | :--- | :--- |
+| **`raw/`** | 스테이징된 오디오 청크 및 720p 비디오 (`raw/<filename>`) | **2일 (`age: 2`)** | 재실행 시 캐시 재사용을 위해 보관하며 2일 후 자동 삭제합니다. |
+| **`minutes/`**, **`players/`**, **`output/`**, **`deliverables/`** | Markdown 회의록 (`.md`) 및 HTML 플레이어 (`.html`) | **15일 (`age: 15`)** | 팀 검토를 위해 15일간 보관한 후 자동 삭제합니다. |
 
 ---
 
 ## 라이선스 (License)
 
-이 프로젝트는 [MIT License](LICENSE)를 따릅니다.
+이 프로젝트는 [MIT License](LICENSE)에 따라 라이선스가 부여됩니다.

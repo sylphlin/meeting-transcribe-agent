@@ -7,128 +7,126 @@
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
-## 專案概述 (Overview)
+## 專案總覽 (Overview)
 
-**Meeting Transcribe Agent** 是一套基於 **Gemini 3.5 Transcribe** 與 **Gemini Agentic Video Understanding** 打造的全方位影音會議記錄生成 Agent，具備「多模態視訊處理（YouTube / 本地影片）」與「純音訊高精度雙層架構」。專為公務市政主管會議、跨國技術週會以及訪談法務存證等高度要求「時間戳絕對精準」、「發言人切分」與「結構化決策記錄」的專業場景所打造。
+**Meeting Transcribe Agent** 是基於 **Google Gemini 3.5 Transcribe** 與 **Gemini 3.8 Flash** 的多模態會議記錄與逐字稿生成系統。系統支援 YouTube 網址、本地影片檔、Google Drive 分享連結與純音訊錄音檔。每次執行皆會產出結構化 Markdown 會議記錄與獨立的互動式 HTML 播放器。
 
-### 依據媒介分流的雙軌智慧流水線：
+### 三大專屬處理管線
 
-1. **YouTube 多模態雲端管線 (YouTube 雲端原生直入)**：
-   - **單一 Request 極致效能**：直接由 **Gemini 3.8 Flash** 進行視覺多模態端到端分析，同步閱讀簡報投影片（Slide OCR）與現場長官名牌／電視鏡面字幕，精確對應講者姓名職稱，省下 50% Token 消耗與等待時間（32 分鐘影片僅需 ~44 秒）。
-   - **Agentic Video Understanding (`--agentic`)**：支援動態多輪訊框導航與工具調用，針對多小時長影片或複雜圖表進行深層視覺探索。
-   - **畫中畫 YouTube Dock 播放器**：產出的獨立 HTML 播放器內建 YouTube IFrame 控制器，支援即時點擊時間軸跳轉視訊與卡拉 OK 歌詞式精準同步。
+1. **YouTube 多模態雲端管線 (Cloud Direct Ingestion)**：
+   - **雲端直接串流**：將 YouTube 網址直接傳送至 **Gemini 3.8 Flash**，無須下載本地影片檔。
+   - **Agentic 影片理解 (`--agentic`)**：自動瀏覽關鍵畫面以辨識簡報投影片、桌牌與畫面字卡（Lower-Thirds）。
+   - **互動式 YouTube 播放器**：產出獨立三欄式 HTML 播放器，支援逐字稿同步捲動與點擊時間戳跳轉。
 
-2. **本地影片兩階段融合管線 (音訊抽取 + 多模態視覺融合)**：
-   - **內嵌字幕真值自動萃取**：自動探測視訊容器之 WebRTC 內嵌字幕軌道（`mov_text`、`srt`、`vtt`）或側載 `.srt` 檔案，提取為確認與會者名冊與巨觀討論大綱；貫徹「文字歸文字，發言人歸發言人」鐵律，逐字稿內文與物理時間戳 100% 由 Stage 1 聲學 ASR 權威掌控。
-   - **第一階段（專用聲學 ASR 錨定）**：抽取 16kHz mono 音軌，由 **Google Gemini 3.5 Transcribe**（雲端首選）或 **Apple Silicon MLX/Whisper + Sherpa-ONNX Diarization**（本地離線）建立毫秒級精確物理時間戳 `[MM:SS - MM:SS]` 與講者發言段落。
-   - **第二階段（多模態視覺與摘要融合）**：將 720p 視訊與生字稿、自動大綱送入 **Gemini 3.8 Flash**，同步審視畫面投影片、架構圖與發言者名牌，輸出支援時間範圍的講者映射表（`Speaker ID` + `Time Range` -> 真實姓名職稱），徹底化解聲學欠聚類，並提煉第 1~5 節專業會議摘要。
-   - **三層式階層對齊與確定性組裝**：Python 程式碼以三層式階層（Level 1: 字幕重疊真值 -> Level 2: 多模態時段規則 -> Level 3: 對話交棒校準）精確置換發言人，並套用專有名詞音意校正，嚴格保留實體時間戳與 0 漂移。
+2. **本地影片雙階段融合管線 (Acoustic Ground Truth + Vision Fusion)**：
+   - **內嵌字幕提取**：自動檢查影片容器中的內嵌字幕軌（`mov_text`, `srt`, `vtt`）或同名 `.srt` 字幕檔，作為與會者名單與議程參考。
+   - **Stage 0（專有名詞表與語系偵測）**：建立領域專有名詞對照表，並偵測主要口語 `BCP-47` 語言代碼（例如 `cmn-Hant-TW`、`en-US`、`ja-JP`）。
+   - **Stage 1（聲學基準語音轉錄）**：提取 16 kHz 單聲道音訊，透過 **Gemini 3.5 Transcribe**（預設）或 **本地 Whisper + Sherpa-ONNX**（`--engine whisper`）進行語音轉錄，鎖定物理時間戳 `[MM:SS - MM:SS]` 與語者分段。
+   - **Stage 2（多模態視覺融合與分塊逐字稿校對）**：將 720p 影片與 Stage 1 逐字稿送入 **Gemini 3.8 Flash**。模型會讀取簡報畫面與桌牌以生成第 1–5 節摘要，並以 60 行對話為單位平行校對第 6 節逐字稿的字體（如轉換為臺灣正體中文）與專有名詞，同時強制鎖定原始時間戳。
+   - **確定性語者組裝**：Python 程式依據字幕重疊、多模態時段規則與交接語氣整合真實人名與職稱，確保零時間戳偏移。
 
-3. **純音訊高精度雙層管線 (錄音筆 / Podcast / 語音音檔)**：
-   - **底層聲學轉譯 (Gemini 3.5 Transcribe)**：專職毫秒級「詞級時間戳記 (Word Timestamps)」與物理聲學「語者分離 (Diarization)」，確保每一句話皆有真實聲波物理錨定，絕不跳漏。
-   - **上層語意重構 (Gemini 3.8 Flash)**：前後文脈絡理解、同音專有名詞校正、發言人身分收斂與上下文語意流暢化，提煉決策摘要與待辦追蹤。
-   - **本地離線備援**：支援本地 Apple Silicon GPU (MLX) / faster-whisper 搭配 Sherpa-ONNX 聲紋切分。
-
----
-
-### 為什麼架構要明確區分「YouTube」、「本地影片檔案」與「純音訊」？
-
-在會議轉譯的真實場景中，不同媒介所乘載的情報與基礎設施具有根本性差異：
-
-1. **YouTube（雲端原生，自帶預建聲學時鐘）**：
-   - YouTube 雲端骨幹已預先建立 ASR 自動字幕與時間戳索引。Gemini 3.8 Flash 雲端直入分析無須重複音訊解碼，即可同步達成極速摘要與精確時間戳。
-2. **本地影片檔案（兩階段融合，確保 100% 聲畫對齊與投影片閱讀）**：
-   - 本地檔案缺乏預建聲學時鐘，純 LLM 單次推論必然引發嚴重的時間戳累積漂移與長度截斷。兩階段融合以專用 ASR 提供精確時間戳，再由視覺模型讀取畫面字卡，兼得精準時鐘與視覺情報。
-3. **純音訊模式（物理聲學分離，成本最經濟）**：
-   - 錄音筆與 Podcast 本身完全沒有畫面。專用聲學模型（Gemini 3.5 Transcribe / 離線 Whisper）提供毫秒級時間戳與語者分段，每秒僅消耗 ~32 tokens，成本最經濟。
+3. **純音訊高精準管線 (Voice Recorders & Podcasts)**：
+   - **Stage 0（專有名詞表與語系偵測）**：從音訊提取專有名詞並識別主要口語語言代碼。
+   - **Stage 1（聲學語音轉錄）**：使用 **Gemini 3.5 Transcribe**（或離線 Whisper + Sherpa-ONNX）產出帶時間戳的語者對話。
+   - **Stage 2（高階摘要與字體校對）**：使用 **Gemini 3.8 Flash** 生成高階主管摘要、行動項目表，並平行校對第 6 節逐字稿字體與術語。
 
 ---
 
-### 運作模式與 Token 消耗量概估（經驗分享）
+### 為何區分「YouTube」、「本地影片」與「純音訊」三種管線？
+
+不同媒體來源具備不同的時間基準與視覺資訊密度：
+
+1. **YouTube 影片**：
+   - Google 雲端骨幹已預先建立 YouTube 影片的聲學時間軸索引。
+   - 透過 **Gemini 3.8 Flash** 直接雲端串流即可在單次請求中同時分析影音，免除本地下載。
+2. **本地影片檔**：
+   - 本地影片缺乏雲端預先索引的聲學時鐘。
+   - 先由 Stage 1 聲學 ASR 鎖定物理時間戳，再由 Stage 2 視覺融合讀取投影片與桌牌，可避免長影片時間軸漂移與輸出截斷。
+3. **純音訊錄音**：
+   - 錄音筆與 Podcast 不含視覺畫面。
+   - 使用專用聲學模型處理語音，每秒僅消耗約 32 Tokens，具備最佳 Token 經濟效益。
+
+---
+
+### Token 消耗基準估算 (Benchmarks)
 
 > [!NOTE]
-> 實際 Token 消耗會因會議發言密度、畫面變動幅度與簡報細節而異。以下倍率僅為內部實測之概估經驗分享，非絕對標準，供架構選擇時參考：
+> 實際 Token 消耗取決於語音密度與畫面變化頻率。以下倍數為長篇會議之實測基準參考。
 
-* **1. 純音訊雙層管線 (Pure Audio Pipeline) — `~1x` 基準消耗**：
-  - **機制與消耗**：純語音音訊每秒約 32 tokens（一小時音訊約在數萬至十多萬 Tokens 區間）。
-  - **經驗定位**：**成本最經濟、最省 Token**。專為錄音筆、Podcast、電話訪談等「無畫面需求」之純聲音場景設計，由專用聲學模型嚴格錨定字級時間戳與語者切分。
-* **2. Gemini Agentic Video Understanding — `~2x` 消耗**：
-  - **機制與消耗**：採用 Google 最新推出的 [Gemini Agentic Video](https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-agentic-video-in-gemini/) 技術。消耗約為純音訊的 **2 倍左右**。
-  - **經驗定位**：**本專案所有視訊管線之原生預設模式**。模型不再盲目掃描所有訊框，而是結合思考快取（Thinking Cache）與動態工具調用，主動在關鍵時刻探索高解析畫面。特別適合數小時長篇會議、簡報圖表密集、需跨時間軸深度推論的場景。
-* **3. Traditional Gemini Video Understanding — `~3x` 消耗**：
-  - **機制與消耗**：傳統視訊多模態多採每秒固定 1 訊框（1 FPS Uniform Sampling）硬性取樣，Token 消耗量最高（約為純音訊的 **3 倍以上**）。
-  - **經驗定位**：**【本專案未採用，僅供對照參考】**。全片固定頻率取樣會傳入大量靜止或無意義的冗餘訊框，造成 Token 與等待時間的浪費。本專案全面原生採用 Agentic 智慧導航（`media_processing=types.MediaProcessing.AGENTIC`）取代了傳統取樣方式。
+* **1. 純音訊管線（`~1x` 基準值）**：
+  - **消耗量**：每秒約 32 Tokens（每小時約 10 萬 Tokens）。
+  - **適用場景**：純音訊檔案（`meeting_recording.mp3`、Podcast、訪談），兼具精準時間戳與最低 Token 成本。
+* **2. Gemini Agentic 影片理解（`~2x` 基準值）**：
+  - **消耗量**：約為純音訊基準值的 2 倍。
+  - **適用場景**：所有影片管線的預設模式（`media_processing=types.MediaProcessing.AGENTIC`）。模型僅在投影片或語者切換時動態調閱高解析度影格。
+* **3. 傳統 1 FPS 固定取樣（`~3x+` 基準值）**：
+  - **消耗量**：純音訊基準值的 3 倍以上。
+  - **狀態**：本專案不採用此模式，僅列出供基準對照。
 
 ---
 
 ## 核心功能與適用場景
 
-### 它能為您做什麼？
-- **直接支援 YouTube 連結與影片檔案**：貼上 YouTube 網址或影片路徑即可一鍵輸出完整會議記錄與互動播放器。
-- **內嵌字幕真值萃取與無 Emoji 結構大綱**：自動偵測容器字幕（`mov_text`/`srt`）或側載檔案，提取 WebRTC 確定與會者名冊與巨觀時間軸，輔助大模型推論。
-- **階層式發言人對齊與時間區段映射**：支援時間區段 Scoped Mapping 與三層式階層校準（字幕重疊 -> 多模態時段規則 -> 對話交棒校準），徹底根除聲學欠聚類與字典盲目覆蓋問題。
-- **視覺名牌與投影片輔助辨識**：利用視訊畫面上的字卡、背板、簡報標題，全自動推導真實人名與公務職稱。
-- **高精度語者區分與逐字轉譯**：清楚標記每位與會者的發言起訖與真實姓名職稱。
-- **前後文理解與語意流暢化**：超越死板字典轉換，透過 LLM 前後文理解自動校正同音錯字（如專有名詞、官銜），並使轉譯內容符合自然語法與多語言環境。
-- **高管級結構化會議記錄**：自動提取會議基本資訊、執行摘要、重大決策事項表、討論議題分析與具體待辦追蹤事項（Action Items）。
-- **零外部依賴互動式 HTML 播放器**：產出單一輕量 HTML 檔案，支援點擊字句即時跳轉音訊或視訊、語者色彩標記、關鍵字即時搜尋與多國語系切換。
+### 核心功能
+- **多來源媒體輸入**：支援 YouTube 網址、Google Drive 分享連結、本地影片檔與本地音訊檔。
+- **內嵌字幕提取**：自動探測影片容器中的 `mov_text`、`srt` 與 `vtt` 字幕軌以建立出席名單與時間軸參考。
+- **階層式語者正名**：結合畫面桌牌、字卡與口頭介紹，將代號（`spk_0`, `spk_1`）對應至真實姓名與職稱。
+- **Stage 2 分塊逐字稿正字校對**：以 60 行對話為單位平行校對第 6 節逐字稿，統一目標正體/繁體字形與領域專有名詞，且不更動時間戳。
+- **動態多語系在地化**：第 1–5 節標題、屬性欄位與表格依目標語系動態生成，第 6 節則嚴格保留各語者的原始發言語言。
+- **純文字專業排版**：遵守零 Emoji 規範，所有章節標題與表格皆採用純文字企業級排版。
+- **零依賴互動式 HTML 播放器**：產出三欄式影片播放器（`video_player_template.html`）或支援 100% 離線 `file://` 開啟的二欄式音訊播放器（`audio_player_template.html`）。
 
 ### 適用場景
-1. **市政與公務公開會議**：許多政府公開會議直接於 YouTube 直播，系統可直接貼入連結自動辨識市長、局處長名牌字幕，免下載免抽音軌。
-2. **長篇線上研討會與產品發表會**：結合投影片畫面與講者發言，提煉大綱與技術細節。
-3. **公務機關實體會議錄音**：數十位局處長輪番發言，需精確紀錄案由、裁示要點並消除長音訊聲紋漂移。
-4. **本機語音辨識備援需求**：具備本機 Whisper 離線語音辨識引擎，可在網路受限或特定音訊處理需求下作為本機轉譯備援方案。
+1. **政府與市政會議**：直接處理 YouTube 直播會議，從畫面桌牌自動辨識官員姓名與職稱。
+2. **技術研討會與演講**：結合簡報投影片文字與演講內容，整理出結構化技術摘要。
+3. **多人高階主管會議**：在數小時的長篇會議中精準追蹤語者切換與待辦行動項目。
+4. **離線本地轉錄需求**：在網路受限環境下，指定 `--engine whisper` 使用本地 `mlx-whisper` 或 `faster-whisper` 搭配 Sherpa-ONNX。
 
 ---
 
 ## 雙引擎架構 (Dual-Engine Architecture)
 
-### 1. 全雲端極速模式（預設核心）
-* **雙模型架構**：採用 **Google Gemini 3.5 Transcribe**（多模態語音辨識與聲學切分）搭配 **Gemini 3.8 Flash**（結構化會議重構與摘要）。
-* **智慧音訊預處理 (Smart Ingestion)**：自動探測音訊位元率與檔案體積。原始低碼率檔案免轉碼直傳，高碼率音訊則自適應壓縮至最佳串流品質，避免無謂的編碼與頻寬消耗。
-* **雙軌非同步並行，發言人身分統一 (Dual-Track Concurrency with Unified Speaker Identity)**：
-  * 先解析出唯一權威的發言人對照表，再將「核心決策摘要」與「長篇逐字稿修復」拆分為兩個獨立軌道並行生成，確保兩軌輸出的發言人稱呼完全一致，同時徹底解決長篇文本循序輸出的阻塞問題。
-  * 關閉思考預熱延遲（Zero Thinking Budget），實現即時的首字串流響應。
-* **零殘留隱私保護**：音訊經由 Google Cloud Storage 暫存上傳，轉譯完成後自動呼叫清理機制銷毀雲端暫存，不留資料隱患。
+### 1. 雲端 Vertex AI 模式（`--engine gemini`，預設）
+* **雙模型協同**：由 **Gemini 3.5 Transcribe**（`TRANSCRIBE_MODEL`）負責聲學語音轉錄，**Gemini 3.8 Flash**（`SUMMARY_MODEL`）負責多模態分析與分塊校對。
+* **智慧音訊前處理**：自動檢測音訊位元率，並將超過 25 分鐘的長音訊於靜音處切分為 20 分鐘音訊塊平行轉錄。
+* **確定性前綴鎖定**：在第 6 節每個校對後的語句前強制還原 Stage 1 的 `[MM:SS - MM:SS] **spk_X**:` 前綴，杜絕時間戳錯位或輸出截斷。
+* **GCS 雙層生命週期管理**：暫存於 `gs://<bucket>/raw/` 的原始媒體於 2 天後自動刪除，最終產出物則保留 15 天。
 
-### 2. 本地語音辨識備援模式（Whisper + Sherpa-ONNX）
-* **本機聲學辨識備援**：支援在網路受限或特定本機 ASR 需求下，於第一階段利用本機模型提取詞級時間戳記與聲學切分。
-* **跨平台硬體加速**：支援 Apple Silicon GPU 原生加速（`mlx-whisper`）或跨平台 CPU/CUDA（`faster-whisper`）。
-* **聲學特徵向量聚類**：整合 **Sherpa-ONNX (3D-Speaker / PyAnnote)** 進行本機聲學特徵抽取與語者區分。
-* **雙指針滑動窗口對齊 (Sliding Window)**：採用線性掃描算法實現單詞時間戳記與聲紋區間的毫秒級精確匹配，確保語者標記連續穩定。
+### 2. 本地離線模式（`--engine whisper`，僅限明確指定）
+* **明確啟用機制**：僅在使用者明確指定 `--engine whisper` 時啟動，系統絕不自動降級或靜默切換。
+* **硬體加速**：支援 Apple Silicon GPU 原生加速（`mlx-whisper`）或跨平台 CPU/CUDA（`faster-whisper`）。
+* **聲學聲紋分群**：整合 **Sherpa-ONNX**（`eres2net` 或 `cam++`）提取本地聲紋特徵並對齊逐字時間戳。
 
 ---
 
-## Agent 對話使用指南 (推薦情境與 Prompt 範例)
+## AI Agent 對話指令指南
 
-本專案主要作為 **AI Agent Skill** 使用。您**不需要**手動輸入複雜的命令列參數，只需在對話框中向 Agent 提出需求，Agent 便會自主調度後台轉譯管線：
+當本專案作為 **Antigravity Plugin** 或 **Agent Skill** 使用時，可直接在對話視窗以自然語言下達指令：
 
-### 常用情境與對話範例：
+1. **YouTube 影片轉錄**：
+   > 「請轉錄這部 YouTube 會議影片 `https://www.youtube.com/watch?v=VIDEO_ID`，讀取畫面上的桌牌與簡報來產出會議記錄與互動式播放器。」
 
-1. **YouTube 影片會議轉譯（極速視覺辨識名牌與簡報）**：
-   > "請幫我轉譯這部市政會議 YouTube 影片 `https://www.youtube.com/watch?v=VIDEO_ID`，並根據畫面中的長官名牌與投影片整理會議記錄與互動播放器。"
+2. **YouTube 深度簡報分析**：
+   > 「請以 Agentic Video 模式分析 `https://www.youtube.com/watch?v=VIDEO_ID`，擷取架構圖重點並彙整所有決議事項。」
 
-2. **長篇 YouTube 研討會（Agentic Video 深度多模態理解）**：
-   > "這部 3 小時的技術研討會 `https://www.youtube.com/watch?v=...` 簡報內容很多，請開啟 Agentic 模式動態導航畫面，深入摘要各項架構圖與討論結論。"
+3. **本地影片檔處理**：
+   > 「請轉錄 `conference_video.mp4`，並比對畫面上的投影片以確認講者姓名與技術專有名詞。」
 
-3. **本地影片檔案轉譯（讀取投影片文字）**：
-   > "請轉譯這份會議錄影 `tech_summit.mp4`，注意畫面上的簡報投影內容以確認講者姓名與架構術語。"
+4. **影片純音訊提取（節省 Token）**：
+   > 「請從 `conference_video.mp4` 提取音軌，直接執行純音訊管線。」
 
-4. **抽取音軌轉譯（節省 Token 模式）**：
-   > "這份錄影 `interview.mp4` 畫面固定，請幫我直接抽取音軌走純音訊流程，以最節省 Token 的方式轉譯。"
+5. **標準純音訊轉錄**：
+   > 「請轉錄會議錄音 `meeting_recording.mp3`，並產出高階主管摘要、行動項目表與互動式音訊播放器。」
 
-5. **一般純音訊會議記錄**：
-   > "請轉譯這份主管會議錄音 `meeting.mp3`，產出包含執行摘要、決策事項與待辦清單的結構化會議記錄及互動播放器。"
+6. **搭配會議議程大綱**：
+   > 「請轉錄 `meeting_recording.mp3` 並參考議程檔 `agenda.md`，校正與會者職稱與技術名詞。」
 
-6. **附帶會議大綱/議程（推薦，確保精確人名與專有名詞）**：
-   > "這是今天的技術會議音訊 `backend_sync.m4a`，附上會議議程大綱 `agenda.md`，請對照會議大綱轉譯並校正術語。"
-
-7. **指定產出語言（跨國團隊）**：
-   > "請轉譯 `executive_call.mp3`，發言逐字稿請保持原始發言語言，但結構化摘要與待辦追蹤請以英文輸出。"
+7. **指定跨語系摘要語言**：
+   > 「請轉錄 `meeting_recording.mp3`，第 6 節保留原始發言語言，第 1 至 5 節摘要與行動項目請以英文撰寫。」
 
 ---
 
-## 核心處理流水線 (Pipeline Architecture)
+## 管線架構圖 (Pipeline Architecture)
 
 ```mermaid
 flowchart TD
@@ -139,376 +137,257 @@ flowchart TD
     classDef audioStyle fill:#2C7A7B,stroke:#234E52,stroke-width:2px,color:#fff;
     classDef asrStyle fill:#319795,stroke:#285E61,stroke-width:2px,color:#fff;
     classDef outputStyle fill:#276749,stroke:#1C4532,stroke-width:2px,color:#fff;
+    classDef playerStyle fill:#6B46C1,stroke:#553C9A,stroke-width:2px,color:#fff;
 
-    subgraph Input["📥 多元媒體輸入 (Multi-Source Input)"]
-        Y["YouTube 網址 (Watch / Shorts / Live)"]:::inputStyle
-        V["本地視訊檔案 (.mp4 / .mov / .mkv)"]:::inputStyle
-        A["純語音檔案 (.mp3 / .m4a / .wav / .aac)"]:::inputStyle
-        O["外部議程文件 (選填 --outline)"]:::inputStyle
+    subgraph Input["多來源媒體輸入"]
+        Y["YouTube 網址 (Watch / Shorts / Live)<br>• 透過 oEmbed API 取得標題"]:::inputStyle
+        V["本地或 Google Drive 影片 (.mp4 / .mov / .mkv)<br>• 探測內嵌字幕與視覺畫面"]:::inputStyle
+        A["本地或 Google Drive 音訊 (.mp3 / .m4a / .wav)<br>• 探測位元率與靜音切點"]:::inputStyle
+        O["會議議程大綱 (選用 --outline)"]:::inputStyle
     end
 
-    Router{"媒體分流決策<br>(Smart Router)"}:::routerStyle
+    Router{"輸入路由"}:::routerStyle
 
     Y --> Router
     V --> Router
     A --> Router
 
-    subgraph YouTubeTrack["🎥 管線 1: YouTube 多模態雲端管線"]
-        GeminiFlash["Google Gemini 3.8 Flash<br>🤖 原生 Agentic Video Understanding<br>• 動態訊框導航與工具調用<br>• 字卡、座牌與投影片 OCR"]:::videoStyle
+    subgraph YouTubeTrack["管線 1: YouTube 多模態雲端管線"]
+        GeminiFlash["Google Gemini 3.8 Flash<br>• 原生 Agentic 影片理解<br>• 動態影格瀏覽<br>• 桌牌與投影片 OCR"]:::videoStyle
     end
 
-    subgraph SharedASR["🎙️ 共用 Stage 1 專用聲學 ASR 核心 (本地影片 & 純音訊)"]
-        ExtractTrack["音軌抽取與前處理<br>• 影片自動抽取 16kHz mono 音軌<br>• 自適應 48k AAC 預壓縮<br>• 詞彙預先探勘 (選填)"]:::asrStyle
-        ASREngine{"聲學辨識引擎"}:::asrStyle
-        ASR_Gemini["【雲端預設】Gemini 3.5 Transcribe<br>• 毫秒級實體時間戳記<br>• 原生聲學語者分離 (Diarization)"]:::asrStyle
-        ASR_Whisper["【離線指定】本地 Whisper<br>• Apple Silicon MLX / Faster-Whisper<br>• Sherpa-ONNX 聲紋向量聚類"]:::asrStyle
-        RawTranscript["實體聲學時間戳生字稿<br>• [MM:SS - MM:SS] 絕對時間<br>• 語者原始切分 (Speaker Clustering)"]:::asrStyle
+    subgraph SharedASR["Stage 0 & Stage 1: 詞彙表與聲學 ASR 核心"]
+        ExtractTrack["音訊前處理 & Stage 0 詞彙表<br>• 提取 16 kHz 單聲道音訊<br>• 偵測口語 BCP-47 語系代碼<br>• 建立領域專有名詞表"]:::asrStyle
+        ASREngine{"ASR 引擎選擇"}:::asrStyle
+        ASR_Gemini["雲端預設: Gemini 3.5 Transcribe<br>• 物理時間戳 [MM:SS - MM:SS]<br>• 原生語者分段"]:::asrStyle
+        ASR_Whisper["離線指定: 本地 Whisper<br>• Apple Silicon MLX / Faster-Whisper<br>• Sherpa-ONNX 聲紋分群"]:::asrStyle
+        RawTranscript["Stage 1 原始逐字稿<br>• 鎖定物理時間戳<br>• 初始語者代號 (spk_0, spk_1)"]:::asrStyle
 
         ExtractTrack --> ASREngine
         ASREngine -- "雲端 (預設)" --> ASR_Gemini --> RawTranscript
         ASREngine -- "離線 (--engine whisper)" --> ASR_Whisper --> RawTranscript
-        O -. 注入上下文 .-> ExtractTrack
+        O -. "注入背景脈絡" .-> ExtractTrack
     end
 
-    subgraph Stage2Divergence["⚙️ Stage 2 結構化重構分流"]
-        subgraph LocalVideoStage2["🎬 本地影片: 多模態視覺融合"]
-            Stage2Video["Google Gemini 3.8 Flash<br>🤖 原生 Agentic Video Understanding<br>• 投影片/字卡視覺 OCR<br>• Speaker 1 -> 真實姓名職稱映射<br>• 提煉第 1~5 節核心摘要"]:::fusionStyle
-            Deterministic["確定性 Python 組裝<br>• 嚴格保留 Stage 1 實體時間戳<br>• 0 漂移、不跳句、不腦補"]:::fusionStyle
+    subgraph Stage2Divergence["Stage 2: 多模態綜合與分塊正字校對"]
+        subgraph LocalVideoStage2["本地影片: 視覺融合"]
+            Stage2Video["Google Gemini 3.8 Flash<br>• 投影片與桌牌視覺 OCR<br>• 對應語者 ID 至真實姓名<br>• 綜合生成第 1-5 節"]:::fusionStyle
+            Deterministic["確定性組裝 & 分塊正字校對<br>• 60 行平行逐字稿正字校對<br>• 強制鎖定 Stage 1 物理時間戳"]:::fusionStyle
             Stage2Video --> Deterministic
         end
 
-        subgraph AudioStage2["🎙️ 純音訊: 雙軌語意重構"]
-            Restructure["Google Gemini 3.8 Flash<br>• Track A 摘要提煉 & Track B 逐字梳理<br>• 角色收斂與語意流暢化<br>• 無 Emoji 專業標題排版"]:::audioStyle
+        subgraph AudioStage2["純音訊: 語意重構"]
+            Restructure["Google Gemini 3.8 Flash<br>• 綜合生成第 1-5 節<br>• 60 行平行逐字稿正字校對<br>• 純文字標題 (無 Emoji)"]:::audioStyle
         end
     end
 
     Router -- "YouTube 網址" --> GeminiFlash
-    Router -- "本地影片" --> ExtractTrack
+    Router -- "本地影片檔" --> ExtractTrack
     Router -- "純音訊 (或 --extract-audio)" --> ExtractTrack
 
     RawTranscript --> Stage2Video
-    V -. "720p 視訊上傳暫存" .-> Stage2Video
+    V -. "720p 影片暫存" .-> Stage2Video
     RawTranscript --> Deterministic
-
     RawTranscript --> Restructure
 
-    subgraph Delivery["📦 成果發布與播放器 (Delivery)"]
-        MD["📄 結構化會議記錄.md<br>(基本資訊 / 摘要 / 決策 / 待辦 / 逐字稿)"]:::outputStyle
-        HTML["🌐 零依賴 3 欄 / 2 欄互動播放器.html"]:::outputStyle
-        YTDock["🎬 畫中畫 YouTube Dock<br>(精確點擊跳轉 & 卡拉 OK 同步)"]:::outputStyle
-        VPlayer["🎬 HTML5 視訊播放器<br>(音畫同步時間戳跳轉)"]:::outputStyle
-        AudioPlayer["🎵 原生音訊控制器<br>(進度條時間戳跳轉)"]:::outputStyle
-
-        MD --> HTML
-        HTML --> YTDock
-        HTML --> VPlayer
-        HTML --> AudioPlayer
+    subgraph Delivery["最終產出物"]
+        MD["Markdown 會議記錄 (<標題>_minutes.md)<br>• 純文字標題 (無 Emoji)<br>• 動態目標語系"]:::outputStyle
+        VPlayer["影片播放器 (video_player_template.html)<br>• 三欄式工作區 (影片 + 摘要 + 逐字稿)<br>• YouTube IFrame & HTML5 Video"]:::playerStyle
+        APlayer["音訊播放器 (audio_player_template.html)<br>• 二欄式工作區 (摘要 + 逐字稿)<br>• 100% 離線 file:// 播放"]:::playerStyle
     end
 
     GeminiFlash --> MD
-    GeminiFlash -. 載入 YouTube 視訊 .-> YTDock
+    GeminiFlash --> VPlayer
     Deterministic --> MD
-    Deterministic -. 載入本地影片 .-> VPlayer
+    Deterministic --> VPlayer
     Restructure --> MD
-    Restructure -. 載入音訊 .-> AudioPlayer
+    Restructure --> APlayer
 ```
 
-### 處理管線詳細步驟說明 (Pipeline Steps Explained)
-
-系統在接收到輸入後，依據媒體屬性分為 **「分流決策」**、**「管線執行」** 與 **「成果發布」** 三大階段：
-
-#### 步驟 1：輸入媒體檢測與智慧分流 (Smart Router)
-- **YouTube 網址**（包含 `youtube.com/watch`, `youtu.be/`, Shorts 與 Live 錄影）：自動分流至 **🎥 管線 1: YouTube 多模態雲端管線**。
-- **本地視訊檔案**（`.mp4`, `.mov`, `.mkv`, `.webm`）：自動分流至 **🎬 管線 2: 本地影片兩階段融合管線**。
-- **純語音檔案**（`.mp3`, `.m4a`, `.wav`, `.aac`, `.flac`）或加入 `--extract-audio` 旗標者：自動分流至 **🎙️ 管線 3: 純音訊雙層管線**。
-
 ---
 
-#### 步驟 2A：YouTube 多模態雲端管線處理流程
-1. **雲端直傳與零下載**：直接將 YouTube URL 傳入 Gemini 多模態 API，免本地下載、免 `yt-dlp`，徹底規避 YouTube 429 頻率限制。
-2. **原生 Agentic Video Understanding**：
-   - 全面原生啟用 `types.MediaProcessing.AGENTIC`：結合動態訊框導航與工具調用，專門在關鍵時間點深入探索投影片、字卡與長官座牌，極速（數十秒）產出高精準度摘要。
-3. **一步到位提煉**：直接輸出帶真實姓名職稱的 6 大章節會議記錄與時間戳記逐字稿。
+## 安裝與部署 (Installation & Deployment)
 
----
+請依執行環境選擇以下兩種安裝部署方式之一：
 
-#### 步驟 2B：本地影片兩階段融合管線處理流程
-1. **第一階段（共用專用聲學 ASR 核心）**：
-   - 自動抽取 16kHz mono 音軌（具備快取機制避免重複轉碼）。
-   - **與純音訊 100% 共用相同的 Stage 1 聲學 ASR 核心**（48k AAC 預壓縮、Cloud Storage 暫存，調用 `gemini-3.5-transcribe` 或本地 `whisper`），產出毫秒級實體時間戳 `[MM:SS - MM:SS]` 與講者發言段落。完全支援 `--only-transcript` 提前輸出逐字稿。
-2. **第二階段（多模態視覺融合）**：
-   - 視訊壓縮為 720p H.264 並上傳至 Cloud Storage 暫存（處理後立即銷毀）。
-   - 將視訊與第一階段文字稿一同送交 `gemini-3.8-flash`，以**原生 Agentic Video Understanding** 觀察畫面名牌、投影片 OCR，精確映射 `Speaker 1` 為真實講者姓名，並產出第 1~5 節核心摘要。
-3. **確定性組裝**：
-   - Python 程式碼自動將視覺映射套用至實體逐字稿，時間戳 100% 絕對零漂移。
-
----
-
-#### 步驟 2C：純音訊雙層處理流程 (純語音錄音檔)
-1. **第一階段（共用專用聲學 ASR 核心）**：
-   - 與本地影片共用相同的 Stage 1 聲學 ASR 核心：位元率探測、自適應 48k AAC 預壓縮，調用 `gemini-3.5-transcribe`（雲端）或 `mlx-whisper` + Sherpa-ONNX（本地離線）。
-   - 支援術語與角色預先探勘 (`--outline`)。
-2. **第二階段（上層語意重構）**：
-   - 由 `gemini-3.8-flash` 進行雙軌併發重構（Track A 摘要提煉 & Track B 逐字梳理），前後文理解、同音字校正、角色名稱收斂平滑，產出乾淨無 Emoji 的專業會議記錄。
-
----
-
-#### 步驟 3：成果發布與雙欄播放器生成 (Delivery)
-1. **結構化會議記錄 Markdown**：存檔為 `<檔名>_會議記錄.md`，內含會議資訊、高管摘要、討論議題、重大決策、待辦追蹤與發言逐字稿。
-2. **零依賴互動式 HTML 播放器**：存檔為 `<檔名>_player.html`：
-   - **YouTube 輸入**：右下角自動嵌入畫中畫可縮放之 YouTube 視訊視窗，點擊逐字稿秒數精確跳轉 YouTube 播放位置。（*註：因 YouTube 官方安全政策強制要求 HTTP/HTTPS 來源，直接以 `file://` 開啟會觸發錯誤 153，建議搭配 `--serve` 參數自動啟動本機伺服器，或以 `python3 -m http.server 8000` 開啟*）。
-   - **音訊/本地影片**：底欄內建原生音訊控制器，支援進度條拖曳、倍速調整與卡拉 OK 歌詞式語者即時高亮。
-
-### 產出成果檔案：
-每次轉譯完成後，會在音訊同層目錄自動產出：
-1. **📄 `<檔案名>_會議記錄.md`**：完整結構化會議記錄（基本資訊、重點摘要、專題討論、決策事項、待辦追蹤與帶時間戳記發言逐字稿）。
-2. **🌐 `<檔案名>_player.html`**：獨立零外部依賴的**雙欄互動式音訊審閱播放器**。
-3. **📚 `<檔案名>_glossary.md`**：**全域權威術語與人員對照表**（若有啟用探勘）。
-
----
-
-## 安裝與部屬指南 (Installation & Deployment)
-
-Meeting Transcribe Agent 支援兩種不同的運作與安裝部屬流程：
-
-| 執行平台 | 安裝部屬方式 | 必要環境變數設定 | 主要使用操作介面 |
+| 部署方式 | 目標環境 | 安裝工具 | 主要操作介面 |
 | :--- | :--- | :--- | :--- |
-| **Google Antigravity & Agent Plugins** | 本機 IDE / CLI / Agent Plugin & Skill | 專案根目錄 `.env` 設定檔 | Antigravity IDE / CLI 對話視窗自然語言調度 (`SKILL.md`) |
-| **Gemini Enterprise** | 透過 `deploy.sh` 部屬至 Vertex AI Agent Runtime | `deploy.sh` 參數或 `gemini-enterprise/.env` | Gemini Enterprise 企業網頁介面、Vertex AI Agent Engine、A2A 協議 |
+| **方式一：Google Antigravity & Agent Plugins** | 本地 IDE、Agent Skill 或 Python CLI | `pip` / `uv` + `./setup.sh` | Antigravity IDE 對話視窗或終端機 CLI |
+| **方式二：Gemini Enterprise** | Cloud Vertex AI Agent Runtime | `./deploy.sh`（原生 `gcloud`） | Gemini Enterprise Web UI、Agent Engine、A2A |
 
 ---
 
-### 共通基礎相依工具 (Common Prerequisites)
+### 系統前置需求
 
-1. **FFmpeg**（用於音訊探測、時間長度解析與自適應預壓縮）：
-   - **macOS**: `brew install ffmpeg`
-   - **Ubuntu/Debian**: `sudo apt update && sudo apt install ffmpeg`
-   - **Windows**: `winget install Gyan.FFmpeg`
+1. **安裝 FFmpeg**：
+   - **macOS**：`brew install ffmpeg`
+   - **Ubuntu / Debian**：`sudo apt update && sudo apt install ffmpeg`
+   - **Windows**：`winget install Gyan.FFmpeg`
 
-2. **Google Cloud 認證 (ADC)**：
-   Gemini API 全面採用 Vertex AI 與 Application Default Credentials (ADC) 進行驗證：
+2. **設定 Google Cloud ADC 驗證**：
+   執行以下指令以授權 Vertex AI 與 Cloud Storage 存取權限：
    ```bash
    gcloud auth application-default login
    ```
 
 ---
 
-### 方式一：Google Antigravity 與 Agent Plugins 1.0 安裝 (AI Agent 外掛、技能與命令列)
+### 方式一：Google Antigravity Plugin、Skill 與本地 CLI 安裝
 
-可直接作為符合 [Agent Plugins 1.0](https://agent-plugins.org/) 規範的外掛（Plugin）或 Agent Skill 安裝至 Antigravity 與相容的 AI Client 中，或透過 Python 命令列獨立執行：
-
-1. **安裝為 Agent Plugin（推薦：自動載入 `plugin.json` 與 `rules/AGENTS.md` 唯讀保護規則）**：
-   - **全域外掛 (Global Plugin)**（所有專案工作區皆可調用，推薦）：
+1. **安裝為 Agent Plugin（建議方式）**：
+   - **全域安裝（Global Plugin）**：
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
      ```
-   - **工作區專屬外掛 (Workspace Plugin)**（僅目前專案工作區生效）：
+   - **工作區安裝（Workspace Plugin）**：
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agents/plugins/meeting-transcribe-agent
      ```
 
-2. **或安裝為 Agent Skill**：
-   - **全域技能 (Global Skill)**：
+2. **或安裝為獨立 Agent Skill**：
+   - **全域安裝（Global Skill）**：
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/skills/meeting-transcribe-agent
      ```
-   - **工作區專屬技能 (Workspace Skill)**：
+   - **工作區安裝（Workspace Skill）**：
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
      ```
 
-3. **安裝 Python 執行環境套件**：
+3. **安裝 Python 相依套件**：
    ```bash
-   pip install google-genai google-cloud-storage
+   pip install google-genai google-cloud-storage requests
    ```
-   *（可選離線 Whisper 備援：Apple Silicon 請安裝 `pip install mlx-whisper sherpa-onnx`，Linux/Windows 請安裝 `pip install faster-whisper sherpa-onnx`）。*
+   *（選用離線 Whisper 套件：Apple Silicon 請執行 `pip install mlx-whisper sherpa-onnx`；Linux/Windows 請執行 `pip install faster-whisper sherpa-onnx`）。*
 
 4. **初始化 Google Cloud 環境 (`./setup.sh`)**：
-   執行自動化環境設定腳本，驗證認證、啟用必要 API (`aiplatform.googleapis.com`、`storage.googleapis.com`)、建立並配置 Cloud Storage 儲存桶（自動套用 CORS 與 2天/30天生命週期銷毀規則），並自動生成 `.env`：
+   執行 `setup.sh` 自動完成雲端環境設定：
+   - 驗證 ADC 憑證狀態。
+   - 啟用 Vertex AI、Cloud Storage 與 Google Drive API。
+   - 建立儲存桶並設定 CORS 與雙層生命週期規則（`raw/`：2 天；產出物：15 天）。
+   - 自動產生 `.env` 設定檔。
    ```bash
    chmod +x setup.sh
-   ./setup.sh
+   ./setup.sh --project YOUR_GCP_PROJECT_ID
    ```
-   *（亦可指定參數：`./setup.sh -p your-gcp-project-id -r us-central1`）。*
-   在 Antigravity 中執行時，Agent 可直接呼叫 `./setup.sh` 完成雲端環境與設定檔初始化，分層負責、免除手動設定負擔。
 
-5. **於 Antigravity 中使用**：
-   Antigravity 會自動探索並讀取 `SKILL.md`，您只需在對話視窗中提出需求：
-   > "請幫我轉譯這份主管會議錄音 `meeting.mp3`，產出重點摘要、決策事項與逐字稿播放器。"
+5. **在 Antigravity 中開始使用**：
+   直接在 Antigravity 對話視窗輸入指令：
+   > 「請轉錄 `meeting_recording.mp3` 並產出高階主管會議記錄與互動式播放器。」
 
 ---
 
-### 方式二：Gemini Enterprise 安裝 (雲端 Vertex AI Agent Runtime 部屬)
+### 方式二：Gemini Enterprise 雲端部署 (Vertex AI Agent Runtime)
 
-透過 Google ADK 2.0 與 `agents-cli`，將轉譯 Agent 部屬至 Google Cloud Vertex AI Agent Runtime（Agent Engine / Reasoning Engine）作為企業級託管服務。
+透過 ADK 2.0 與 `agents-cli` 將代理部署至 Google Cloud Vertex AI Agent Runtime。`deploy.sh` 全程採用原生 `gcloud` 指令，無須安裝 Terraform。
 
-本部屬流程採用 **100% 純原生 `gcloud`** 進行資源建立，不依賴 Terraform 等任何第三方工具，在 Google Cloud Shell 中即可直接一鍵執行：
-
-1. **安裝部屬命令列工具 (`uv` 與 `google-agents-cli`)**：
+1. **安裝 `google-agents-cli`**：
    ```bash
    uv tool install google-agents-cli
    ```
 
-2. **透過 `./deploy.sh` 一鍵自動部屬**：
-   專案內建的一鍵部屬腳本遵循分層負責原則：底層 GCP 基礎設施交由 `./setup.sh` 自動建置（啟用 API、建立儲存桶與 CORS/Lifecycle、配置服務帳戶 IAM 權限），接著調用 `agents-cli deploy` 打包部屬至 Vertex AI Agent Runtime 並自動註冊至 Gemini Enterprise：
+2. **執行一鍵部署 (`./deploy.sh`)**：
+   `deploy.sh` 會自動呼叫 `setup.sh` 配置雲端資源、部署至 Vertex AI Agent Runtime 並註冊至 Gemini Enterprise：
    ```bash
    chmod +x setup.sh deploy.sh
 
-   # 自動化部屬（委派 setup.sh 建置雲端基礎設施、部屬並自動關聯 Gemini Enterprise）：
+   # 依 .env 或 gcloud 預設專案部署：
    ./deploy.sh
 
-   # 或指定專案與區域：
+   # 明確指定專案 ID 與區域：
    ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
 
-   # 模擬執行（Dry-Run）：
+   # 預覽執行指令而不實際變更雲端資源：
    ./deploy.sh --dry-run
    ```
 
-3. **企業整合與成果發布**：
-   - **網頁操作介面**：部屬後可直接在 Gemini Enterprise 官方網頁的 Agent 擴充列表中調用。
-   - **雲端 Agent 引擎**：可透過 Vertex AI Reasoning Engine SDK 或 Agent-to-Agent (A2A) 跨 Agent 通訊協議調用。
-   - **企業成果交付**：生成的結構化 Markdown 會議記錄與互動播放器 HTML 將自動上傳至 GCS，並回傳 **24 小時有效之安全簽署連結 (Signed URLs)**，免登入點擊即可於瀏覽器審閱。
-
 ---
 
-## 專案目錄結構
+## 命令列使用說明 (Standalone CLI)
 
-```text
-meeting-transcribe-agent/
-├── SKILL.md                          # Agent Skill 專用作業手冊與參數架構
-├── README.md                         # 專案介紹、使用情境與技術架構 (英文)
-├── README.zh-TW.md                   # 繁體中文專案文件
-├── LICENSE                           # MIT 開源授權
-├── .gitignore                        # 忽略測試音訊與本機快取
-├── .env.example                      # Antigravity Skill 環境變數範例
-├── meeting_transcribe.py             # 根目錄命令列入口
-├── deploy.sh                         # 100% 原生 gcloud 一鍵部屬腳本 (支援 Cloud Shell)
-├── scripts/                          # 核心模組
-│   ├── __init__.py
-│   ├── meeting_transcribe.py         # 主流程調度器 (支援雙引擎)
-│   ├── audio_utils.py                # 智慧碼率探測與 FFmpeg 預壓縮
-│   ├── gemini_engine.py              # Gemini 3.5 Transcribe 轉譯與 3.8 Flash 雙軌重構
-│   ├── diarization.py                # 本地聲學切分 (Sherpa-ONNX) 與滑動窗口對齊
-│   ├── glossary.py                   # 雙軌專有名詞探勘
-│   ├── canonicalizer.py              # 聲學分群收斂與語者正規化
-│   └── html_generator.py             # 現代獨立 HTML 播放器生成器
-├── assets/                           # 播放器模板與提示詞
-│   ├── audio_player_template.html    # 獨立離線雙欄音訊審閱播放器模板
-│   ├── video_player_template.html    # 三欄式多模態視訊審閱播放器模板
-│   └── prompts/                      # 提示詞模板目錄
-└── gemini-enterprise/                # Gemini Enterprise (ADK 2.0 / Vertex AI) 部屬包
-    ├── deploy.sh                     # 轉發至根目錄 deploy.sh
-    ├── agents-cli-manifest.yaml      # agents-cli 部屬設定檔
-    └── app/                          # 企業 Agent 模組與工具
-```
-
----
-
-## 進階：開發者與命令列呼叫 (Developer & Headless CLI)
-
-> [!TIP]
-> **一般使用者注意**：如果您是透過 AI Agent（如 Antigravity / Claude Code）使用本系統，您**不需要手動輸入這些命令**！Agent 會依據對話自動閱讀 `SKILL.md` 並配置最佳參數。
-
-### 基本執行（YouTube 影片）
+### YouTube 影片處理
 ```bash
-# YouTube 影片直接轉譯與生成播放器（原生 Agentic Video 模式）
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
+python3 scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-### 基本執行（音訊與本地檔案）
+### 本地音訊與影片處理
 ```bash
-# 雲端純音訊預設模式
-python3 meeting_transcribe.py "meeting_record.mp3"
+# 純音訊雲端預設模式
+python3 scripts/meeting_transcribe.py "meeting_recording.mp3"
 
-# 本地影片兩階段融合（抽取音軌共用 Stage 1 ASR，暫存視訊走 Agentic 視覺融合）
-python3 meeting_transcribe.py "presentation.mp4"
+# 本地影片雙階段融合（音訊 ASR + Agentic 視覺融合）
+python3 scripts/meeting_transcribe.py "conference_video.mp4"
 
-# 本地離線備援執行（Apple Silicon GPU / Sherpa-ONNX）
-python3 meeting_transcribe.py "meeting_record.mp3" --engine whisper --whisper-backend auto
+# 明確指定本地離線 Whisper + Sherpa-ONNX 模式
+python3 scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
 ```
 
-### 帶會議大綱與指定輸出語言
+### 指定會議大綱與目標摘要語言
 ```bash
-python3 meeting_transcribe.py "meeting_record.mp3" --outline "agenda.txt" --summary-language en
+python3 scripts/meeting_transcribe.py "meeting_recording.mp3" --outline "agenda.md" --summary-language zh-TW
 ```
 
-### 完整參數手冊
+### CLI 參數對照表
 
 | 參數 | 說明 | 預設值 |
 | :--- | :--- | :--- |
-| `input_source` | 音訊/影片檔案路徑 (mp3, m4a, wav, mp4, mov 等) 或 YouTube 網址 | *(必填)* |
-| `-o, --output` | 自訂 Markdown 會議記錄輸出路徑 | `<檔名>_minutes.md` |
-| `--agentic` | 所有視訊來源皆預設原生啟用 Agentic Video Understanding 動態訊框導航 | `True` |
-| `--extract-audio` | 強制自視訊檔案抽取純音軌走純音訊流程 | `False` |
-| `--engine` | 純音訊轉譯引擎：`gemini` (雲端預設) 或 `whisper` (本地離線備援) | `gemini` |
-| `--whisper-backend` | 離線模式後端：`auto` (自動偵測 Apple Silicon MLX), `mlx`, `faster-whisper` | `auto` |
-| `--whisper-model` | 離線模式模型大小 (`tiny`, `base`, `small`, `medium`, `large-v3`) | `small` |
-| `--no-diarization` | 停用離線模式的聲學聲紋切分 | `False` |
-| `--clustering-threshold` | Sherpa-ONNX 聲學聚類閥值 | `0.68` |
-| `--num-speakers` | 精確與會發言人人數（已知時填寫，-1 為自動偵測） | `-1` |
-| `--embedding-type` | Sherpa-ONNX 聲紋特徵抽取模型 (`eres2net`, `cam++`) | `eres2net` |
-| `--project` | Vertex AI 的 GCP 專案 (預設讀取 `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT`，或 ADC 預設專案) | `None` |
-| `--region` | Vertex AI 的 GCP 區域 (預設讀取 `GOOGLE_CLOUD_LOCATION` 或 `global`) | `global` |
-| `--bucket` | 暫存本機音訊/影片的 GCS bucket (預設讀取 `MEETING_STORAGE_BUCKET`) | `None` |
-| `--transcribe-model` | 雲端轉譯語音辨識模型 (預設讀取 `TRANSCRIBE_MODEL`) | `gemini-3.5-transcribe-preview` |
-| `--summary-model` | 結構化會議記錄與視覺模型 (預設讀取 `SUMMARY_MODEL`) | `gemini-3.8-flash` |
-| `--outline` | 外部會議通知、大綱或議程檔案路徑 (.txt / .md) | `None` |
-| `--force-glossary` | 強制重新提取全域術語對照表 (覆蓋快取) | `False` |
-| `--no-glossary` | 跳過全域術語對照表提取 | `False` |
-| `--no-player` | 停用獨立互動式 HTML 播放器生成 | `False` |
-| `--no-compress` | 停用上傳前 FFmpeg 自動預壓縮 | `False` |
-| `--summary-language` | 指定會議記錄語言 (`auto` 自動跟隨對話；或 `en`, `zh-TW`, `ja` 等) | `None` (auto) |
-| `--only-transcript` | 僅執行第一階段轉譯輸出純逐字稿，跳過結構化摘要 | `False` |
-| `--language` | 離線 Whisper 語音語言代碼 (`auto`, `en`, `zh`, `ja`) | `auto` |
-| `--serve` | 自動啟動輕量本機 HTTP 伺服器並開啟瀏覽器（YouTube 視訊同步播放推薦） | `False` |
+| `input_source` | 本地音視訊路徑、Google Drive 連結或 YouTube 網址 | *(必填)* |
+| `-o, --output` | 自訂輸出 Markdown 檔案路徑 | `<filename>_minutes.md` |
+| `--agentic` | 為影片輸入啟用 Agentic 影片理解模式 | `True` |
+| `--extract-audio` | 強制從影片提取音軌並執行純音訊管線 | `False` |
+| `--engine` | 語音轉錄引擎：`gemini`（雲端預設）或 `whisper`（明確指定離線） | `gemini` |
+| `--whisper-backend` | 離線 Whisper 後端：`auto`、`mlx` 或 `faster-whisper` | `auto` |
+| `--whisper-model` | 離線 Whisper 模型大小（`tiny`, `base`, `small`, `medium`, `large-v3`） | `small` |
+| `--no-diarization` | 停用離線 Sherpa-ONNX 語者分段 | `False` |
+| `--clustering-threshold` | 設定 Sherpa-ONNX 聲紋分群門檻值 | `0.68` |
+| `--num-speakers` | 指定確切語者人數（`-1` 為自動偵測） | `-1` |
+| `--embedding-type` | 選擇 Sherpa-ONNX 聲紋模型（`eres2net` 或 `cam++`） | `eres2net` |
+| `--project` | 設定 Google Cloud 專案 ID（`GOOGLE_CLOUD_PROJECT`） | `None` |
+| `--region` | 設定 Vertex AI 區域（`GOOGLE_CLOUD_LOCATION`） | `global` |
+| `--bucket` | 設定 Cloud Storage 暫存桶名稱（`MEETING_STORAGE_BUCKET`） | `None` |
+| `--transcribe-model` | 設定雲端 ASR 模型（`TRANSCRIBE_MODEL`） | `gemini-3.5-transcribe-preview` |
+| `--summary-model` | 設定摘要與視覺融合模型（`SUMMARY_MODEL`） | `gemini-3.8-flash` |
+| `--outline` | 提供會議議程或大綱檔案路徑（`.txt` 或 `.md`） | `None` |
+| `--force-glossary` | 強制重新擷取 Stage 0 專有名詞表 | `False` |
+| `--no-glossary` | 跳過 Stage 0 專有名詞表擷取 | `False` |
+| `--no-player` | 停用互動式 HTML 播放器生成 | `False` |
+| `--no-compress` | 停用 FFmpeg 音訊前處理壓縮 | `False` |
+| `--summary-language` | 設定第 1–5 節目標語言（如 `en`, `zh-TW`, `ja`） | `None` (自動) |
+| `--only-transcript` | 僅輸出第 6 節逐字稿 | `False` |
+| `--language` | 設定離線 Whisper 語言代碼（`auto`, `en`, `zh`, `ja`） | `auto` |
+| `--serve` | 啟動本地 HTTP 伺服器並開啟播放器（YouTube 嵌入播放必備） | `False` |
 
 ---
 
----
+## Google Drive 分享連結與 GCS 生命週期規則
 
-## ☁️ Google Drive 雲端硬碟直通與 GCS Lifecycle 自動清理規則 (ADC 零金鑰直連)
+`meeting-transcribe-agent` 支援透過 ADC（`drive.readonly` 權限）直接下載 Google Drive 檔案，並透過遠端 MD5 雜湊值進行本地快取驗證與 UTF-8 中日韓檔名自動還原。
 
-在企業與團隊協作中，Google Meet、Zoom 或現場錄音／錄影常直接自動儲存於 **Google Drive（個人雲端硬碟或團隊共用雲端硬碟 Shared Drives）**。`meeting-transcribe-agent` 支援透過 `gcloud` ADC（`drive.readonly` 權限）直接傳入 Google Drive 連結進行多模態會議記錄與逐字稿轉譯：
-
-### 1. 一鍵啟用雲端環境與 Google Drive 權限 (`./setup.sh`)
+### 1. 初始化雲端與 Google Drive 存取權限 (`./setup.sh`)
 ```bash
-# 步驟 1：登入 ADC 並授予 Google Drive 唯讀權限
-gcloud auth application-default login
+# 步驟 1：授權包含 Google Drive 唯讀權限的 ADC
+gcloud auth application-default login --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
 
-# 步驟 2：一鍵啟用 Vertex AI / GCS / Drive API、建立儲存桶並掛載雙層 Lifecycle 規則
+# 步驟 2：啟用 Vertex AI / GCS / Drive API 並建立雙層生命週期規則
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
-### 2. 📌 Google Drive 支援情境與實戰範例
+### 2. 支援的 Google Drive 應用情境
 
-| 支援情境 | 輸入參數格式 | 智慧快取與自動處理行為 |
+| 情境 | 指令語法 | 快取與自動化處理行為 |
 | :--- | :--- | :--- |
-| **情境 A：Google Meet / Zoom 雲端錄影檔直通**<br/>*(自動儲存於 Google Drive 之 MP4/MOV)* | `python3 meeting_transcribe.py "https://drive.google.com/file/d/<FILE_ID>/view"` | 透過 Drive API v3 校驗 `md5Checksum` 後快取至本地 `gdrive_inputs/`，自動抽取內嵌字幕軌（若有）與 16kHz 音軌，並將壓縮視訊轉存至 GCS `raw/`（具備 `sha256` / `gdrive_md5` 比對快取免重傳），執行 Agentic 投影片/名牌視覺融合與產生互動式 HTML 播放器。 |
-| **情境 B：雲端硬碟純音訊錄音檔直通**<br/>*(手機錄音筆上傳之 M4A/MP3/WAV)* | `python3 meeting_transcribe.py "<Google Drive 音訊連結>" --outline agenda.md` | 自動從 Google Drive 拉取音檔並透過 Vertex AI Gemini 3.5 Transcribe 進行語者分離轉譯與執行長級會議紀要彙整。 |
+| **情境 A：Google Drive 上的會議影片**<br/>*(MP4 / MOV)* | `python3 scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view"` | 透過 Drive API v3 檢查 `md5Checksum`、快取至 `gdrive_inputs/`、還原 UTF-8 檔名、提取 16 kHz 音訊、暫存 720p 影片至 GCS `raw/`，並執行 Stage 1 + Stage 2 視覺融合。 |
+| **情境 B：Google Drive 上的會議錄音**<br/>*(M4A / MP3 / WAV)* | `python3 scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view" --outline agenda.md` | 驗證 MD5 快取、執行 Stage 0 語系與專有名詞偵測，並以 Gemini 3.5 Transcribe 與 Gemini 3.8 Flash 產出會議記錄。 |
 
-#### 💻 CLI 實戰指令範例：
-```bash
-# 【情境 A】直接貼上 Google Drive 上的會議錄影連結（執行 Agentic 視覺投影片融合 + 產出互動式播放器）：
-python3 meeting_transcribe.py "https://drive.google.com/file/d/1MeetingVideoIdxxxxxx/view?usp=sharing"
+### 3. GCS 儲存桶雙層自動清理規則（`raw/` 2 天 / 產出物 15 天）
 
-# 【情境 B】Google Drive 錄音連結 + 搭配會議議程大綱 + 指定輸出繁體中文紀要：
-python3 meeting_transcribe.py "https://drive.google.com/file/d/1AudioRecordIdxxxxxx/view?usp=sharing" \
-  --outline agenda.txt --summary-language zh-TW
-```
-
-#### 💬 Antigravity Agent 自然語言對話範例：
-> 「幫我把這場放在 Google Drive 上的產品週會錄影轉成完整會議記錄與逐字稿，並產生互動式 HTML 播放器：`https://drive.google.com/file/d/1MeetingVideoIdxxxxxx/view?usp=sharing`」
-
-### 3. 🗑️ GCS Bucket Lifecycle 雙層自動清理規則 (`raw/` 2天 / 產出物 15天)
-
-| GCS 路徑前綴 (`matchesPrefix`) | 儲存檔案類型 | 保留期限 (`age`) | 規則說明 |
+| GCS 路徑前綴 (`matchesPrefix`) | 儲存內容 | 保留天數 (`age`) | 規則說明 |
 | :--- | :--- | :--- | :--- |
-| **`raw/`** | 供 Vertex AI 多模態推論暫存之視訊與音訊 (`raw/<filename>`) | **2 天 (`age: 2`)** | 保留 2 天讓同專案重跑摘要或切換語言時秒級命中 `sha256` / `gdrive_md5` 快取免重傳，2 天後由 GCS 自動刪除。 |
-| **`minutes/`、`players/`、`output/`、`deliverables/`** | 雲端備份之會議記錄 (`.md`)、互動式播放器 (`.html`) 與相關產出物 | **15 天 (`age: 15`)** | 產出物保留 15 天供團隊成員跨裝置檢視與下載，15 天後自動清理。 |
+| **`raw/`** | 暫存音訊切片與 720p 影片 (`raw/<filename>`) | **2 天 (`age: 2`)** | 保留短期暫存供重複執行時快取命中，滿 2 天由 GCS 自動刪除。 |
+| **`minutes/`**、**`players/`**、**`output/`**、**`deliverables/`** | Markdown 會議記錄 (`.md`) 與互動式播放器 (`.html`) | **15 天 (`age: 15`)** | 保留最終產出物 15 天供團隊檢視與下載，期滿自動清理。 |
 
 ---
 
 ## 授權條款 (License)
 
-本專案採用 [MIT License](LICENSE) 開源授權。
-
+本專案採用 [MIT License](LICENSE) 授權。
