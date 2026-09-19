@@ -3,13 +3,14 @@ scripts/glossary.py - Dual-Track Meeting Consistency Glossary Extraction.
 Handles 1M Audio Pre-scan and Meeting Outline/Agenda Terminology Mining.
 """
 
+import os
 import re
 import time
 import uuid
 from pathlib import Path
 from google import genai
 from google.genai import types
-from .audio_utils import safe_ascii_upload_path
+from .audio_utils import safe_ascii_upload_path, fix_mojibake_filename
 from .gcs_utils import upload_file_to_gcs, delete_gcs_blob, guess_mime_type
 from .gemini_engine import call_gemini_with_retry
 
@@ -67,6 +68,23 @@ def extract_keywords_from_glossary(glossary_text: str, max_keywords: int = 40) -
     return ", ".join(top_terms) + "."
 
 
+def extract_detected_language_from_glossary(glossary_text: str) -> str | None:
+    """
+    Extract the detected BCP-47 spoken language code from the glossary metadata header
+    (e.g. 'cmn-Hant-TW', 'en-US', 'ja-JP', 'zh-CN').
+    Returns None if no valid language code is found.
+    """
+    if not glossary_text:
+        return None
+    m = re.search(
+        r"Primary Spoken Language Code\*?\*?\s*:\s*`?([a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})+)`?",
+        glossary_text,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip()
+    return None
+
 
 def extract_global_consistency_glossary(
     client: genai.Client,
@@ -85,8 +103,9 @@ def extract_global_consistency_glossary(
     Returns: (full_glossary_markdown, prompt_keywords)
     """
     model = model or os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash"
-    glossary_file = audio_path.parent / f"glossary_{audio_path.stem}.md"
-    alt_glossary = audio_path.parent / f"{audio_path.stem}_glossary.md"
+    clean_stem = fix_mojibake_filename(audio_path.stem)
+    glossary_file = audio_path.parent / f"glossary_{clean_stem}.md"
+    alt_glossary = audio_path.parent / f"{clean_stem}_glossary.md"
     target_cache = glossary_file if glossary_file.exists() else alt_glossary
     
     if not force and target_cache.exists():

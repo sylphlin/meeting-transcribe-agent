@@ -28,6 +28,7 @@ from scripts.audio_utils import (
     should_compress_audio,
     is_youtube_url,
     optimize_video_for_upload,
+    fix_mojibake_filename,
 )
 from scripts.canonicalizer import consolidate_meeting_minutes
 from scripts.gcs_utils import (
@@ -509,6 +510,121 @@ def transcribe_with_gemini_cloud(
             temp_compressed.unlink()
 
 
+_TURN_LINE_PREFIX_RE = re.compile(
+    r"^(\[\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*\]\s*\*\*[^*]+\*\*\s*:\s*)(.+)$"
+)
+_TURN_BRACKET_EXTRACT_RE = re.compile(
+    r"^\s*\[\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*\]\s*(?:\*\*[^*]+\*\*\s*:\s*)?(.+)$"
+)
+
+
+def refine_verbatim_transcript_chunks(
+    raw_transcript_text: str,
+    sections_1_5: str,
+    global_glossary: str,
+    target_lang: str,
+    call_track_fn,
+    chunk_size: int = 60,
+) -> str:
+    """
+    Proofread and align the written orthographic script and domain terminology of Section 6
+    dialogue turns in parallel chunks while deterministically preserving every original
+    [MM:SS - MM:SS] **spk_X**: timestamp and speaker prefix.
+    """
+    turn_lines = [line.strip() for line in raw_transcript_text.splitlines() if line.strip()]
+    if not turn_lines:
+        return raw_transcript_text
+
+    section_1_excerpt = (
+        sections_1_5.split("## 2.")[0].strip()
+        if "## 2." in sections_1_5
+        else sections_1_5[:2000].strip()
+    )
+    glossary_block = (
+        f"=== Global Consistency Glossary ===\n{global_glossary.strip()}\n===================================\n"
+        if global_glossary and global_glossary.strip()
+        else ""
+    )
+
+    chunks = [turn_lines[i : i + chunk_size] for i in range(0, len(turn_lines), chunk_size)]
+    num_chunks = len(chunks)
+
+    def _process_chunk(chunk_idx: int) -> tuple[int, list[str]]:
+        chunk_lines = chunks[chunk_idx]
+        chunk_body = "\n".join(chunk_lines)
+        prompt_chunk = f"""# Role & Objective
+Proofread and align the orthographic script and domain terminology of the following verbatim transcript segment.
+
+{glossary_block}
+# Reference Context (Section 1 Metadata & Entity Tables)
+{section_1_excerpt}
+
+# Strict Rules
+1. Preserve every line's exact bracketed timestamp `[MM:SS - MM:SS]` (or `[HH:MM:SS - HH:MM:SS]`) and speaker tag `**spk_X**:` without modification.
+2. Do NOT merge, drop, reorder, or add any dialogue lines. Output the exact same number of lines in the exact same order.
+3. Keep the original spoken language and words of each participant without translating between different spoken languages.
+4. Align the written orthographic script (such as Traditional vs. Simplified characters) to match the script used in the Reference Context ({target_lang}).
+5. Correct acoustic phonetic mishearings of participant names, titles, organizations, and technical terms using the Reference Context and Global Consistency Glossary.
+6. Output ONLY the refined transcript lines. Do not include Markdown code fences or commentary.
+
+# Transcript Segment to Proofread
+{chunk_body}
+"""
+        try:
+            resp_text = normalize_verbatim_timestamps(
+                call_track_fn(
+                    prompt_chunk,
+                    f"Stage 2 Verbatim Script & Terminology Proofreading ({chunk_idx + 1}/{num_chunks})",
+                )
+            )
+        except Exception as e:
+            print(f"[!] Warning: Verbatim proofreading chunk {chunk_idx + 1}/{num_chunks} failed ({e}). Keeping raw turns.")
+            return chunk_idx, chunk_lines
+
+        by_ts: dict[tuple[str, str], list[str]] = {}
+        ordered_utterances: list[str] = []
+        for out_line in resp_text.splitlines():
+            m_out = _TURN_BRACKET_EXTRACT_RE.match(out_line.strip())
+            if m_out:
+                ts_pair = (m_out.group(1), m_out.group(2))
+                utt_clean = m_out.group(3).strip()
+                if utt_clean:
+                    by_ts.setdefault(ts_pair, []).append(utt_clean)
+                    ordered_utterances.append(utt_clean)
+
+        refined_chunk: list[str] = []
+        for line_i, orig_line in enumerate(chunk_lines):
+            m_orig = _TURN_LINE_PREFIX_RE.match(orig_line)
+            if not m_orig:
+                refined_chunk.append(orig_line)
+                continue
+            prefix = m_orig.group(1)
+            ts_pair = (m_orig.group(2), m_orig.group(3))
+            if ts_pair in by_ts and by_ts[ts_pair]:
+                new_utt = by_ts[ts_pair].pop(0)
+                refined_chunk.append(f"{prefix}{new_utt}")
+            elif len(ordered_utterances) == len(chunk_lines):
+                refined_chunk.append(f"{prefix}{ordered_utterances[line_i]}")
+            else:
+                refined_chunk.append(orig_line)
+
+        return chunk_idx, refined_chunk
+
+    max_workers = min(num_chunks, 4)
+    results: list[tuple[int, list[str]]] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_process_chunk, idx) for idx in range(num_chunks)]
+        for fut in concurrent.futures.as_completed(futures):
+            results.append(fut.result())
+
+    results.sort(key=lambda x: x[0])
+    all_refined: list[str] = []
+    for _, c_lines in results:
+        all_refined.extend(c_lines)
+
+    return "\n\n".join(all_refined)
+
+
 def generate_minutes_with_gemini(
     client: genai.Client,
     audio_path: Path,
@@ -524,13 +640,13 @@ def generate_minutes_with_gemini(
     Synthesizes structured executive sections 1 through 5 (Metadata & Speaker Mapping Table,
     Executive Summary, Key Topics with Speaker Perspectives, Decisions, and Action Items)
     plus the localized Section 6 heading via Gemini 3.8 Flash.
-    Section 6 verbatim dialogue turns are deterministically assembled downstream by Python
-    with canonical speaker consolidation to maintain 100% physical acoustic clock fidelity
-    and avoid output token limits.
+    Section 6 verbatim dialogue turns are proofread in parallel chunks and deterministically
+    assembled downstream by Python with canonical speaker consolidation.
     """
     load_env_file()
     summary_model = summary_model or os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash"
     t0 = time.time()
+    clean_audio_name = fix_mojibake_filename(audio_path.name)
     
     glossary_injection = f"""
 === Global Consistency Glossary ===
@@ -574,7 +690,7 @@ Strictly adhere to the spelling, names, titles, organizations, and technical ter
 
     if prompt_template_path is not None:
         template_text = Path(prompt_template_path).read_text(encoding="utf-8")
-        prompt = template_text.replace("{audio_filename}", audio_path.name)
+        prompt = template_text.replace("{audio_filename}", clean_audio_name)
         prompt = prompt.replace("{glossary_injection}", glossary_injection)
         prompt = prompt.replace("{raw_transcript_text}", raw_transcript_text)
         prompt = prompt.replace("{summary_language_instruction}", summary_lang_instruction)
@@ -602,7 +718,7 @@ Output strictly and exclusively Sections 1 to 5, ending immediately with the loc
 
 ## 1. Meeting Metadata & Attendees
 - **Meeting Title**: (Inferred or established title)
-- **Audio Source**: `{audio_path.name}`
+- **Audio Source**: `{clean_audio_name}`
 - **Estimated Date / Time**: (Inferred from context or agenda)
 - **Chairperson / Host**: (Identified meeting leader)
 - **Speaker Mapping Table**:
@@ -643,7 +759,15 @@ Output strictly and exclusively Sections 1 to 5, ending immediately with the loc
     if not re.search(r'(?m)^##\s*6\.\s*', sections_1_5):
         sections_1_5 = f"{sections_1_5.strip()}\n\n## 6. Full Verbatim Transcript"
 
-    combined_raw = f"{sections_1_5.strip()}\n\n{raw_transcript_text.strip()}\n"
+    refined_transcript = refine_verbatim_transcript_chunks(
+        raw_transcript_text=raw_transcript_text,
+        sections_1_5=sections_1_5,
+        global_glossary=global_glossary,
+        target_lang=target_lang,
+        call_track_fn=_call_gemini_track,
+    )
+
+    combined_raw = f"{sections_1_5.strip()}\n\n{refined_transcript.strip()}\n"
     print(f"[*] Consolidating canonical speaker identities, entity corrections, and sequential turns...")
     final_text = consolidate_meeting_minutes(combined_raw, srt_path=srt_path)
     duration = time.time() - t0
@@ -910,9 +1034,10 @@ def analyze_video_with_transcript(
         f"  At the very end of your response, output ONLY the localized Markdown heading for Section 6 (e.g., `## 6. Full Verbatim Transcript` in English, `## 6. 完整逐字記錄` in Traditional Chinese, `## 6. 全文逐字録` in Japanese), followed by nothing else."
     )
 
+    clean_video_name = fix_mojibake_filename(video_p.name)
     s1_s5_schema = f"""## 1. Meeting Metadata & Attendees
 - **Meeting Title**: (Inferred from video slides, agenda, or dialogue)
-- **Source**: {video_p.name}
+- **Source**: {clean_video_name}
 - **Estimated Date / Time**: (Inferred from slides or dialogue)
 - **Chairperson / Host**: (Identified meeting leader)
 - **Speaker Mapping Table**:
@@ -1036,7 +1161,31 @@ Output strictly the following structure in Markdown (DO NOT include any emojis o
         if not re.search(r'(?m)^##\s*6\.\s*', output_text):
             output_text = f"{output_text.strip()}\n\n## 6. Full Verbatim Transcript"
 
-        combined_raw = f"{output_text.strip()}\n\n{raw_transcript_text.strip()}\n"
+        def _call_video_proofread_track(p_content: str, label: str) -> str:
+            gen_kwargs = {"model": summary_model, "contents": p_content}
+            if hasattr(types, "ThinkingConfig"):
+                try:
+                    gen_kwargs["config"] = types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(thinking_budget=0)
+                    )
+                except Exception:
+                    pass
+            print(f"[*] [Stage 2] Launching {label} with `{summary_model}` (thinking_budget=0)...")
+            r_obj = call_gemini_with_retry(
+                lambda: client.models.generate_content(**gen_kwargs),
+                op_name=label,
+            )
+            return r_obj.text or ""
+
+        refined_transcript = refine_verbatim_transcript_chunks(
+            raw_transcript_text=raw_transcript_text,
+            sections_1_5=output_text,
+            global_glossary="",
+            target_lang=target_lang,
+            call_track_fn=_call_video_proofread_track,
+        )
+
+        combined_raw = f"{output_text.strip()}\n\n{refined_transcript.strip()}\n"
         print(f"[*] Consolidating canonical speaker identities, entity corrections, and sequential turns...")
         final_text = consolidate_meeting_minutes(combined_raw, srt_path=srt_path)
 

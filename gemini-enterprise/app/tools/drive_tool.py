@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 from google.cloud import storage
 
-from ..core.gcs_utils import get_gcs_client
+from ..core.gcs_utils import get_gcs_client, fix_mojibake_filename
 
 
 def extract_drive_file_id(drive_url_or_id: str) -> str:
@@ -70,7 +70,7 @@ def stream_drive_file_to_gcs(
     client = gcs_client or get_gcs_client()
 
     meta = get_drive_file_metadata(file_id, drive_service=service)
-    file_name = meta.get("name", f"drive_{file_id}")
+    file_name = fix_mojibake_filename(meta.get("name", f"drive_{file_id}"))
     mime_type = meta.get("mimeType", "application/octet-stream")
     file_size_bytes = int(meta.get("size", 0))
 

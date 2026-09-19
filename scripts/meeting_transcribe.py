@@ -27,6 +27,7 @@ from scripts.audio_utils import (
     extract_audio_from_video,
     detect_embedded_subtitles,
     extract_embedded_subtitles,
+    fix_mojibake_filename,
 )
 from scripts.diarization import transcribe_with_local_whisper_and_diarization
 from scripts.gemini_engine import (
@@ -40,6 +41,7 @@ from scripts.gemini_engine import (
 from scripts.glossary import (
     extract_global_consistency_glossary,
     extract_keywords_from_glossary,
+    extract_detected_language_from_glossary,
 )
 from scripts.canonicalizer import (
     consolidate_meeting_minutes,
@@ -187,7 +189,7 @@ def generate_meeting_minutes_and_transcript(
         # Extract 16kHz mono audio track for Stage 1 ASR (uses cached audio if already extracted)
         audio_path = extract_audio_from_video(video_p)
         play_media = video_p if is_local_video else audio_path
-        default_out_stem = video_p.stem
+        default_out_stem = fix_mojibake_filename(video_p.stem)
         out_parent = video_p.parent
 
         # Check for embedded WebRTC/captions stream to use as speaker ground truth
@@ -196,12 +198,12 @@ def generate_meeting_minutes_and_transcript(
             print(f"[*] Detected embedded subtitles stream (codec: {detected_codec}). Extracting metadata ground truth...")
             scratch_dir = out_parent / "scratch"
             scratch_dir.mkdir(parents=True, exist_ok=True)
-            srt_candidate = scratch_dir / f"{video_p.stem}_embedded.srt"
+            srt_candidate = scratch_dir / f"{default_out_stem}_embedded.srt"
             subtitles_path = extract_embedded_subtitles(video_p, srt_candidate)
             if subtitles_path and subtitles_path.exists():
                 print(f"[✓] Embedded subtitles successfully extracted: {subtitles_path.name}")
                 if not outline:
-                    auto_outline_path = scratch_dir / f"{video_p.stem}_auto_outline.md"
+                    auto_outline_path = scratch_dir / f"{default_out_stem}_auto_outline.md"
                     try:
                         generate_auto_outline_from_srt(subtitles_path, auto_outline_path)
                         outline = auto_outline_path
@@ -215,7 +217,7 @@ def generate_meeting_minutes_and_transcript(
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
         play_media = audio_path
-        default_out_stem = audio_path.stem
+        default_out_stem = fix_mojibake_filename(audio_path.stem)
         out_parent = audio_path.parent
 
     # Detect sidecar SRT if no embedded subtitles were extracted
@@ -228,11 +230,11 @@ def generate_meeting_minutes_and_transcript(
     print(f"\n========================================================")
     if is_local_video:
         print(f"🎥  Meeting Transcribe Agent: Two-Stage Local Video Pipeline")
-        print(f"📺  Source Video: {video_p.name}")
+        print(f"📺  Source Video: {fix_mojibake_filename(video_p.name)}")
         print(f"🎙️  Stage 1 (Acoustic ASR): {transcribe_model if engine.lower() != 'whisper' else f'Whisper ({whisper_backend})'}")
         print(f"👁️  Stage 2 (Multimodal Vision Fusion): {summary_model} (Agentic)")
     else:
-        print(f"🎙️  Meeting Transcribe Agent: Pure Audio Pipeline: {audio_path.name}")
+        print(f"🎙️  Meeting Transcribe Agent: Pure Audio Pipeline: {fix_mojibake_filename(audio_path.name)}")
         print(f"⚙️  Primary Engine: {engine.upper()} | Summary Model: {summary_model}")
         if engine.lower() == "whisper":
             print(f"   [Offline Setup] Backend: {whisper_backend} | Model: {whisper_model} | Diarization: {enable_diarization}")
@@ -261,6 +263,7 @@ def generate_meeting_minutes_and_transcript(
     # Step 1.5: Dual-Track Global Consistency Glossary
     global_glossary = ""
     glossary_keywords = ""
+    detected_lang_code = None
     if not no_glossary and client is not None:
         print("--- [Track 1 & 2] Global Terminology & Entity Mining ---")
         try:
@@ -275,8 +278,17 @@ def generate_meeting_minutes_and_transcript(
             )
             if global_glossary:
                 glossary_keywords = extract_keywords_from_glossary(global_glossary)
+                detected_lang_code = extract_detected_language_from_glossary(global_glossary)
+                if detected_lang_code:
+                    print(f"[*] Detected Primary Spoken Language Code from Glossary: `{detected_lang_code}`")
         except Exception as e:
             print(f"[!] Warning: Global glossary extraction failed ({e}), proceeding with standard pipeline.")
+
+    effective_asr_language = (
+        language
+        if (language and language.lower() != "auto")
+        else (detected_lang_code or "auto")
+    )
 
     # Step 1: Speech-to-Text Transcription & Acoustic Diarization (Shared Stage 1 ASR Core)
     if engine.lower() == "whisper":
@@ -300,7 +312,7 @@ def generate_meeting_minutes_and_transcript(
             bucket_name=resolved_bucket,
             model_name=transcribe_model,
             compress=compress,
-            language=language
+            language=effective_asr_language
         )
 
     # Early return if only verbatim transcript requested
@@ -309,7 +321,7 @@ def generate_meeting_minutes_and_transcript(
         dur_str = format_offset(duration_sec)
         eng_label = f"Local Whisper ({whisper_backend}/{whisper_model})" if engine.lower() == "whisper" else transcribe_model
         out_path = Path(output_file) if output_file else out_parent / f"{default_out_stem}_transcript.md"
-        source_label = f"**Video File**: `{video_p.name}`" if is_local_video else f"**Audio File**: `{audio_path.name}`"
+        source_label = f"**Video File**: `{fix_mojibake_filename(video_p.name)}`" if is_local_video else f"**Audio File**: `{fix_mojibake_filename(audio_path.name)}`"
         content = (
             f"# Meeting Transcript: {default_out_stem}\n\n"
             f"- {source_label}\n"

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 import google.auth
 
-from ..core.audio_utils import is_youtube_url
+from ..core.audio_utils import is_youtube_url, fix_mojibake_filename
 from ..core.html_generator import extract_meeting_title
 from ..core.meeting_transcribe import generate_meeting_minutes_and_transcript
 from ..core.gcs_utils import (
@@ -121,7 +121,7 @@ def process_meeting_transcription(
         local_media_source = Path(source_clean).resolve()
 
     # 2. Execution Phase
-    output_stem = Path(local_media_source).stem if not is_yt else f"yt_{source_clean[-11:]}"
+    output_stem = fix_mojibake_filename(Path(local_media_source).stem) if not is_yt else f"yt_{source_clean[-11:]}"
     dest_minutes_md = work_dir / f"{output_stem}_minutes.md"
 
     generated_md_path = generate_meeting_minutes_and_transcript(

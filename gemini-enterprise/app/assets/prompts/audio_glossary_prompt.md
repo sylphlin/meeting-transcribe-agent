@@ -9,7 +9,10 @@ The primary purpose is to establish 100% precision and consistency across the me
 
 # Extraction Requirements
 
-Analyze the audio and generate a structured Markdown glossary covering the following four categories:
+Analyze the audio and generate a structured Markdown glossary. Begin with a single metadata line indicating the primary spoken language and orthographic script in standard BCP-47 format (for example, `cmn-Hant-TW` for Taiwan Mandarin in Traditional Chinese, `zh-CN` for Mainland Mandarin in Simplified Chinese, `en-US` for English, `ja-JP` for Japanese):
+- **Primary Spoken Language Code**: `<BCP-47 code>`
+
+Then cover the following four categories:
 
 ## 1. Participants & Speaker Names
 - Real names, honorifics, organizational titles, and meeting roles (e.g., Host/Chair, Presenter, Executive, Discussant).

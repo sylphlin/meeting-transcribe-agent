@@ -68,6 +68,32 @@ def fetch_youtube_title(url_str: str) -> str | None:
     return None
 
 
+def fix_mojibake_filename(name: str) -> str:
+    """
+    Recover UTF-8 filenames that were decoded as ISO-8859-1 (latin-1) by HTTP headers.
+    Leaves valid UTF-8 CJK and ASCII filenames untouched.
+    """
+    if not name:
+        return ""
+    s = str(name)
+    if any(0x80 <= ord(c) <= 0xFF for c in s) and all(ord(c) <= 0xFF for c in s):
+        try:
+            return s.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+
+    def _decode_run(m: "re.Match[str]") -> str:
+        chunk = m.group(0)
+        try:
+            return chunk.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            return chunk
+
+    if any(0x80 <= ord(c) <= 0xFF for c in s):
+        s = re.sub(r"[\x80-\xff]{2,}", _decode_run, s)
+    return s
+
+
 def sanitize_filename(name: str, max_length: int = 120) -> str:
     """
     Sanitize a string to be safely used as a filename across macOS, Windows, and Linux.
@@ -75,6 +101,7 @@ def sanitize_filename(name: str, max_length: int = 120) -> str:
     """
     if not name:
         return ""
+    name = fix_mojibake_filename(name)
     # Strip markdown formatting
     cleaned = re.sub(r'[*_`#~]', '', name)
     # Replace illegal filename characters: \ / : * ? " < > |
