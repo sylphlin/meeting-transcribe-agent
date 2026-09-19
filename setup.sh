@@ -45,7 +45,7 @@ PROJECT_NUMBER="${GCP_PROJECT_NUMBER:-${PROJECT_NUMBER:-}}"
 REGION="${GCP_REGION:-us-central1}"
 BUCKET_NAME="${MEETING_STORAGE_BUCKET:-}"
 SERVICE_ACCOUNT="${GCP_SERVICE_ACCOUNT:-${SERVICE_ACCOUNT:-}}"
-CREATE_SA=false
+CREATE_SA=true
 DRY_RUN=false
 
 usage() {
@@ -300,6 +300,14 @@ if [ "$CREATE_SA" = true ]; then
         gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_NAME" \
             --member="serviceAccount:$SERVICE_ACCOUNT" \
             --role="roles/storage.objectUser" --quiet 2>/dev/null || true
+        ACTIVE_ACCT="$(gcloud config get-value account 2>/dev/null || true)"
+        if [ -n "$ACTIVE_ACCT" ]; then
+            echo "    [*] Granting roles/iam.serviceAccountTokenCreator on $SERVICE_ACCOUNT to user:$ACTIVE_ACCT..."
+            gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT" \
+                --member="user:$ACTIVE_ACCT" \
+                --role="roles/iam.serviceAccountTokenCreator" \
+                --project="$PROJECT_ID" --quiet 2>/dev/null || true
+        fi
     else
         echo "    [Dry-Run] Would ensure service account $SERVICE_ACCOUNT exists with roles/aiplatform.user and roles/storage.objectUser."
     fi
