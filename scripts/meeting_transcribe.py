@@ -18,7 +18,6 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 from scripts.audio_utils import (
-    compress_audio_for_upload,
     get_audio_duration,
     format_offset,
     is_youtube_url,

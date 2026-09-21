@@ -6,7 +6,6 @@ Uses Vertex AI with Application Default Credentials exclusively -- no AI Studio 
 
 import concurrent.futures
 import json
-import math
 import os
 from pathlib import Path
 import random

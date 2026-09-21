@@ -9,7 +9,6 @@ from typing import Any
 import google.auth
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
-from google.cloud import storage
 
 from ..core.gcs_utils import get_gcs_client, fix_mojibake_filename
 

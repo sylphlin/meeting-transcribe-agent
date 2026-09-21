@@ -132,9 +132,7 @@ def extract_global_consistency_glossary(
     outline_section = f"\n=== External Meeting Notice & Agenda Outline ===\n{user_outline_text}\n" if user_outline_text else ""
 
     if prompt_template_path is None:
-        md_candidate = Path(__file__).parent.parent / "assets" / "prompts" / "audio_glossary_prompt.md"
-        txt_candidate = Path(__file__).parent.parent / "assets" / "prompts" / "audio_glossary_prompt.txt"
-        prompt_template_path = md_candidate if md_candidate.exists() else txt_candidate
+        prompt_template_path = Path(__file__).parent.parent / "assets" / "prompts" / "audio_glossary_prompt.md"
 
     if prompt_template_path.exists():
         template_text = prompt_template_path.read_text(encoding="utf-8")

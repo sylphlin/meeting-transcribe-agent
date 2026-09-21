@@ -25,8 +25,7 @@ gemini-enterprise/
 │   ├── tools/                    # Enterprise tool modules
 │   │   ├── __init__.py
 │   │   ├── transcribe_tool.py    # Unified meeting transcription tool
-│   │   ├── drive_tool.py         # Google Drive to GCS streaming & export tool
-│   │   └── gcs_tool.py           # GCS upload and 24-hour signed URL tool
+│   │   └── drive_tool.py         # Google Drive to GCS streaming & export tool
 │   ├── core/                     # Upstream transcription and diarization modules
 │   └── assets/                   # Prompt templates and HTML player templates
 ├── deploy.sh                     # Wrapper forwarding to root deploy.sh
