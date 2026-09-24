@@ -275,6 +275,25 @@ flowchart TD
    直接在 Antigravity 對話視窗輸入指令：
    > 「請轉錄 `meeting_recording.mp3` 並產出高階主管會議記錄與互動式播放器。」
 
+### 專案目錄結構（Agent Plugins 1.0 標準規範）
+```text
+meeting-transcribe-agent/
+├── plugin.json                                           # Agent Plugins 1.0 宣告清單
+├── rules/
+│   └── AGENTS.md                                         # 打包於 Plugin 內的客戶端執行期守則（唯讀、直接呼叫 CLI 與 Fail-Fast）
+├── skills/
+│   └── meeting-transcribe-agent/                         # 標準技能套件主幹（Single Source of Truth）
+│       ├── SKILL.md                                      # 技能規範與自動化執行手冊
+│       ├── scripts/                                      # 核心轉錄、視覺融合與播放器模組實體目錄 (SSOT)
+│       └── assets/                                       # 播放器模板與提示詞規範實體目錄 (SSOT)
+├── SKILL.md -> skills/meeting-transcribe-agent/SKILL.md  # 根目錄 POSIX Symlink
+├── scripts -> skills/meeting-transcribe-agent/scripts    # 根目錄 POSIX Symlink
+├── assets -> skills/meeting-transcribe-agent/assets      # 根目錄 POSIX Symlink
+├── AGENTS.md                                             # 工作區與開發工程規範（Part I 執行守則 & Part II 開發規範）
+├── meeting_transcribe.py                                 # 根目錄 CLI 啟動入口
+└── setup.sh / deploy.sh                                  # 原生 gcloud 雲端環境配置與部署腳本
+```
+
 ---
 
 ### 方式二：Gemini Enterprise 雲端部署 (Vertex AI Agent Runtime)

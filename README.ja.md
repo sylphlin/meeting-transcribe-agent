@@ -89,6 +89,10 @@ chmod +x setup.sh deploy.sh
 ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
 ```
 
+### ディレクトリ構造（Agent Plugins 1.0 準拠）
+- **SSOT 実体ディレクトリ**：`skills/meeting-transcribe-agent/`（`SKILL.md`、`scripts/`、`assets/` を格納）を単一の信頼できる情報源とし、ルートの `SKILL.md`、`scripts`、`assets` は POSIX シンボリックリンクとして構成されています。
+- **2 層 `AGENTS.md` 構成**：ルートの `AGENTS.md` は開発・エンジニアリング規約（Part I & Part II）を定義し、`rules/AGENTS.md` はプラグインに同梱される AI クライアント実行時ルール（`<PLUGIN_ROOT>` からの直接 CLI 実行、読み取り専用、Fail-Fast）を定義します。
+
 ---
 
 ## コマンドライン使用法 (Standalone CLI)

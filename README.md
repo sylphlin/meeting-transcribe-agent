@@ -310,6 +310,37 @@ Select one of the two deployment methods below:
    Prompt the agent directly in the Antigravity chat:
    > "Transcribe `meeting_recording.mp3` and generate executive minutes and the interactive player."
 
+### Project Directory Structure (Agent Plugins 1.0 Specification)
+```text
+meeting-transcribe-agent/
+├── plugin.json                                           # Agent Plugins 1.0 manifest
+├── rules/
+│   └── AGENTS.md                                         # Packaged client execution invariants (<PLUGIN_ROOT> direct CLI & fail-fast)
+├── skills/
+│   └── meeting-transcribe-agent/                         # Canonical Skill Bundle (Single Source of Truth)
+│       ├── SKILL.md                                      # Skill definition and agent reference manual
+│       ├── scripts/                                      # Canonical core components (SSOT)
+│       │   ├── meeting_transcribe.py                     # Master pipeline orchestrator
+│       │   ├── audio_utils.py                            # Video detection, FFmpeg compression, audio extraction
+│       │   ├── gcs_utils.py                              # Cloud Storage upload/download & ephemeral cleanup
+│       │   ├── gemini_engine.py                          # Multimodal video fusion & Cloud Storage auto-cleanup
+│       │   ├── diarization.py                            # Local Sherpa-ONNX acoustic diarization & Whisper/MLX
+│       │   ├── glossary.py                               # Dual-track terminology mining
+│       │   ├── canonicalizer.py                          # Speaker identity convergence & turn merging
+│       │   └── html_generator.py                         # Dedicated audio/video player renderer
+│       └── assets/                                       # Canonical player templates & prompts (SSOT)
+│           ├── audio_player_template.html                # 2-pane offline audio player template
+│           ├── video_player_template.html                # 3-pane video player template
+│           └── prompts/                                  # Structured Markdown prompts
+├── SKILL.md -> skills/meeting-transcribe-agent/SKILL.md  # Root POSIX symlink
+├── scripts -> skills/meeting-transcribe-agent/scripts    # Root POSIX symlink
+├── assets -> skills/meeting-transcribe-agent/assets      # Root POSIX symlink
+├── AGENTS.md                                             # Workspace & engineering development rules (Part I & Part II)
+├── meeting_transcribe.py                                 # Primary CLI entrypoint forwarder
+├── setup.sh                                              # Native gcloud setup script
+└── deploy.sh                                             # Native gcloud deployment to Vertex AI Agent Runtime
+```
+
 ---
 
 ### Method 2: Gemini Enterprise Deployment (Vertex AI Agent Runtime)
