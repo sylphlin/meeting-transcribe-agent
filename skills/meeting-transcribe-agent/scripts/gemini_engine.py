@@ -39,10 +39,12 @@ from scripts.gcs_utils import (
 
 def load_env_file():
     """Load KEY=VALUE pairs (e.g. GOOGLE_CLOUD_PROJECT) from ~/.gemini/.env or current directory .env."""
+    _resolved_file = Path(__file__).resolve()
     candidates = [
         Path.home() / ".gemini" / ".env",
         Path.cwd() / ".env",
         Path(__file__).parent.parent / ".env",
+        *[p / ".env" for p in _resolved_file.parents[:5]],
     ]
     for env_path in candidates:
         try:
