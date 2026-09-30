@@ -243,24 +243,20 @@ flowchart TD
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agents/plugins/meeting-transcribe-agent
      ```
-
-2. **或安裝為獨立 Agent Skill**：
-   - **全域安裝（Global Skill）**：
+   - **舊版獨立 Skill 目錄安裝（`~/.gemini/config/skills/` 相容方式）**：
+     若要在僅支援舊版單一 Skill 目錄的環境中使用，請將內層 `skills/meeting-transcribe-agent` 子目錄連結至 `skills/`：
      ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/skills/meeting-transcribe-agent
-     ```
-   - **工作區安裝（Workspace Skill）**：
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
+     ln -s ~/.gemini/config/plugins/meeting-transcribe-agent/skills/meeting-transcribe-agent ~/.gemini/config/skills/meeting-transcribe-agent
      ```
 
-3. **安裝 Python 相依套件**：
+2. **安裝 Python 相依套件**：
    ```bash
    pip install google-genai google-cloud-storage requests
    ```
    *（選用離線 Whisper 套件：Apple Silicon 請執行 `pip install mlx-whisper sherpa-onnx`；Linux/Windows 請執行 `pip install faster-whisper sherpa-onnx`）。*
 
-4. **初始化 Google Cloud 環境 (`./setup.sh`)**：
+3. **初始化 Google Cloud 環境 (`./setup.sh`)**：
    執行 `setup.sh` 自動完成雲端環境設定：
    - 驗證 ADC 憑證狀態。
    - 啟用 Vertex AI、Cloud Storage 與 Google Drive API。
@@ -271,7 +267,7 @@ flowchart TD
    ./setup.sh --project YOUR_GCP_PROJECT_ID
    ```
 
-5. **在 Antigravity 中開始使用**：
+4. **在 Antigravity 中開始使用**：
    直接在 Antigravity 對話視窗輸入指令：
    > 「請轉錄 `meeting_recording.mp3` 並產出高階主管會議記錄與互動式播放器。」
 
@@ -286,11 +282,7 @@ meeting-transcribe-agent/
 │       ├── SKILL.md                                      # 技能規範與自動化執行手冊
 │       ├── scripts/                                      # 核心轉錄、視覺融合與播放器模組實體目錄 (SSOT)
 │       └── assets/                                       # 播放器模板與提示詞規範實體目錄 (SSOT)
-├── SKILL.md -> skills/meeting-transcribe-agent/SKILL.md  # 根目錄 POSIX Symlink
-├── scripts -> skills/meeting-transcribe-agent/scripts    # 根目錄 POSIX Symlink
-├── assets -> skills/meeting-transcribe-agent/assets      # 根目錄 POSIX Symlink
 ├── AGENTS.md                                             # 工作區與開發工程規範（Part I 執行守則 & Part II 開發規範）
-├── meeting_transcribe.py                                 # 根目錄 CLI 啟動入口
 └── setup.sh / deploy.sh                                  # 原生 gcloud 雲端環境配置與部署腳本
 ```
 
@@ -326,24 +318,24 @@ meeting-transcribe-agent/
 
 ### YouTube 影片處理
 ```bash
-python3 scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### 本地音訊與影片處理
 ```bash
 # 純音訊雲端預設模式
-python3 scripts/meeting_transcribe.py "meeting_recording.mp3"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3"
 
 # 本地影片雙階段融合（音訊 ASR + Agentic 視覺融合）
-python3 scripts/meeting_transcribe.py "conference_video.mp4"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "conference_video.mp4"
 
 # 明確指定本地離線 Whisper + Sherpa-ONNX 模式
-python3 scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
 ```
 
 ### 指定會議大綱與目標摘要語言
 ```bash
-python3 scripts/meeting_transcribe.py "meeting_recording.mp3" --outline "agenda.md" --summary-language zh-TW
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3" --outline "agenda.md" --summary-language zh-TW
 ```
 
 ### CLI 參數對照表
@@ -395,8 +387,8 @@ gcloud auth application-default login --scopes="https://www.googleapis.com/auth/
 
 | 情境 | 指令語法 | 快取與自動化處理行為 |
 | :--- | :--- | :--- |
-| **情境 A：Google Drive 上的會議影片**<br/>*(MP4 / MOV)* | `python3 scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view"` | 透過 Drive API v3 檢查 `md5Checksum`、快取至 `gdrive_inputs/`、還原 UTF-8 檔名、提取 16 kHz 音訊、暫存 720p 影片至 GCS `raw/`，並執行 Stage 1 + Stage 2 視覺融合。 |
-| **情境 B：Google Drive 上的會議錄音**<br/>*(M4A / MP3 / WAV)* | `python3 scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view" --outline agenda.md` | 驗證 MD5 快取、執行 Stage 0 語系與專有名詞偵測，並以 Gemini 3.5 Transcribe 與 Gemini 3.8 Flash 產出會議記錄。 |
+| **情境 A：Google Drive 上的會議影片**<br/>*(MP4 / MOV)* | `python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view"` | 透過 Drive API v3 檢查 `md5Checksum`、快取至 `gdrive_inputs/`、還原 UTF-8 檔名、提取 16 kHz 音訊、暫存 720p 影片至 GCS `raw/`，並執行 Stage 1 + Stage 2 視覺融合。 |
+| **情境 B：Google Drive 上的會議錄音**<br/>*(M4A / MP3 / WAV)* | `python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view" --outline agenda.md` | 驗證 MD5 快取、執行 Stage 0 語系與專有名詞偵測，並以 Gemini 3.5 Transcribe 與 Gemini 3.8 Flash 產出會議記錄。 |
 
 ### 3. GCS 儲存桶雙層自動清理規則（`raw/` 2 天 / 產出物 15 天）
 

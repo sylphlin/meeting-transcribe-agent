@@ -52,13 +52,9 @@ meeting-transcribe-agent/
 │           └── prompts/              # Structured Markdown prompts
 │               ├── minutes_prompt.md # Stage 2 minutes structuring & universal language localization prompt
 │               └── audio_glossary_prompt.md # Track 1 audio pre-scan entity mining
-├── SKILL.md -> skills/meeting-transcribe-agent/SKILL.md  # Root POSIX symlink
-├── scripts -> skills/meeting-transcribe-agent/scripts    # Root POSIX symlink
-├── assets -> skills/meeting-transcribe-agent/assets      # Root POSIX symlink
 ├── AGENTS.md                         # Workspace & engineering development rules
 ├── setup.sh                          # Automated Google Cloud environment setup (APIs, GCS, CORS/Lifecycle, .env)
-├── deploy.sh                         # Native gcloud deployment to Vertex AI Agent Runtime & Gemini Enterprise
-└── meeting_transcribe.py             # Primary CLI entrypoint forwarder
+└── deploy.sh                         # Native gcloud deployment to Vertex AI Agent Runtime & Gemini Enterprise
 ```
 
 ---
@@ -97,7 +93,7 @@ meeting-transcribe-agent/
 
 When Antigravity or any compatible agent is instructed by the user to transcribe, summarize, or analyze a meeting (audio file, video file, or YouTube URL), follow this protocol directly.
 Resolve `<PLUGIN_ROOT>` as the repository or plugin root located two levels above `skills/meeting-transcribe-agent/SKILL.md` (`../../`, for example `/Users/sylph/.gemini/config/plugins/meeting-transcribe-agent`).
-Set `Cwd` to `<PLUGIN_ROOT>` and invoke `python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py` (or `python3 meeting_transcribe.py`) directly. Do not search the filesystem with `find_by_name` or `list_dir` to locate global CLI aliases.
+Set `Cwd` to `<PLUGIN_ROOT>` and invoke `python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py` directly. Do not search the filesystem with `find_by_name` or `list_dir` to locate global CLI aliases.
 
 ### Fail-Fast & Engine Selection Protocol
 1. **Default to Cloud Engine (`--engine gemini`)**: Always run with the primary cloud pipeline unless the user explicitly requested local or offline transcription.
@@ -113,10 +109,10 @@ Set `Cwd` to `<PLUGIN_ROOT>` and invoke `python3 skills/meeting-transcribe-agent
 For YouTube links (`https://www.youtube.com/...`) or local video files (`.mp4`, `.mov`, `.mkv`), the agent runs the appropriate video pipeline (both natively use Agentic Video Understanding):
 ```bash
 # YouTube Meeting (Direct cloud ingestion + YouTube player sync)
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # Local Video File (Two-Stage Audio Extraction + Multimodal Vision Fusion)
-python3 meeting_transcribe.py "path/to/video.mp4"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "path/to/video.mp4"
 ```
 - For YouTube: direct cloud ingestion via `gemini-3.8-flash` (Agentic) delivers complete minutes and transcript in ~40s.
 - For local video files: Stage 1 extracts audio and executes shared acoustic ASR (Gemini 3.5 Transcribe or local Whisper) for physical ground-truth timestamps; Stage 2 passes 720p video + transcript to `gemini-3.8-flash` (Agentic) for visual slide/speaker mapping and executive minutes synthesis; downstream deterministic assembly combines them with zero timestamp drift.
@@ -127,17 +123,17 @@ For audio recordings (`.mp3`, `.m4a`, `.wav`, `.aac`, etc.), or when video files
 1. **Stage 1: Speech Transcription (Gemini 3.5 Transcribe API - Default)**:
    ```bash
    # Primary Engine: Cloud Gemini 3.5 Transcribe API (Default)
-   python3 scripts/meeting_transcribe.py "path/to/audio" --only-transcript
+   python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "path/to/audio" --only-transcript
    
    # Explicit Offline Engine: Local Whisper (ONLY when explicitly requested by user)
-   python3 scripts/meeting_transcribe.py "path/to/audio" --engine whisper --only-transcript
+   python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "path/to/audio" --engine whisper --only-transcript
    ```
 2. **Stage 2: Agent-Native Semantic Intelligence & Minutes Structuring**:
    - The Agent synthesizes the 5 authoritative sections (Meeting Info, Executive Summary, Key Topics, Decisions & Directives, Action Items table) and formats the verbatim transcript.
    - Saves `<stem>_會議記錄.md` (or `<stem>_minutes.md`).
 3. **Stage 3: Interactive HTML Player Generation**:
    ```bash
-   python3 scripts/html_generator.py "path/to/audio" "path/to/<stem>_會議記錄.md"
+   python3 skills/meeting-transcribe-agent/scripts/html_generator.py "path/to/audio" "path/to/<stem>_會議記錄.md"
    ```
 
 ---
@@ -146,16 +142,16 @@ For audio recordings (`.mp3`, `.m4a`, `.wav`, `.aac`, etc.), or when video files
 
 ```bash
 # YouTube Meeting (Direct Ingestion with Native Agentic Understanding)
-python3 meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # Local Video File (Two-Stage Audio Extraction + Agentic Vision Fusion)
-python3 meeting_transcribe.py "path/to/video.mp4"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "path/to/video.mp4"
 
 # Audio Recording (Cloud Gemini)
-python3 meeting_transcribe.py "meeting_recording.mp3"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3"
 
 # Explicit Local Whisper (User-Requested Offline Mode)
-python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
 ```
 
 | Option | Description | Default |
@@ -197,5 +193,5 @@ python3 meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper
 - Automatically checks remote MD5 (`md5Checksum`) to cache locally in `gdrive_inputs/` (supporting embedded WebRTC captions extraction, audio extraction, and interactive HTML player synchronization) and checks `sha256` / `gdrive_md5` metadata on `gs://${MEETING_STORAGE_BUCKET}/raw/` to skip redundant GCS uploads.
 - Example:
   ```bash
-  python3 meeting_transcribe.py "https://drive.google.com/file/d/YOUR_MEETING_FILE_ID/view?usp=sharing"
+  python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/YOUR_MEETING_FILE_ID/view?usp=sharing"
   ```

@@ -21,11 +21,13 @@ Validates:
 5. consolidate_verbatim_transcript (3-level hierarchical alignment & text preservation)
 """
 
+import sys
 import unittest
 from pathlib import Path
 import tempfile
 import shutil
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "meeting-transcribe-agent"))
 from scripts.canonicalizer import (
     parse_timestamp_to_seconds,
     parse_srt_timeline,

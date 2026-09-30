@@ -1,8 +1,11 @@
 import os
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 from google.genai import errors as genai_errors
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "meeting-transcribe-agent"))
 from scripts.gemini_engine import call_gemini_with_retry, generate_minutes_with_gemini
 from scripts.audio_utils import find_silence_cut_points
 

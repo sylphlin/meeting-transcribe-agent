@@ -71,6 +71,12 @@
    ```bash
    git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
    ```
+   - **기존 단일 Skill 디렉터리 설치 (`~/.gemini/config/skills/` 호환 방식)**:
+     단일 Skill 디렉터리만 지원하는 환경에서는 내부 `skills/meeting-transcribe-agent` 하위 디렉터리에 심볼릭 링크를 생성하십시오:
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
+     ln -s ~/.gemini/config/plugins/meeting-transcribe-agent/skills/meeting-transcribe-agent ~/.gemini/config/skills/meeting-transcribe-agent
+     ```
 2. **Python 의존성 패키지 설치**:
    ```bash
    pip install google-genai google-cloud-storage requests
@@ -90,7 +96,7 @@ chmod +x setup.sh deploy.sh
 ```
 
 ### 디렉터리 구조 (Agent Plugins 1.0 표준)
-- **SSOT 실제 디렉터리**: `skills/meeting-transcribe-agent/`(`SKILL.md`, `scripts/`, `assets/` 포함)를 단일 진실 공급원(SSOT)으로 사용하며 루트 `SKILL.md`, `scripts` 및 `assets`는 POSIX 심볼릭 링크로 연결됩니다.
+- **SSOT 실제 디렉터리**: `skills/meeting-transcribe-agent/`(`SKILL.md`, `scripts/`, `assets/` 포함)를 단일 진실 공급원(SSOT)으로 사용하며 루트 심볼릭 링크 없는 순수 구조를 따릅니다.
 - **2계층 `AGENTS.md` 구성**: 루트 `AGENTS.md`는 워크스페이스 및 개발 표준(Part I & Part II)을 정의하고, 플러그인 내부의 `rules/AGENTS.md`는 AI 클라이언트 실행 규칙(`<PLUGIN_ROOT>` 직접 CLI 호출, 읽기 전용, Fail-Fast)을 정의합니다.
 
 ---
@@ -99,19 +105,19 @@ chmod +x setup.sh deploy.sh
 
 ```bash
 # YouTube 비디오 처리
-python3 scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # 로컬 오디오 파일 처리 (클라우드 기본값)
-python3 scripts/meeting_transcribe.py "meeting_recording.mp3"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3"
 
 # 로컬 비디오 2단계 융합 처리
-python3 scripts/meeting_transcribe.py "conference_video.mp4"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "conference_video.mp4"
 
 # Google Drive 공유 링크 직접 처리
-python3 scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view?usp=sharing"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view?usp=sharing"
 
 # 오프라인 Whisper 모드 명시적 실행
-python3 scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
 ```
 
 ---

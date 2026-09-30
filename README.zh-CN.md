@@ -72,6 +72,12 @@
    ```bash
    git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
    ```
+   - **旧版独立 Skill 目录安装（`~/.gemini/config/skills/` 兼容方式）**：
+     若需在仅支持旧版单一 Skill 目录的环境中使用，请将内层 `skills/meeting-transcribe-agent` 子目录软链接至 `skills/`：
+     ```bash
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
+     ln -s ~/.gemini/config/plugins/meeting-transcribe-agent/skills/meeting-transcribe-agent ~/.gemini/config/skills/meeting-transcribe-agent
+     ```
 2. **安装 Python 依赖包**：
    ```bash
    pip install google-genai google-cloud-storage requests
@@ -91,7 +97,7 @@ chmod +x setup.sh deploy.sh
 ```
 
 ### 项目目录结构（Agent Plugins 1.0 标准规范）
-- **SSOT 实体目录**：`skills/meeting-transcribe-agent/`（内含 `SKILL.md`、`scripts/` 与 `assets/`），根目录 `SKILL.md`、`scripts` 与 `assets` 为指向该目录的 POSIX symlinks。
+- **SSOT 实体目录**：`skills/meeting-transcribe-agent/`（内含 `SKILL.md`、`scripts/` 与 `assets/`），无根目录冗余软链接。
 - **双层 `AGENTS.md` 规范**：根目录 `AGENTS.md` 定义工作区与工程开发规范（Part I & Part II），`rules/AGENTS.md` 随 Plugin 打包注入 AI 客户端执行期守则（定位 `<PLUGIN_ROOT>` 直接调用 CLI、只读与 Fail-Fast）。
 
 ---
@@ -100,19 +106,19 @@ chmod +x setup.sh deploy.sh
 
 ```bash
 # YouTube 视频转录
-python3 scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # 本地纯音频转录（云端默认）
-python3 scripts/meeting_transcribe.py "meeting_recording.mp3"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3"
 
 # 本地视频双阶段融合
-python3 scripts/meeting_transcribe.py "conference_video.mp4"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "conference_video.mp4"
 
 # Google Drive 分享链接直连转录
-python3 scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view?usp=sharing"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view?usp=sharing"
 
 # 显式指定离线 Whisper 模式
-python3 scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
 ```
 
 ---

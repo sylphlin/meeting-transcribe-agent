@@ -31,8 +31,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS_DIR = ROOT / "scripts"
-ASSETS_DIR = ROOT / "assets"
+SKILL_DIR = ROOT / "skills" / "meeting-transcribe-agent"
+SCRIPTS_DIR = SKILL_DIR / "scripts"
+ASSETS_DIR = SKILL_DIR / "assets"
 ENTERPRISE_CORE = ROOT / "gemini-enterprise" / "app" / "core"
 ENTERPRISE_ASSETS = ROOT / "gemini-enterprise" / "app" / "assets"
 

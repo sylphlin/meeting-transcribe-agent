@@ -278,24 +278,20 @@ Select one of the two deployment methods below:
      ```bash
      git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agents/plugins/meeting-transcribe-agent
      ```
-
-2. **Or Clone as a Standalone Agent Skill**:
-   - **Global Skill**:
+   - **Legacy Single-Skill Installation (`~/.gemini/config/skills/`)**:
+     To install into a legacy single-skill directory, link the inner `skills/meeting-transcribe-agent` subdirectory:
      ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/skills/meeting-transcribe-agent
-     ```
-   - **Workspace Skill**:
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agent/skills/meeting-transcribe-agent
+     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
+     ln -s ~/.gemini/config/plugins/meeting-transcribe-agent/skills/meeting-transcribe-agent ~/.gemini/config/skills/meeting-transcribe-agent
      ```
 
-3. **Install Python Dependencies**:
+2. **Install Python Dependencies**:
    ```bash
    pip install google-genai google-cloud-storage requests
    ```
    *(Optional offline Whisper dependencies: run `pip install mlx-whisper sherpa-onnx` on Apple Silicon, or `pip install faster-whisper sherpa-onnx` on Linux/Windows).*
 
-4. **Initialize Google Cloud Environment (`./setup.sh`)**:
+3. **Initialize Google Cloud Environment (`./setup.sh`)**:
    Run `setup.sh` to configure the cloud environment:
    - Verify ADC authentication.
    - Enable Vertex AI, Cloud Storage, and Google Drive APIs.
@@ -306,7 +302,7 @@ Select one of the two deployment methods below:
    ./setup.sh --project YOUR_GCP_PROJECT_ID
    ```
 
-5. **Run in Antigravity**:
+4. **Run in Antigravity**:
    Prompt the agent directly in the Antigravity chat:
    > "Transcribe `meeting_recording.mp3` and generate executive minutes and the interactive player."
 
@@ -332,11 +328,7 @@ meeting-transcribe-agent/
 │           ├── audio_player_template.html                # 2-pane offline audio player template
 │           ├── video_player_template.html                # 3-pane video player template
 │           └── prompts/                                  # Structured Markdown prompts
-├── SKILL.md -> skills/meeting-transcribe-agent/SKILL.md  # Root POSIX symlink
-├── scripts -> skills/meeting-transcribe-agent/scripts    # Root POSIX symlink
-├── assets -> skills/meeting-transcribe-agent/assets      # Root POSIX symlink
 ├── AGENTS.md                                             # Workspace & engineering development rules (Part I & Part II)
-├── meeting_transcribe.py                                 # Primary CLI entrypoint forwarder
 ├── setup.sh                                              # Native gcloud setup script
 └── deploy.sh                                             # Native gcloud deployment to Vertex AI Agent Runtime
 ```
@@ -378,24 +370,24 @@ Deploy the agent to Google Cloud Vertex AI Agent Runtime using ADK 2.0 and `agen
 
 ### YouTube Video Processing
 ```bash
-python3 scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Local Audio and Video Processing
 ```bash
 # Pure audio transcription (Cloud Vertex AI default)
-python3 scripts/meeting_transcribe.py "meeting_recording.mp3"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3"
 
 # Local video two-stage fusion (audio ASR + Agentic vision fusion)
-python3 scripts/meeting_transcribe.py "conference_video.mp4"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "conference_video.mp4"
 
 # Explicit offline Whisper + Sherpa-ONNX mode
-python3 scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
 ```
 
 ### Specify Agenda Outline and Target Summary Language
 ```bash
-python3 scripts/meeting_transcribe.py "meeting_recording.mp3" --outline "agenda.md" --summary-language en
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3" --outline "agenda.md" --summary-language en
 ```
 
 ### CLI Argument Reference
@@ -447,16 +439,16 @@ gcloud auth application-default login --scopes="https://www.googleapis.com/auth/
 
 | Scenario | Command Syntax | Processing Behavior |
 | :--- | :--- | :--- |
-| **Scenario A: Video on Google Drive**<br/>*(MP4 / MOV)* | `python3 scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view"` | Verifies remote `md5Checksum`, caches in `gdrive_inputs/`, recovers UTF-8 CJK filenames, extracts 16 kHz audio, stages 720p video to GCS `raw/`, and runs Stage 1 + Stage 2 fusion. |
-| **Scenario B: Audio on Google Drive**<br/>*(M4A / MP3 / WAV)* | `python3 scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view" --outline agenda.md` | Verifies MD5 cache, runs Stage 0 language/glossary detection, transcribes with Gemini 3.5 Transcribe, and synthesizes minutes with Gemini 3.8 Flash. |
+| **Scenario A: Video on Google Drive**<br/>*(MP4 / MOV)* | `python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view"` | Verifies remote `md5Checksum`, caches in `gdrive_inputs/`, recovers UTF-8 CJK filenames, extracts 16 kHz audio, stages 720p video to GCS `raw/`, and runs Stage 1 + Stage 2 fusion. |
+| **Scenario B: Audio on Google Drive**<br/>*(M4A / MP3 / WAV)* | `python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view" --outline agenda.md` | Verifies MD5 cache, runs Stage 0 language/glossary detection, transcribes with Gemini 3.5 Transcribe, and synthesizes minutes with Gemini 3.8 Flash. |
 
 #### CLI Examples
 ```bash
 # Scenario A: Transcribe a meeting video from a Google Drive share link
-python3 scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view?usp=sharing"
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view?usp=sharing"
 
 # Scenario B: Transcribe a Google Drive audio link with an agenda outline and English summary
-python3 scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view?usp=sharing" \
+python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view?usp=sharing" \
   --outline agenda.md --summary-language en
 ```
 

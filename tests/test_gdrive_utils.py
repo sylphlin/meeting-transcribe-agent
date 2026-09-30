@@ -1,4 +1,8 @@
+import sys
 import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "meeting-transcribe-agent"))
 from scripts.gcs_utils import (
     is_gdrive_source,
     parse_gdrive_url,
