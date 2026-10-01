@@ -157,10 +157,57 @@ def extract_audio_from_video(video_path: Path, output_path: Path = None, bitrate
     return output_path
 
 
+def _build_video_optimize_cmd(
+    video_path: Path,
+    output_path: Path,
+    encoder: str = "h264_videotoolbox",
+    use_hwaccel: bool = True,
+    fps: int = 10,
+    gop: int = 10,
+) -> list[str]:
+    """
+    Build the FFmpeg command to compress a large meeting video to 720p H.264.
+
+    Uses 10 fps and a 1-second GOP (-r 10 -g 10) with +faststart to accelerate
+    cloud Agentic frame seeking and local HTML5 timestamp navigation.
+    """
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+    if use_hwaccel:
+        cmd.extend(["-hwaccel", "videotoolbox"])
+    cmd.extend([
+        "-i", str(video_path),
+        "-vf", "scale=-2:720",
+        "-r", str(fps),
+    ])
+    if encoder == "h264_videotoolbox":
+        cmd.extend([
+            "-c:v", "h264_videotoolbox",
+            "-b:v", "1200k",
+            "-g", str(gop),
+            "-pix_fmt", "yuv420p",
+        ])
+    else:
+        cmd.extend([
+            "-c:v", "libx264",
+            "-crf", "28",
+            "-preset", "faster",
+            "-g", str(gop),
+            "-pix_fmt", "yuv420p",
+        ])
+    cmd.extend([
+        "-c:a", "aac", "-b:a", "64k", "-ac", "1", "-ar", "16000",
+        "-movflags", "+faststart",
+        str(output_path),
+    ])
+    return cmd
+
+
 def optimize_video_for_upload(video_path: Path, output_path: Path = None, max_size_mb: float = 250.0) -> Path:
     """
-    If a video file is larger than max_size_mb, downscale/compress it to 720p H.264
-    for fast upload to Gemini Files API while preserving crisp presentation text and nameplates.
+    Compress a video larger than max_size_mb to 720p H.264 (10 fps, 1s GOP -g 10).
+
+    Uses Apple Silicon VideoToolbox hardware acceleration with automatic fallback to
+    libx264 while preserving clear presentation text and speaker nameplates.
     """
     video_path = Path(video_path).resolve()
     orig_mb = video_path.stat().st_size / (1024 * 1024)
@@ -178,15 +225,16 @@ def optimize_video_for_upload(video_path: Path, output_path: Path = None, max_si
         print(f"[✓] Found existing optimized video: {output_path.name} ({cached_mb:.1f} MB). Reusing.")
         return output_path
 
-    print(f"[*] Video size is {orig_mb:.1f} MB (> {max_size_mb} MB). Optimizing to 720p for fast cloud upload...")
-    cmd = [
-        "ffmpeg", "-y", "-i", str(video_path),
-        "-vf", "scale=-2:720",
-        "-c:v", "libx264", "-crf", "28", "-preset", "faster",
-        "-c:a", "aac", "-b:a", "64k", "-ac", "1", "-ar", "16000",
-        str(output_path)
-    ]
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    print(f"[*] Video size is {orig_mb:.1f} MB (> {max_size_mb} MB). Optimizing to 720p (10 fps, GOP=10) for fast cloud upload...")
+    cmd = _build_video_optimize_cmd(video_path, output_path, encoder="h264_videotoolbox", use_hwaccel=True)
+    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if res.returncode != 0:
+        cmd = _build_video_optimize_cmd(video_path, output_path, encoder="h264_videotoolbox", use_hwaccel=False)
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if res.returncode != 0:
+        cmd = _build_video_optimize_cmd(video_path, output_path, encoder="libx264", use_hwaccel=False)
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
     new_mb = output_path.stat().st_size / (1024 * 1024)
     print(f"[✓] Optimized video: {orig_mb:.1f} MB -> {new_mb:.1f} MB (saved {(1 - new_mb/orig_mb)*100:.1f}%)")
     return output_path

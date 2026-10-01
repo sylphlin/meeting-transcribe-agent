@@ -196,5 +196,36 @@ Brief status check.
         self.assertIn("**Alice (Engineer)**: Working on tests today.", final_text)
 
 
+class TestVideoOptimization(unittest.TestCase):
+    def test_build_video_optimize_cmd_videotoolbox_gop_10(self):
+        from scripts.audio_utils import _build_video_optimize_cmd
+
+        cmd = _build_video_optimize_cmd(
+            Path("conference_video.mp4"),
+            Path("optimized_video.mp4"),
+            encoder="h264_videotoolbox",
+            use_hwaccel=True,
+        )
+        cmd_str = " ".join(cmd)
+        self.assertIn("-hwaccel videotoolbox -i conference_video.mp4", cmd_str)
+        self.assertIn("-vf scale=-2:720 -r 10", cmd_str)
+        self.assertIn("-c:v h264_videotoolbox -b:v 1200k -g 10 -pix_fmt yuv420p", cmd_str)
+        self.assertIn("-movflags +faststart", cmd_str)
+
+    def test_build_video_optimize_cmd_libx264_fallback(self):
+        from scripts.audio_utils import _build_video_optimize_cmd
+
+        cmd = _build_video_optimize_cmd(
+            Path("conference_video.mp4"),
+            Path("optimized_video.mp4"),
+            encoder="libx264",
+            use_hwaccel=False,
+        )
+        cmd_str = " ".join(cmd)
+        self.assertNotIn("-hwaccel videotoolbox", cmd_str)
+        self.assertIn("-c:v libx264 -crf 28 -preset faster -g 10 -pix_fmt yuv420p", cmd_str)
+
+
 if __name__ == "__main__":
     unittest.main()
+

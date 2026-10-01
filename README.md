@@ -22,7 +22,7 @@
    - **Embedded Subtitle Probe**: Extracts embedded subtitle tracks (`mov_text`, `srt`, `vtt`) or sidecar `.srt` files as attendee and agenda references.
    - **Stage 0 (Glossary & Language Detection)**: Builds a domain terminology table and detects the primary spoken `BCP-47` language code (for example, `cmn-Hant-TW`, `en-US`, `ja-JP`).
    - **Stage 1 (Acoustic Ground Truth ASR)**: Extracts 16 kHz mono audio and transcribes speech via **Gemini 3.5 Transcribe** (default) or **Local Whisper + Sherpa-ONNX** (`--engine whisper`). This stage anchors physical timestamps `[MM:SS - MM:SS]` and speaker turns.
-   - **Stage 2 (Multimodal Vision & Chunked Verbatim Proofreading)**: Sends the 720p video and Stage 1 transcript to **Gemini 3.8 Flash**. The model reads visual slides and nameplates, generates Sections 1–5, and proofreads Section 6 in parallel 60-line batches while locking original timestamps.
+   - **Stage 2 (Multimodal Vision & Chunked Verbatim Proofreading)**: Compresses large videos (>250 MB) to 720p H.264 (`10 fps`, `1s GOP -g 10`, `+faststart` via Apple Silicon `VideoToolbox` with `libx264` fallback) for fast cloud upload and Agentic frame seeking, then sends the video and Stage 1 transcript to **Gemini 3.8 Flash**. The model reads visual slides and nameplates, generates Sections 1–5, and proofreads Section 6 in parallel 60-line batches while locking original timestamps.
    - **Deterministic Speaker Assembly**: Reconciles speaker identities across subtitle overlaps, multimodal scoped rules, and handover cues with zero timestamp drift.
 
 3. **Pure Audio High-Precision Pipeline (Voice Recorders & Podcasts)**:
