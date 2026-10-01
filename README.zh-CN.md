@@ -9,7 +9,7 @@
 
 ## 项目概览 (Overview)
 
-**Meeting Transcribe Agent** 是基于 **Google Gemini 3.5 Transcribe** 与 **Gemini 3.8 Flash** 的多模态会议纪要与逐字稿生成系统。系统支持 YouTube 链接、本地视频文件、Google Drive 分享链接与纯音频录音。每次运行均会生成结构化 Markdown 会议纪要与独立的交互式 HTML 播放器。
+**Meeting Transcribe Agent** 是基于 **Google Gemini 3.5 Transcribe** 与 **Gemini 3.8 Flash** 的多模态会议纪要与逐字稿生成系统。系统支持 YouTube 链接、本地视频文件、Google Drive 分享链接与纯音频录音。每次运行均会在 `<input_dir>/output/` 隔离目录中自动生成结构化 Markdown 会议纪要与独立的交互式 HTML 播放器，保持原始媒体目录整洁。
 
 ### 三大专用处理管线
 

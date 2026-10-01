@@ -9,7 +9,7 @@
 
 ## 개요 (Overview)
 
-**Meeting Transcribe Agent**는 **Google Gemini 3.5 Transcribe**와 **Gemini 3.8 Flash**를 기반으로 구축된 멀티모달 회의록 및 전문 녹취록 생성 시스템입니다. YouTube URL, 로컬 비디오 파일, Google Drive 공유 링크 및 오디오 녹음 파일을 처리합니다. 실행할 때마다 구조화된 Markdown 회의록과 독립 실행형 인터랙티브 HTML 플레이어를 생성합니다.
+**Meeting Transcribe Agent**는 **Google Gemini 3.5 Transcribe**와 **Gemini 3.8 Flash**를 기반으로 구축된 멀티모달 회의록 및 전문 녹취록 생성 시스템입니다. YouTube URL, 로컬 비디오 파일, Google Drive 공유 링크 및 오디오 녹음 파일을 처리합니다. 실행할 때마다 `<input_dir>/output/` 하위 디렉터리에 구조화된 Markdown 회의록과 독립 실행형 인터랙티브 HTML 플레이어를 자동으로 격리 생성합니다.
 
 ### 3가지 전용 처리 파이프라인
 

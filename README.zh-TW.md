@@ -343,7 +343,7 @@ python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_r
 | 參數 | 說明 | 預設值 |
 | :--- | :--- | :--- |
 | `input_source` | 本地音視訊路徑、Google Drive 連結或 YouTube 網址 | *(必填)* |
-| `-o, --output` | 自訂輸出 Markdown 檔案路徑 | `<filename>_minutes.md` |
+| `-o, --output` | 自訂輸出 Markdown 檔案或目錄路徑 | `<input_dir>/output/<filename>_minutes.md` |
 | `--agentic` | 為影片輸入啟用 Agentic 影片理解模式 | `True` |
 | `--extract-audio` | 強制從影片提取音軌並執行純音訊管線 | `False` |
 | `--engine` | 語音轉錄引擎：`gemini`（雲端預設）或 `whisper`（明確指定離線） | `gemini` |

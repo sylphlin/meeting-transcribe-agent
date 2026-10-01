@@ -94,7 +94,8 @@ def extract_global_consistency_glossary(
     model: str = None,
     force: bool = False,
     prompt_template_path: Path = None,
-    compress_fn = None
+    compress_fn = None,
+    output_dir: Path | None = None,
 ) -> tuple[str, str]:
     """
     Dual-track extraction:
@@ -104,11 +105,22 @@ def extract_global_consistency_glossary(
     """
     model = model or os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash"
     clean_stem = fix_mojibake_filename(audio_path.stem)
-    glossary_file = audio_path.parent / f"glossary_{clean_stem}.md"
-    alt_glossary = audio_path.parent / f"{clean_stem}_glossary.md"
-    target_cache = glossary_file if glossary_file.exists() else alt_glossary
-    
-    if not force and target_cache.exists():
+    target_dir = Path(output_dir).resolve() if output_dir else audio_path.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+    glossary_file = target_dir / f"glossary_{clean_stem}.md"
+
+    cache_candidates = [
+        target_dir / f"glossary_{clean_stem}.md",
+        target_dir / f"{clean_stem}_glossary.md",
+        audio_path.parent / f"glossary_{clean_stem}.md",
+        audio_path.parent / f"{clean_stem}_glossary.md",
+    ]
+    target_cache = next(
+        (c for c in cache_candidates if c.exists() and c.stat().st_size > 0),
+        glossary_file,
+    )
+
+    if not force and target_cache.exists() and target_cache.stat().st_size > 0:
         print(f"[*] ⚡ Found cached consistency glossary: {target_cache.name}, loading directly.")
         cached_content = target_cache.read_text(encoding="utf-8")
         keywords = extract_keywords_from_glossary(cached_content)

@@ -117,7 +117,8 @@ def generate_interactive_html(
         title_safe = html.escape(title_name)
     elif media_type == "local_video":
         media_path = Path(source_str).resolve()
-        rel_media_path = os.path.relpath(media_path, output_html_path.parent)
+        output_html_path = Path(output_html_path).resolve()
+        rel_media_path = Path(os.path.relpath(media_path, output_html_path.parent)).as_posix()
         title_name = title or md_meeting_title or media_path.stem
         title_safe = html.escape(title_name)
         payload = {
@@ -131,7 +132,8 @@ def generate_interactive_html(
         }
     else:
         media_path = Path(source_str).resolve()
-        rel_media_path = os.path.relpath(media_path, output_html_path.parent)
+        output_html_path = Path(output_html_path).resolve()
+        rel_media_path = Path(os.path.relpath(media_path, output_html_path.parent)).as_posix()
         title_name = title or md_meeting_title or media_path.stem
         title_safe = html.escape(title_name)
         payload = {
@@ -151,6 +153,8 @@ def generate_interactive_html(
     rendered_html = rendered_html.replace("{{VIDEO_SRC}}", html.escape(rel_media_path))
     rendered_html = rendered_html.replace("/* __MEETING_DATA__ */", f"window.MEETING_DATA = {payload_json};")
 
+    output_html_path = Path(output_html_path).resolve()
+    output_html_path.parent.mkdir(parents=True, exist_ok=True)
     output_html_path.write_text(rendered_html, encoding="utf-8")
     print(f"[*] 🌐 Standalone interactive player HTML generated ({media_type}): {output_html_path}")
 
@@ -168,6 +172,8 @@ def serve_html_player(html_path: Path, port: int = 8000):
     """
     Spins up a lightweight local HTTP server and opens the browser.
     Ensures embedded YouTube videos and local assets comply with web origin policies.
+    When the HTML player resides in an isolated `output/` subdirectory, serves from
+    the parent workspace directory so relative `../` media sources resolve cleanly.
     """
     import http.server
     import socketserver
@@ -175,7 +181,12 @@ def serve_html_player(html_path: Path, port: int = 8000):
     import socket
 
     html_path = html_path.resolve()
-    serve_dir = str(html_path.parent)
+    if html_path.parent.name.lower() == "output":
+        serve_dir = str(html_path.parent.parent)
+        rel_url_path = f"{html_path.parent.name}/{html_path.name}"
+    else:
+        serve_dir = str(html_path.parent)
+        rel_url_path = html_path.name
 
     # Find available port
     while True:
@@ -191,7 +202,7 @@ def serve_html_player(html_path: Path, port: int = 8000):
         def log_message(self, format, *args):
             pass  # Quiet logging
 
-    target_url = f"http://localhost:{port}/{html_path.name}"
+    target_url = f"http://localhost:{port}/{rel_url_path}"
     print(f"\n========================================================")
     print(f"🚀 Serving Meeting Transcribe Player at:")
     print(f"   {target_url}")
@@ -212,7 +223,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate interactive meeting player HTML from markdown & audio/video.")
     parser.add_argument("media", help="Path to audio/video file or YouTube URL")
     parser.add_argument("markdown", help="Path to structured meeting minutes markdown file")
-    parser.add_argument("-o", "--output", help="Output HTML file path (default: <stem>_player.html)")
+    parser.add_argument("-o", "--output", help="Output HTML file path (default: <input_dir>/output/<stem>_player.html)")
     parser.add_argument("--serve", action="store_true", help="Automatically launch local HTTP server and open browser")
 
     args = parser.parse_args()
@@ -227,20 +238,23 @@ if __name__ == "__main__":
         from .audio_utils import is_youtube_url, extract_youtube_id
     except (ImportError, ModuleNotFoundError):
         from audio_utils import is_youtube_url, extract_youtube_id
+    from .audio_utils import resolve_output_dir, resolve_output_file_path
     if not is_youtube_url(source_str):
-        media_p = Path(source_str)
+        media_p = Path(source_str).resolve()
         if not media_p.exists():
             print(f"[!] Media file not found: {media_p}")
             exit(1)
-        default_out = media_p.parent / f"{media_p.stem}_player.html"
+        out_dir = resolve_output_dir(media_p.parent, args.output)
+        out_p = resolve_output_file_path(out_dir, f"{media_p.stem}_player.html", args.output)
     else:
         yt_id = extract_youtube_id(source_str) or "youtube"
-        default_out = Path.cwd() / f"{yt_id}_player.html"
+        out_dir = resolve_output_dir(Path.cwd(), args.output)
+        out_p = resolve_output_file_path(out_dir, f"{yt_id}_player.html", args.output)
 
-    out_p = Path(args.output) if args.output else default_out
     md_text = md_p.read_text(encoding="utf-8")
     generated = generate_interactive_html(source_str, md_text, out_p)
 
     if args.serve:
         serve_html_player(generated)
+
 

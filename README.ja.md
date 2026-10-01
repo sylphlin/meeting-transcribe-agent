@@ -9,7 +9,7 @@
 
 ## 概要 (Overview)
 
-**Meeting Transcribe Agent** は、**Google Gemini 3.5 Transcribe** と **Gemini 3.8 Flash** を基盤としたマルチモーダル会議議事録および全文文字起こし生成システムです。YouTube URL、ローカル動画ファイル、Google Drive 共有リンク、および音声ファイルに対応しています。実行ごとに構造化された Markdown 議事録とスタンドアロン型のインタラクティブ HTML プレーヤーを生成します。
+**Meeting Transcribe Agent** は、**Google Gemini 3.5 Transcribe** と **Gemini 3.8 Flash** を基盤としたマルチモーダル会議議事録および全文文字起こし生成システムです。YouTube URL、ローカル動画ファイル、Google Drive 共有リンク、および音声ファイルに対応しています。実行ごとに `<input_dir>/output/` サブディレクトリへ構造化された Markdown 議事録とスタンドアロン型のインタラクティブ HTML プレーヤーを自動的に分離出力します。
 
 ### 3つの専用処理パイプライン
 

@@ -27,6 +27,8 @@ from .audio_utils import (
     detect_embedded_subtitles,
     extract_embedded_subtitles,
     fix_mojibake_filename,
+    resolve_output_dir,
+    resolve_output_file_path,
 )
 from .diarization import transcribe_with_local_whisper_and_diarization
 from .gemini_engine import (
@@ -94,7 +96,7 @@ def generate_meeting_minutes_and_transcript(
     from .gcs_utils import is_gdrive_source, download_gdrive_file_with_cache
     source_str = str(input_source).strip()
     if is_gdrive_source(source_str):
-        target_dl_dir = Path(output_file).resolve().parent / "gdrive_inputs" if output_file else Path.cwd() / "gdrive_inputs"
+        target_dl_dir = resolve_output_dir(Path.cwd(), output_file) / "gdrive_inputs"
         local_gdrive_path = download_gdrive_file_with_cache(
             source_str,
             target_dir=target_dl_dir,
@@ -125,7 +127,7 @@ def generate_meeting_minutes_and_transcript(
             default_out_stem = sanitize_filename(yt_title)
         else:
             default_out_stem = f"yt_{yt_id}"
-        out_parent = Path.cwd()
+        out_parent = resolve_output_dir(Path.cwd(), output_file)
 
         final_markdown, video_time = process_video_meeting_end_to_end(
             client=client,
@@ -139,17 +141,14 @@ def generate_meeting_minutes_and_transcript(
 
         total_time = time.time() - t_total_start
 
-        if output_file:
-            out_path = Path(output_file).resolve()
-        else:
-            from .html_generator import extract_meeting_title
-            from .audio_utils import sanitize_filename
-            md_title = extract_meeting_title(final_markdown)
-            if md_title:
-                clean_title_stem = sanitize_filename(md_title)
-                if clean_title_stem:
-                    default_out_stem = clean_title_stem
-            out_path = out_parent / f"{default_out_stem}_minutes.md"
+        from .html_generator import extract_meeting_title
+        from .audio_utils import sanitize_filename
+        md_title = extract_meeting_title(final_markdown)
+        if md_title:
+            clean_title_stem = sanitize_filename(md_title)
+            if clean_title_stem:
+                default_out_stem = clean_title_stem
+        out_path = resolve_output_file_path(out_parent, f"{default_out_stem}_minutes.md", output_file)
 
         out_path.write_text(final_markdown, encoding="utf-8")
         print(f"\n========================================================")
@@ -185,11 +184,18 @@ def generate_meeting_minutes_and_transcript(
         video_p = Path(source_str).resolve()
         if not video_p.exists():
             raise FileNotFoundError(f"Video file not found: {video_p}")
-        # Extract 16kHz mono audio track for Stage 1 ASR (uses cached audio if already extracted)
-        audio_path = extract_audio_from_video(video_p)
-        play_media = video_p if is_local_video else audio_path
+        source_parent = video_p.parent
+        out_parent = resolve_output_dir(source_parent, output_file)
         default_out_stem = fix_mojibake_filename(video_p.stem)
-        out_parent = video_p.parent
+        legacy_extracted_audio = source_parent / f"{video_p.stem}.m4a"
+        extracted_audio_target = (
+            legacy_extracted_audio
+            if (legacy_extracted_audio.exists() and legacy_extracted_audio.stat().st_size > 0)
+            else (out_parent / f"{video_p.stem}.m4a")
+        )
+        # Extract 16kHz mono audio track for Stage 1 ASR (uses cached audio if already extracted)
+        audio_path = extract_audio_from_video(video_p, output_path=extracted_audio_target)
+        play_media = video_p if is_local_video else audio_path
 
         # Check for embedded WebRTC/captions stream to use as speaker ground truth
         detected_codec = detect_embedded_subtitles(video_p)
@@ -217,14 +223,17 @@ def generate_meeting_minutes_and_transcript(
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
         play_media = audio_path
         default_out_stem = fix_mojibake_filename(audio_path.stem)
-        out_parent = audio_path.parent
+        source_parent = audio_path.parent
+        out_parent = resolve_output_dir(source_parent, output_file)
 
     # Detect sidecar SRT if no embedded subtitles were extracted
     if not subtitles_path:
-        sidecar_srt = out_parent / f"{default_out_stem}.srt"
-        if sidecar_srt.is_file():
-            subtitles_path = sidecar_srt
-            print(f"[*] Found sidecar subtitles file: {sidecar_srt.name}")
+        for candidate_dir in (source_parent, out_parent):
+            sidecar_srt = candidate_dir / f"{default_out_stem}.srt"
+            if sidecar_srt.is_file():
+                subtitles_path = sidecar_srt
+                print(f"[*] Found sidecar subtitles file: {sidecar_srt.name}")
+                break
 
     print(f"\n========================================================")
     if is_local_video:
@@ -273,7 +282,8 @@ def generate_meeting_minutes_and_transcript(
                 outline_path=outline,
                 model=summary_model,
                 force=force_glossary,
-                compress_fn=compress_audio_for_upload if compress else None
+                compress_fn=compress_audio_for_upload if compress else None,
+                output_dir=out_parent,
             )
             if global_glossary:
                 glossary_keywords = extract_keywords_from_glossary(global_glossary)
@@ -319,7 +329,7 @@ def generate_meeting_minutes_and_transcript(
         duration_sec = get_audio_duration(audio_path)
         dur_str = format_offset(duration_sec)
         eng_label = f"Local Whisper ({whisper_backend}/{whisper_model})" if engine.lower() == "whisper" else transcribe_model
-        out_path = Path(output_file) if output_file else out_parent / f"{default_out_stem}_transcript.md"
+        out_path = resolve_output_file_path(out_parent, f"{default_out_stem}_transcript.md", output_file)
         source_label = f"**Video File**: `{fix_mojibake_filename(video_p.name)}`" if is_local_video else f"**Audio File**: `{fix_mojibake_filename(audio_path.name)}`"
         content = (
             f"# Meeting Transcript: {default_out_stem}\n\n"
@@ -398,17 +408,14 @@ def generate_meeting_minutes_and_transcript(
     total_time = time.time() - t_total_start
 
     # Save Markdown Output
-    if output_file:
-        out_path = Path(output_file).resolve()
-    else:
-        from .html_generator import extract_meeting_title
-        from .audio_utils import sanitize_filename
-        md_title = extract_meeting_title(final_markdown)
-        if md_title:
-            clean_title_stem = sanitize_filename(md_title)
-            if clean_title_stem:
-                default_out_stem = clean_title_stem
-        out_path = out_parent / f"{default_out_stem}_minutes.md"
+    from .html_generator import extract_meeting_title
+    from .audio_utils import sanitize_filename
+    md_title = extract_meeting_title(final_markdown)
+    if md_title:
+        clean_title_stem = sanitize_filename(md_title)
+        if clean_title_stem:
+            default_out_stem = clean_title_stem
+    out_path = resolve_output_file_path(out_parent, f"{default_out_stem}_minutes.md", output_file)
 
     out_path.write_text(final_markdown, encoding="utf-8")
     print(f"\n========================================================")
@@ -449,7 +456,7 @@ def main():
         description="Meeting Transcribe Agent - Universal Cloud-Scale Intelligence & Offline Whisper Backup Suite"
     )
     parser.add_argument("input_source", help="Path to audio/video file (mp3, m4a, wav, mp4, mov, mkv, etc.), Google Drive link (https://drive.google.com/... / gdrive://...), or YouTube URL")
-    parser.add_argument("-o", "--output", help="Path to output Markdown file (default: <filename>_minutes.md)")
+    parser.add_argument("-o", "--output", help="Path to output Markdown file or directory (default: <input_dir>/output/<filename>_minutes.md)")
 
     parser.add_argument(
         "--agentic",

@@ -226,6 +226,56 @@ class TestVideoOptimization(unittest.TestCase):
         self.assertIn("-c:v libx264 -crf 28 -preset faster -g 10 -pix_fmt yuv420p", cmd_str)
 
 
+class TestOutputIsolation(unittest.TestCase):
+    def test_resolve_output_dir_and_file_path(self):
+        import tempfile
+        from scripts.audio_utils import resolve_output_dir, resolve_output_file_path
+        from scripts.html_generator import generate_interactive_html
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp).resolve()
+            # 1. Default isolation creates <base>/output/
+            out_dir = resolve_output_dir(base)
+            self.assertEqual(out_dir, base / "output")
+            self.assertTrue(out_dir.is_dir())
+
+            # 2. Nesting guard prevents output/output/ and gdrive_inputs/output/
+            self.assertEqual(resolve_output_dir(out_dir), out_dir)
+            gdrive_dir = out_dir / "gdrive_inputs"
+            gdrive_dir.mkdir(parents=True, exist_ok=True)
+            self.assertEqual(resolve_output_dir(gdrive_dir), out_dir)
+
+            # 3. resolve_output_file_path supports default, custom .md file, and custom directory
+            self.assertEqual(
+                resolve_output_file_path(out_dir, "board_minutes.md"),
+                out_dir / "board_minutes.md",
+            )
+            custom_md = base / "custom_dir" / "my_minutes.md"
+            self.assertEqual(
+                resolve_output_file_path(out_dir, "board_minutes.md", custom_md),
+                custom_md,
+            )
+            custom_folder = base / "deliverables"
+            self.assertEqual(
+                resolve_output_file_path(out_dir, "board_minutes.md", custom_folder),
+                custom_folder / "board_minutes.md",
+            )
+
+            # 4. HTML player in <base>/output/ references ../conference_video.mp4
+            video_file = base / "conference_video.mp4"
+            video_file.write_bytes(b"00")
+            html_out = out_dir / "conference_video_player.html"
+            generate_interactive_html(
+                media_source=video_file,
+                markdown_content="## 1. Meeting Metadata\n- **Meeting Title**: Board Sync\n",
+                output_html_path=html_out,
+            )
+            self.assertTrue(html_out.is_file())
+            html_content = html_out.read_text(encoding="utf-8")
+            self.assertIn("../conference_video.mp4", html_content)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

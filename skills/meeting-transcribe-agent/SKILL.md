@@ -116,7 +116,7 @@ python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "path/to/v
 ```
 - For YouTube: direct cloud ingestion via `gemini-3.8-flash` (Agentic) delivers complete minutes and transcript in ~40s.
 - For local video files: Stage 1 extracts audio and executes shared acoustic ASR (Gemini 3.5 Transcribe or local Whisper) for physical ground-truth timestamps; Stage 2 passes 720p video + transcript to `gemini-3.8-flash` (Agentic) for visual slide/speaker mapping and executive minutes synthesis; downstream deterministic assembly combines them with zero timestamp drift.
-- Produces `<stem>_minutes.md` and `<stem>_player.html` (with embedded YouTube Dock or local video player).
+- Produces `<input_dir>/output/<stem>_minutes.md` and `<input_dir>/output/<stem>_player.html` (with embedded YouTube Dock or local video player).
 
 ### Branch B: Pure Audio Pipeline (Audio Files & Podcasts)
 For audio recordings (`.mp3`, `.m4a`, `.wav`, `.aac`, etc.), or when video files are forced to audio via `--extract-audio`:
@@ -130,10 +130,10 @@ For audio recordings (`.mp3`, `.m4a`, `.wav`, `.aac`, etc.), or when video files
    ```
 2. **Stage 2: Agent-Native Semantic Intelligence & Minutes Structuring**:
    - The Agent synthesizes the 5 authoritative sections (Meeting Info, Executive Summary, Key Topics, Decisions & Directives, Action Items table) and formats the verbatim transcript.
-   - Saves `<stem>_會議記錄.md` (or `<stem>_minutes.md`).
+   - Saves `<input_dir>/output/<stem>_minutes.md`.
 3. **Stage 3: Interactive HTML Player Generation**:
    ```bash
-   python3 skills/meeting-transcribe-agent/scripts/html_generator.py "path/to/audio" "path/to/<stem>_會議記錄.md"
+   python3 skills/meeting-transcribe-agent/scripts/html_generator.py "path/to/audio" "path/to/output/<stem>_minutes.md"
    ```
 
 ---
@@ -157,7 +157,7 @@ python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_r
 | Option | Description | Default |
 | :--- | :--- | :--- |
 | `input_source` | Path to audio/video file (mp3, m4a, wav, mp4, mov, etc.) or YouTube URL | *(Required)* |
-| `-o, --output` | Path to output Markdown file | `<stem>_minutes.md` / `<stem>_會議記錄.md` |
+| `-o, --output` | Path to output Markdown file or directory | `<input_dir>/output/<stem>_minutes.md` |
 | `--agentic` | Agentic Video Understanding is natively enabled by default for all video sources | `True` |
 | `--extract-audio` | Force extracting audio track from video files and routing to pure audio pipeline | `False` |
 | `--engine` | Audio transcription engine (`gemini` for default cloud, `whisper` for explicit user offline mode) | `gemini` |

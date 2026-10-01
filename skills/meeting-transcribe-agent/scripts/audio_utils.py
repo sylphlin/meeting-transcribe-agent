@@ -125,6 +125,56 @@ def is_video_file(path: Path | str) -> bool:
         return False
 
 
+def resolve_output_dir(base_dir: Path, explicit_output: Path | str | None = None) -> Path:
+    """
+    Resolve the isolated output directory for generated deliverables.
+
+    Defaults to `<base_dir>/output/` and prevents nested `output/output/`
+    or `gdrive_inputs/output/` paths.
+    """
+    if explicit_output:
+        exp_path = Path(explicit_output).resolve()
+        if exp_path.suffix.lower() in {".md", ".html", ".txt"}:
+            out_dir = exp_path.parent
+        else:
+            out_dir = exp_path
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return out_dir
+
+    resolved = Path(base_dir).resolve()
+    if resolved.name.lower() == "output":
+        out_dir = resolved
+    elif resolved.name.lower() == "gdrive_inputs" and resolved.parent.name.lower() == "output":
+        out_dir = resolved.parent
+    else:
+        out_dir = resolved / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
+
+
+def resolve_output_file_path(
+    out_dir: Path,
+    default_filename: str,
+    explicit_output: Path | str | None = None,
+) -> Path:
+    """
+    Resolve the output file path inside `out_dir` or from `explicit_output`.
+
+    Supports both a custom file path (`.md`, `.html`, `.txt`) and a custom directory path for `-o`.
+    """
+    if explicit_output:
+        exp_path = Path(explicit_output).resolve()
+        if exp_path.suffix.lower() in {".md", ".html", ".txt"}:
+            exp_path.parent.mkdir(parents=True, exist_ok=True)
+            return exp_path
+        exp_path.mkdir(parents=True, exist_ok=True)
+        return exp_path / default_filename
+
+    out_dir = Path(out_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir / default_filename
+
+
 def extract_audio_from_video(video_path: Path, output_path: Path = None, bitrate: str = "64k") -> Path:
     """
     Extract a high-efficiency 16kHz mono audio track from a video file via ffmpeg.
@@ -138,6 +188,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path = None, bitrate
         output_path = video_path.parent / f"{video_path.stem}.m4a"
     else:
         output_path = Path(output_path).resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if output_path.exists() and output_path.stat().st_size > 0:
         cached_mb = output_path.stat().st_size / (1024 * 1024)
@@ -216,9 +267,15 @@ def optimize_video_for_upload(video_path: Path, output_path: Path = None, max_si
 
     if output_path is None:
         safe_hash = hashlib.md5(video_path.name.encode("utf-8")).hexdigest()[:8]
-        output_path = video_path.parent / f"optimized_{safe_hash}.mp4"
+        legacy_opt = video_path.parent / f"optimized_{safe_hash}.mp4"
+        if legacy_opt.exists() and legacy_opt.stat().st_size > 0:
+            output_path = legacy_opt
+        else:
+            out_dir = resolve_output_dir(video_path.parent)
+            output_path = out_dir / f"optimized_{safe_hash}.mp4"
     else:
         output_path = Path(output_path).resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if output_path.exists() and output_path.stat().st_size > 0:
         cached_mb = output_path.stat().st_size / (1024 * 1024)

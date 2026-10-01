@@ -233,11 +233,12 @@ flowchart TD
 2. **Stage 2 (Semantic Restructuring & Proofreading)**:
    - Synthesizes Sections 1–5 and runs parallel 60-line orthographic proofreading on Section 6 via `gemini-3.8-flash`.
 
-#### Step 3: Deliverable Generation
-1. **Markdown Report (`<Meeting_Title>_minutes.md`)**: Contains 6 structured sections with plain-text headings.
-2. **Interactive Video Player (`<Meeting_Title>_player.html`)**: Provides a 3-pane layout (video, executive summary, and synchronized transcript) with summary-first copy buttons.
-3. **Interactive Audio Player (`<Meeting_Title>_player.html`)**: Provides a 2-pane layout and a bottom floating audio controller that runs 100% offline via `file://`.
-4. **Terminology Glossary (`<Meeting_Title>_glossary.md`)**: Stores extracted domain terms and detected language metadata.
+#### Step 3: Deliverable Generation (Isolated in `<input_dir>/output/`)
+All generated deliverables and intermediate caches are automatically isolated inside `<input_dir>/output/` by default to keep the source media directory clean:
+1. **Markdown Report (`output/<Meeting_Title>_minutes.md`)**: Contains 6 structured sections with plain-text headings.
+2. **Interactive Video Player (`output/<Meeting_Title>_player.html`)**: Provides a 3-pane layout (video, executive summary, and synchronized transcript) with summary-first copy buttons.
+3. **Interactive Audio Player (`output/<Meeting_Title>_player.html`)**: Provides a 2-pane layout and a bottom floating audio controller that runs 100% offline via `file://`.
+4. **Terminology Glossary (`output/glossary_<stem>.md`)**: Stores extracted domain terms and detected language metadata.
 
 ---
 
@@ -395,7 +396,7 @@ python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_r
 | Argument | Description | Default |
 | :--- | :--- | :--- |
 | `input_source` | Local audio/video path, Google Drive link, or YouTube URL | *(Required)* |
-| `-o, --output` | Output Markdown file path | `<filename>_minutes.md` |
+| `-o, --output` | Output Markdown file or directory path | `<input_dir>/output/<filename>_minutes.md` |
 | `--agentic` | Enable Agentic Video Understanding for video inputs | `True` |
 | `--extract-audio` | Extract audio from video and run the pure audio pipeline | `False` |
 | `--engine` | Transcription engine: `gemini` (cloud default) or `whisper` (offline explicit) | `gemini` |
