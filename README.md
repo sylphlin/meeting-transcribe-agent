@@ -15,13 +15,13 @@
 
 1. **YouTube Multimodal Pipeline (Cloud Direct Ingestion)**:
    - **Direct Cloud Streaming**: Sends the YouTube URL directly to **Gemini 3.8 Flash** without downloading local video files.
-   - **Agentic Video Understanding (`--agentic`)**: Navigates relevant video frames to read presentation slides, desktop nameplates, and lower-third titles.
+   - **Agentic Video Understanding**: Navigates relevant video frames to read presentation slides, desktop nameplates, and lower-third titles.
    - **Interactive YouTube Player**: Generates a standalone 3-pane HTML player with synchronized transcript scrolling and click-to-seek navigation.
 
 2. **Local Video Two-Stage Fusion Pipeline (Acoustic Ground Truth + Vision Fusion)**:
    - **Embedded Subtitle Probe**: Extracts embedded subtitle tracks (`mov_text`, `srt`, `vtt`) or sidecar `.srt` files as attendee and agenda references.
    - **Stage 0 (Glossary & Language Detection)**: Builds a domain terminology table and detects the primary spoken `BCP-47` language code (for example, `cmn-Hant-TW`, `en-US`, `ja-JP`).
-   - **Stage 1 (Acoustic Ground Truth ASR)**: Extracts 16 kHz mono audio and transcribes speech via **Gemini 3.5 Transcribe** (default) or **Local Whisper + Sherpa-ONNX** (`--engine whisper`). This stage anchors physical timestamps `[MM:SS - MM:SS]` and speaker turns.
+   - **Stage 1 (Acoustic Ground Truth ASR)**: Extracts 16 kHz mono audio and transcribes speech via **Gemini 3.5 Transcribe** (default) or **Local Whisper + Sherpa-ONNX** (when offline mode is requested). This stage anchors physical timestamps `[MM:SS - MM:SS]` and speaker turns.
    - **Stage 2 (Multimodal Vision & Chunked Verbatim Proofreading)**: Compresses large videos (>250 MB) to 720p H.264 (`10 fps`, `1s GOP -g 10`, `+faststart` via Apple Silicon `VideoToolbox` with `libx264` fallback) for fast cloud upload and Agentic frame seeking, then sends the video and Stage 1 transcript to **Gemini 3.8 Flash**. The model reads visual slides and nameplates, generates Sections 1–5, and proofreads Section 6 in parallel 60-line batches while locking original timestamps.
    - **Deterministic Speaker Assembly**: Reconciles speaker identities across subtitle overlaps, multimodal scoped rules, and handover cues with zero timestamp drift.
 
@@ -80,49 +80,94 @@ Different media sources contain different timing metadata and visual signals:
 1. **Public & Municipal Sessions**: Transcribe livestreamed council meetings from YouTube and identify speakers from desk nameplates.
 2. **Technical Seminars & Keynotes**: Combine presentation slide text with spoken explanations into structured summaries.
 3. **Multi-Speaker Executive Meetings**: Track speaker changes and action items across multi-hour recordings.
-4. **Offline Local Transcription**: Run local `mlx-whisper` or `faster-whisper` with Sherpa-ONNX when cloud access is restricted.
+4. **Offline Local Transcription**: Run local `mlx-whisper` or `faster-whisper` with Sherpa-ONNX when cloud access is restricted or confidential offline processing is required.
 
 ---
 
 ## Dual-Engine Architecture
 
-### 1. Cloud Vertex AI Mode (`--engine gemini`, Default)
+### 1. Cloud Vertex AI Mode (Default)
 * **Model Pairing**: Uses **Gemini 3.5 Transcribe** (`TRANSCRIBE_MODEL`) for acoustic transcription and **Gemini 3.8 Flash** (`SUMMARY_MODEL`) for multimodal analysis and proofreading.
 * **Adaptive Audio Preprocessing**: Probes input audio bitrates and splits recordings longer than 25 minutes at silence boundaries into 20-minute chunks.
 * **Deterministic Prefix Locking**: Re-attaches the exact Stage 1 `[MM:SS - MM:SS] **spk_X**:` prefix to every proofread turn in Section 6 to prevent timestamp alteration or token truncation.
 * **Two-Tier GCS Lifecycle Management**: Stages raw media under `gs://<bucket>/raw/` (auto-deleted after 2 days) and stores deliverables for 15 days.
 
-### 2. Local Offline Mode (`--engine whisper`, Explicit Only)
-* **Explicit Activation**: Runs only when you specify `--engine whisper`. The system never falls back silently from cloud mode to local mode.
+### 2. Local Offline Mode (Explicit Request Only)
+* **Explicit Activation**: Runs only when you explicitly request local or offline transcription. The system never falls back silently from cloud mode to local mode.
 * **Hardware Acceleration**: Uses `mlx-whisper` on Apple Silicon GPUs or `faster-whisper` on CPU/CUDA systems.
 * **Acoustic Voiceprint Diarization**: Extracts speaker embeddings with **Sherpa-ONNX** (`eres2net` or `cam++`) and aligns word timestamps to speaker turns.
 
 ---
 
-## Agent Prompt Guide
+## Antigravity Usage & Scenarios
 
-Use natural language prompts when running this project as an **Antigravity Plugin** or **Agent Skill**:
+You can operate **Meeting Transcribe Agent** in Antigravity using two interaction modes:
 
-1. **YouTube Video Transcription**:
-   > "Transcribe `https://www.youtube.com/watch?v=VIDEO_ID`. Read the desk nameplates and slides to generate meeting minutes and an interactive player."
+1. **Concise `/skill` + `@file` Invocation (Recommended)**: Type `/meeting-transcribe-agent` to select the plugin and tag your files with `@`. Specify only the key fields (for example, `File: @XX, Agenda: @YY`) without writing full sentences.
+2. **Natural Language Prompt (Auto-Routed)**: Describe your transcription and summarization needs in conversational language. Antigravity automatically selects and runs this plugin.
 
-2. **YouTube Deep Slide Analysis**:
-   > "Analyze `https://www.youtube.com/watch?v=VIDEO_ID` in Agentic Video mode. Extract the architecture diagrams and summarize all decisions."
+By default, all generated deliverables (`<Title>_minutes.md`, `<Title>_player.html`, and the glossary) are isolated in the `output/` subdirectory next to the input media.
 
-3. **Local Video File Processing**:
-   > "Transcribe `conference_video.mp4`. Use the presentation slides on screen to verify speaker names and technical terms."
+### Scenario 1: Audio Meeting Recording to Structured Minutes & Offline Player
+Use this scenario for voice recordings, conference calls, or interviews. The agent generates a 6-section Markdown report and a standalone 2-pane offline HTML audio player.
 
-4. **Video Audio-Only Extraction (Token Economy)**:
-   > "Extract the audio track from `conference_video.mp4` and run the pure audio pipeline."
+- **Concise `/ + @` Command**:
+  ```text
+  /meeting-transcribe-agent File: @meeting_recording.mp3, Topic: Executive_Board_Meeting, Attendees: John Doe, Jane Smith
+  ```
+- **Natural Language Prompt**:
+  ```text
+  Transcribe @meeting_recording.mp3 and generate executive meeting minutes and an interactive audio player. The topic is Executive_Board_Meeting with John Doe and Jane Smith.
+  ```
 
-5. **Standard Audio Transcription**:
-   > "Transcribe `meeting_recording.mp3` and generate an executive summary, action items, and an interactive audio player."
+### Scenario 2: Local Video or YouTube Presentation (With Visual Slide & Nameplate OCR)
+The agent inspects presentation slides, architecture diagrams, and speaker nameplates on screen, and generates a 3-pane interactive video player.
 
-6. **Audio with Meeting Agenda**:
-   > "Transcribe `meeting_recording.mp3` with the agenda `agenda.md`. Match speaker titles and technical terms against the agenda."
+- **Concise `/ + @` Command**:
+  ```text
+  /meeting-transcribe-agent Video: @conference_video.mp4, Language: English
+  ```
+  *(Or with a YouTube URL: `/meeting-transcribe-agent URL: https://www.youtube.com/watch?v=VIDEO_ID, Language: English`)*
+- **Natural Language Prompt**:
+  ```text
+  Transcribe @conference_video.mp4, read the slides and desk nameplates on screen, and generate meeting minutes and an interactive player.
+  ```
 
-7. **Cross-Language Executive Summary**:
-   > "Transcribe `meeting_recording.mp3`. Keep Section 6 in the original spoken language, and write Sections 1 to 5 in English."
+### Scenario 3: Transcription Guided by a Meeting Agenda or Reference Document
+Attach an agenda or attendee roster so the agent verifies official titles and domain terminology.
+
+- **Concise `/ + @` Command**:
+  ```text
+  /meeting-transcribe-agent File: @meeting_recording.mp3, Agenda: @agenda.md
+  ```
+- **Natural Language Prompt**:
+  ```text
+  Transcribe @meeting_recording.mp3 using @agenda.md to verify speaker titles and technical terms.
+  ```
+
+### Scenario 4: Cross-Language Executive Summary (Original Verbatim + Translated Summary)
+Keep Section 6 (Full Verbatim Transcript) in the original spoken language of each participant while writing Sections 1–5 in your target language.
+
+- **Concise `/ + @` Command**:
+  ```text
+  /meeting-transcribe-agent File: @meeting_recording.mp3, Summary Language: English
+  ```
+- **Natural Language Prompt**:
+  ```text
+  Transcribe @meeting_recording.mp3. Keep Section 6 in the original spoken language, and write Sections 1 to 5 in English.
+  ```
+
+### Scenario 5: Confidential Offline Local Transcription
+Request offline transcription to run local Whisper and Sherpa-ONNX speaker clustering without sending audio to cloud ASR.
+
+- **Concise `/ + @` Command**:
+  ```text
+  /meeting-transcribe-agent File: @meeting_recording.mp3, Mode: offline local, Speakers: 4
+  ```
+- **Natural Language Prompt**:
+  ```text
+  Transcribe @meeting_recording.mp3 in offline local mode with 4 speakers.
+  ```
 
 ---
 
@@ -143,7 +188,7 @@ flowchart TD
         Y["YouTube URL (Watch / Shorts / Live)<br>• Fetches Title via oEmbed API"]:::inputStyle
         V["Local or Google Drive Video (.mp4 / .mov / .mkv)<br>• Probes Embedded Subtitles & Visual Frames"]:::inputStyle
         A["Local or Google Drive Audio (.mp3 / .m4a / .wav)<br>• Probes Bitrate & Silence Boundaries"]:::inputStyle
-        O["Meeting Agenda Outline (Optional --outline)"]:::inputStyle
+        O["Meeting Agenda Outline (Optional)"]:::inputStyle
     end
 
     Router{"Input Router"}:::routerStyle
@@ -165,7 +210,7 @@ flowchart TD
 
         ExtractTrack --> ASREngine
         ASREngine -- "Cloud (Default)" --> ASR_Gemini --> RawTranscript
-        ASREngine -- "Offline (--engine whisper)" --> ASR_Whisper --> RawTranscript
+        ASREngine -- "Offline (Explicit Request)" --> ASR_Whisper --> RawTranscript
         O -. "Inject Context" .-> ExtractTrack
     end
 
@@ -183,7 +228,7 @@ flowchart TD
 
     Router -- "YouTube URL" --> GeminiFlash
     Router -- "Local Video File" --> ExtractTrack
-    Router -- "Audio (or --extract-audio)" --> ExtractTrack
+    Router -- "Audio Stream" --> ExtractTrack
 
     RawTranscript --> Stage2Video
     V -. "720p Video Staging" .-> Stage2Video
@@ -209,7 +254,7 @@ flowchart TD
 #### Step 1: Input Detection and Routing
 - **YouTube URLs** (`youtube.com/watch`, `youtu.be/`, Shorts, Live): Queries the YouTube oEmbed API for the meeting title and routes to the **YouTube Multimodal Cloud Pipeline**.
 - **Local or Google Drive Video Files** (`.mp4`, `.mov`, `.mkv`, `.webm`): Routes to the **Local Video Two-Stage Fusion Pipeline**.
-- **Pure Audio Files** (`.mp3`, `.m4a`, `.wav`, `.aac`, `.flac`) or `--extract-audio`: Routes to the **Pure Audio Pipeline**.
+- **Pure Audio Files** (`.mp3`, `.m4a`, `.wav`, `.aac`, `.flac`): Routes to the **Pure Audio Pipeline**.
 
 #### Step 2A: YouTube Multimodal Cloud Pipeline
 1. **Direct Cloud Ingestion**: Sends the YouTube URL directly to the Vertex AI Gemini endpoint without local downloading.
@@ -248,7 +293,7 @@ Select one of the two deployment methods below:
 
 | Method | Target Environment | Setup Tool | Primary Interface |
 | :--- | :--- | :--- | :--- |
-| **Method 1: Google Antigravity & Agent Plugins** | Local IDE, Agent Skill, or Python CLI | `pip` / `uv` + `./setup.sh` | Antigravity IDE chat or terminal CLI |
+| **Method 1: Google Antigravity & Agent Plugins** | Local Antigravity IDE and Agent Skill | `pip` / `uv` + `./setup.sh` | Antigravity IDE chat |
 | **Method 2: Gemini Enterprise** | Cloud Vertex AI Agent Runtime | `./deploy.sh` (native `gcloud`) | Gemini Enterprise Web UI, Agent Engine, A2A |
 
 ---
@@ -268,7 +313,7 @@ Select one of the two deployment methods below:
 
 ---
 
-### Method 1: Google Antigravity Plugin, Skill, and Local CLI Setup
+### Method 1: Google Antigravity Plugin and Skill Setup
 
 1. **Clone the Repository as an Agent Plugin (Recommended)**:
    - **Global Plugin**:
@@ -299,23 +344,26 @@ Select one of the two deployment methods below:
    - Create the staging bucket with CORS and two-tier lifecycle rules (`raw/`: 2 days; deliverables: 15 days).
    - Generate the `.env` configuration file.
    ```bash
+   cd ~/.gemini/config/plugins/meeting-transcribe-agent
    chmod +x setup.sh
    ./setup.sh --project YOUR_GCP_PROJECT_ID
    ```
 
 4. **Run in Antigravity**:
    Prompt the agent directly in the Antigravity chat:
-   > "Transcribe `meeting_recording.mp3` and generate executive minutes and the interactive player."
+   ```text
+   /meeting-transcribe-agent File: @meeting_recording.mp3
+   ```
 
 ### Project Directory Structure (Agent Plugins 1.0 Specification)
 ```text
 meeting-transcribe-agent/
 ├── plugin.json                                           # Agent Plugins 1.0 manifest
 ├── rules/
-│   └── AGENTS.md                                         # Packaged client execution invariants (<PLUGIN_ROOT> direct CLI & fail-fast)
+│   └── AGENTS.md                                         # Packaged client execution invariants (read-only & fail-fast)
 ├── skills/
 │   └── meeting-transcribe-agent/                         # Canonical Skill Bundle (Single Source of Truth)
-│       ├── SKILL.md                                      # Skill definition and agent reference manual
+│       ├── SKILL.md                                      # Skill definition & CLI options reference for AI agents
 │       ├── scripts/                                      # Canonical core components (SSOT)
 │       │   ├── meeting_transcribe.py                     # Master pipeline orchestrator
 │       │   ├── audio_utils.py                            # Video detection, FFmpeg compression, audio extraction
@@ -367,62 +415,6 @@ Deploy the agent to Google Cloud Vertex AI Agent Runtime using ADK 2.0 and `agen
 
 ---
 
-## Command-Line Usage (Standalone CLI)
-
-### YouTube Video Processing
-```bash
-python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID"
-```
-
-### Local Audio and Video Processing
-```bash
-# Pure audio transcription (Cloud Vertex AI default)
-python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3"
-
-# Local video two-stage fusion (audio ASR + Agentic vision fusion)
-python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "conference_video.mp4"
-
-# Explicit offline Whisper + Sherpa-ONNX mode
-python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3" --engine whisper --whisper-backend auto
-```
-
-### Specify Agenda Outline and Target Summary Language
-```bash
-python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_recording.mp3" --outline "agenda.md" --summary-language en
-```
-
-### CLI Argument Reference
-
-| Argument | Description | Default |
-| :--- | :--- | :--- |
-| `input_source` | Local audio/video path, Google Drive link, or YouTube URL | *(Required)* |
-| `-o, --output` | Output Markdown file or directory path | `<input_dir>/output/<filename>_minutes.md` |
-| `--agentic` | Enable Agentic Video Understanding for video inputs | `True` |
-| `--extract-audio` | Extract audio from video and run the pure audio pipeline | `False` |
-| `--engine` | Transcription engine: `gemini` (cloud default) or `whisper` (offline explicit) | `gemini` |
-| `--whisper-backend` | Offline Whisper backend: `auto`, `mlx`, or `faster-whisper` | `auto` |
-| `--whisper-model` | Offline Whisper model size (`tiny`, `base`, `small`, `medium`, `large-v3`) | `small` |
-| `--no-diarization` | Disable offline Sherpa-ONNX speaker diarization | `False` |
-| `--clustering-threshold` | Set Sherpa-ONNX voiceprint clustering threshold | `0.68` |
-| `--num-speakers` | Specify exact speaker count (`-1` for automatic detection) | `-1` |
-| `--embedding-type` | Select Sherpa-ONNX embedding model (`eres2net` or `cam++`) | `eres2net` |
-| `--project` | Set Google Cloud project ID (`GOOGLE_CLOUD_PROJECT`) | `None` |
-| `--region` | Set Vertex AI location (`GOOGLE_CLOUD_LOCATION`) | `global` |
-| `--bucket` | Set Cloud Storage staging bucket (`MEETING_STORAGE_BUCKET`) | `None` |
-| `--transcribe-model` | Set cloud ASR model (`TRANSCRIBE_MODEL`) | `gemini-3.5-transcribe-preview` |
-| `--summary-model` | Set synthesis and vision model (`SUMMARY_MODEL`) | `gemini-3.8-flash` |
-| `--outline` | Provide meeting agenda or outline file (`.txt` or `.md`) | `None` |
-| `--force-glossary` | Force regeneration of the Stage 0 glossary file | `False` |
-| `--no-glossary` | Skip Stage 0 glossary extraction | `False` |
-| `--no-player` | Skip interactive HTML player generation | `False` |
-| `--no-compress` | Skip FFmpeg audio pre-compression | `False` |
-| `--summary-language` | Set target language for Sections 1–5 (for example, `en`, `zh-TW`, `ja`) | `None` (auto) |
-| `--only-transcript` | Output Section 6 verbatim transcript only | `False` |
-| `--language` | Set language code for offline Whisper (`auto`, `en`, `zh`, `ja`) | `auto` |
-| `--serve` | Start a local HTTP server and open the HTML player (required for YouTube embeds) | `False` |
-
----
-
 ## Google Drive Direct Links & GCS Lifecycle Policy
 
 `meeting-transcribe-agent` downloads Google Drive files directly via ADC (`drive.readonly` scope) and caches files locally using MD5 checksum verification.
@@ -438,23 +430,10 @@ gcloud auth application-default login --scopes="https://www.googleapis.com/auth/
 
 ### 2. Supported Google Drive Scenarios
 
-| Scenario | Command Syntax | Processing Behavior |
+| Scenario | Antigravity Command Syntax | Processing Behavior |
 | :--- | :--- | :--- |
-| **Scenario A: Video on Google Drive**<br/>*(MP4 / MOV)* | `python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view"` | Verifies remote `md5Checksum`, caches in `gdrive_inputs/`, recovers UTF-8 CJK filenames, extracts 16 kHz audio, stages 720p video to GCS `raw/`, and runs Stage 1 + Stage 2 fusion. |
-| **Scenario B: Audio on Google Drive**<br/>*(M4A / MP3 / WAV)* | `python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view" --outline agenda.md` | Verifies MD5 cache, runs Stage 0 language/glossary detection, transcribes with Gemini 3.5 Transcribe, and synthesizes minutes with Gemini 3.8 Flash. |
-
-#### CLI Examples
-```bash
-# Scenario A: Transcribe a meeting video from a Google Drive share link
-python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view?usp=sharing"
-
-# Scenario B: Transcribe a Google Drive audio link with an agenda outline and English summary
-python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "https://drive.google.com/file/d/FILE_ID/view?usp=sharing" \
-  --outline agenda.md --summary-language en
-```
-
-#### Antigravity Chat Prompt Example
-> *"Generate meeting minutes, action items, a verbatim transcript, and an interactive HTML player from this Google Drive recording: `https://drive.google.com/file/d/FILE_ID/view?usp=sharing`"*
+| **Scenario A: Video on Google Drive**<br/>*(MP4 / MOV)* | `/meeting-transcribe-agent Video: https://drive.google.com/file/d/FILE_ID/view` | Verifies remote `md5Checksum`, caches in `gdrive_inputs/`, recovers UTF-8 CJK filenames, extracts 16 kHz audio, stages 720p video to GCS `raw/`, and runs Stage 1 + Stage 2 fusion. |
+| **Scenario B: Audio on Google Drive**<br/>*(M4A / MP3 / WAV)* | `/meeting-transcribe-agent File: https://drive.google.com/file/d/FILE_ID/view, Agenda: @agenda.md` | Verifies MD5 cache, runs Stage 0 language/glossary detection, transcribes with Gemini 3.5 Transcribe, and synthesizes minutes with Gemini 3.8 Flash. |
 
 ### 3. Two-Tier GCS Bucket Lifecycle Policy (`raw/` 2 Days / Deliverables 15 Days)
 
