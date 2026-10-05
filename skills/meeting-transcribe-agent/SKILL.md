@@ -86,7 +86,7 @@ meeting-transcribe-agent/
 5. **Dedicated Dual Interactive HTML Players**:
    - **Dedicated Video Player (`video_player_template.html`)**: 3-pane layout featuring an embedded 16:9 video player on the top left (YouTube API or local `<video controls>`), an executive summary panel on the bottom left, and an interactive synchronized transcript on the right.
    - **Dedicated Audio Player (`audio_player_template.html`)**: 2-pane layout (Executive Summary on the left, synchronized transcript on the right) with a fixed floating audio control bar at the bottom. Operates 100% offline via local `file://` protocol without requiring any local HTTP server.
-   - **Grouped Same-Speaker Paragraph Cards (`isGrouped`)**: Consecutive semantic paragraphs from the same speaker are visually chained (`grouped-turn`) without repeating speaker headers, while preserving individual `[▶ MM:SS - MM:SS]` seek buttons and real-time playback highlighting.
+   - **Grouped Same-Speaker Paragraph Cards (`isGrouped`)**: Consecutive semantic paragraphs from the same speaker are visually chained (`grouped-turn`), while preserving speaker and title tags, individual `[▶ MM:SS - MM:SS]` seek buttons, and real-time playback highlighting.
    - **Summary-First Copy Workflow**: Top copy buttons (`Google Docs` / `Markdown`) default to copying the Executive Summary (Sections 1–5), with dropdown menus for Full Record (Summary + Transcript) and Transcript only.
    - **Multilingual UI Switcher**: Top-right 5-language UI switcher (Traditional Chinese, English, Japanese, Korean, Simplified Chinese) with persistent localStorage preference.
 
