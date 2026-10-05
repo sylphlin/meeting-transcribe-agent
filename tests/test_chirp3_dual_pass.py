@@ -44,10 +44,10 @@ class TestTimestampFormattingAndOnset(unittest.TestCase):
     """Test conservative timestamp formatting and FFmpeg physical speech onset detection."""
 
     def test_format_offset_floor_ceil(self):
-        self.assertEqual(format_offset(940.96, mode="floor"), "15:40")
-        self.assertEqual(format_offset(937.26, mode="ceil"), "15:38")
-        self.assertEqual(format_offset(937.0, mode="ceil"), "15:37")
-        self.assertEqual(format_offset(940.96), "15:41")
+        self.assertEqual(format_offset(100.96, mode="floor"), "01:40")
+        self.assertEqual(format_offset(97.26, mode="ceil"), "01:38")
+        self.assertEqual(format_offset(97.0, mode="ceil"), "01:37")
+        self.assertEqual(format_offset(100.96), "01:41")
         self.assertEqual(format_offset(3723.4, mode="floor"), "01:02:03")
         self.assertEqual(format_offset(None), "00:00")
 
@@ -316,51 +316,51 @@ class TestHybridMultilingualAlignment(unittest.TestCase):
         self.assertAlmostEqual(aligned[0]["end"], 4.24, places=2)
 
     def test_speaker_boundary_insert_words_follow_acoustic_gap(self):
-        """Case 2: Track B-only filler words after a 3.7s pause follow the next speaker; previous turn keeps its physical end."""
+        """Case 2: Track B-only filler words after a long pause follow the next speaker; previous turn keeps its physical end."""
         engine = AlignmentEngine()
         macro_words = [
-            {"word": "時間", "speaker": "Speaker 1"},
-            {"word": "5分鐘。", "speaker": "Speaker 1"},
-            {"word": "我們市長", "speaker": "Speaker 2"},
-            {"word": "還有各位長官", "speaker": "Speaker 2"},
+            {"word": "報告", "speaker": "Speaker 1"},
+            {"word": "結束。", "speaker": "Speaker 1"},
+            {"word": "謝謝主席", "speaker": "Speaker 2"},
+            {"word": "各位同仁好", "speaker": "Speaker 2"},
         ]
         micro_words = [
-            {"word": "時間", "start": 936.0, "end": 936.5},
-            {"word": "五分鐘。", "start": 936.5, "end": 937.26},
-            {"word": "那個", "start": 940.96, "end": 941.3},
-            {"word": "呃", "start": 941.3, "end": 941.5},
-            {"word": "我們市長", "start": 941.6, "end": 942.4},
-            {"word": "還有各位長官", "start": 942.4, "end": 943.6},
+            {"word": "報告", "start": 100.0, "end": 100.5},
+            {"word": "結束。", "start": 100.5, "end": 101.26},
+            {"word": "那個", "start": 104.96, "end": 105.3},
+            {"word": "呃", "start": 105.3, "end": 105.5},
+            {"word": "謝謝主席", "start": 105.6, "end": 106.4},
+            {"word": "各位同仁好", "start": 106.4, "end": 107.6},
         ]
         aligned = engine.project_timestamps(macro_words, micro_words)
         spk_by_word = {w["word"]: w["speakerLabel"] for w in aligned}
-        self.assertEqual(spk_by_word["五分鐘。"], "Speaker 1")
+        self.assertEqual(spk_by_word["結束。"], "Speaker 1")
         self.assertEqual(spk_by_word["那個"], "Speaker 2")
         self.assertEqual(spk_by_word["呃"], "Speaker 2")
         turns = engine.aggregate_turns(aligned)
         self.assertEqual(len(turns), 2)
-        self.assertAlmostEqual(turns[0]["end"], 937.26, places=2)
-        self.assertAlmostEqual(turns[1]["start"], 940.96, places=2)
+        self.assertAlmostEqual(turns[0]["end"], 101.26, places=2)
+        self.assertAlmostEqual(turns[1]["start"], 104.96, places=2)
 
     def test_trailing_unmatched_words_stay_with_previous_speaker(self):
         """Case 2: Track B-only tail words right after the previous speaker (small gap) stay with that speaker."""
         engine = AlignmentEngine()
         macro_words = [
-            {"word": "時間", "speaker": "Speaker 1"},
-            {"word": "我們市長", "speaker": "Speaker 2"},
+            {"word": "報告", "speaker": "Speaker 1"},
+            {"word": "謝謝主席", "speaker": "Speaker 2"},
         ]
         micro_words = [
-            {"word": "時間", "start": 936.0, "end": 936.5},
-            {"word": "五分鐘。", "start": 936.5, "end": 937.26},
-            {"word": "我們市長", "start": 940.96, "end": 941.8},
+            {"word": "報告", "start": 100.0, "end": 100.5},
+            {"word": "結束。", "start": 100.5, "end": 101.26},
+            {"word": "謝謝主席", "start": 104.96, "end": 105.8},
         ]
         aligned = engine.project_timestamps(macro_words, micro_words)
         spk_by_word = {w["word"]: w["speakerLabel"] for w in aligned}
-        self.assertEqual(spk_by_word["五分鐘。"], "Speaker 1")
+        self.assertEqual(spk_by_word["結束。"], "Speaker 1")
         turns = engine.aggregate_turns(aligned)
         self.assertEqual(len(turns), 2)
-        self.assertAlmostEqual(turns[0]["end"], 937.26, places=2)
-        self.assertAlmostEqual(turns[1]["start"], 940.96, places=2)
+        self.assertAlmostEqual(turns[0]["end"], 101.26, places=2)
+        self.assertAlmostEqual(turns[1]["start"], 104.96, places=2)
 
 
 class TestTurnBoundaryMonotonicity(unittest.TestCase):

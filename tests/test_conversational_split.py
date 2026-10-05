@@ -46,53 +46,53 @@ class TestConversationalSplit(unittest.TestCase):
         return [ln for ln in refined.splitlines() if ln.strip()]
 
     def test_mid_line_split_merges_head_into_previous_turn(self):
-        # Turn A (Speaker 4) ends at 1558.2 -> "25:59" (ceil).
-        # Turn B is mislabeled Speaker 1 and holds Speaker 4 words until 1561.64, then Speaker 1.
+        # Turn A (Speaker 2) ends at 118.2 -> "01:59" (ceil).
+        # Turn B is mislabeled Speaker 1: it holds Speaker 2 words until 121.64, then Speaker 1 words.
         self._seed_cache([
-            {"start": 1541.0, "end": 1558.2, "word_items": _words([("五百零八倍", 1555.6, 1558.2)])},
-            {"start": 1558.2, "end": 1563.92, "word_items": _words([
-                ("是", 1558.2, 1558.4), ("它", 1558.4, 1558.6), ("的", 1558.6, 1558.8),
-                ("五", 1558.8, 1559.0), ("倍", 1559.0, 1559.3), ("之", 1559.3, 1559.5), ("多", 1559.5, 1559.6),
-                ("所", 1559.6, 1559.8), ("以", 1559.8, 1560.0), ("預", 1560.0, 1560.8), ("算", 1560.8, 1561.64),
-                ("我", 1561.64, 1561.8), ("們", 1561.8, 1562.0), ("購", 1562.0, 1562.4), ("物", 1562.4, 1562.8),
-                ("節", 1562.8, 1563.2), ("多", 1563.2, 1563.6), ("少", 1563.6, 1563.92),
+            {"start": 101.0, "end": 118.2, "word_items": _words([("甲乙丙丁", 115.6, 118.2)])},
+            {"start": 118.2, "end": 123.92, "word_items": _words([
+                ("一", 118.2, 118.4), ("二", 118.4, 118.6), ("三", 118.6, 118.8),
+                ("四", 118.8, 119.0), ("五", 119.0, 119.3), ("六", 119.3, 119.5), ("七", 119.5, 119.6),
+                ("八", 119.6, 119.8), ("九", 119.8, 120.0), ("十", 120.0, 120.8), ("完", 120.8, 121.64),
+                ("請", 121.64, 121.8), ("問", 121.8, 122.0), ("經", 122.0, 122.4), ("費", 122.4, 122.8),
+                ("多", 122.8, 123.2), ("少", 123.2, 123.6), ("呢", 123.6, 123.92),
             ])},
         ])
         raw = (
-            "[25:41 - 25:59] **Speaker 4**: 五百零八倍\n\n"
-            "[25:58 - 26:04] **Speaker 1**: 是它的五倍之多所以預算我們購物節多少\n\n"
-            "[26:04 - 26:05] **Speaker 4**: 啊？"
+            "[01:41 - 01:59] **Speaker 2**: 甲乙丙丁\n\n"
+            "[01:58 - 02:04] **Speaker 1**: 一二三四五六七八九十完請問經費多少呢\n\n"
+            "[02:04 - 02:05] **Speaker 2**: 啊？"
         )
         fake = (
-            "[25:41 - 25:59] **Speaker 4**: 五百零八倍\n"
-            "[25:58 - 26:04] **Speaker 1**: <SPEAKER_SPLIT: Speaker 4> 是它的五倍之多所以預算 <SPEAKER_SPLIT: Speaker 1> 我們購物節多少\n"
-            "[26:04 - 26:05] **Speaker 4**: 啊？"
+            "[01:41 - 01:59] **Speaker 2**: 甲乙丙丁\n"
+            "[01:58 - 02:04] **Speaker 1**: <SPEAKER_SPLIT: Speaker 2> 一二三四五六七八九十完 <SPEAKER_SPLIT: Speaker 1> 請問經費多少呢\n"
+            "[02:04 - 02:05] **Speaker 2**: 啊？"
         )
         lines = self._run(raw, fake)
         self.assertEqual(len(lines), 3, lines)
-        # End uses ceil (1561.64 -> 26:02); the next start uses floor (26:01).
-        self.assertTrue(lines[0].startswith("[25:41 - 26:02] **Speaker 4**:"), lines[0])
-        self.assertIn("五百零八倍是它的五倍之多所以預算", lines[0])
-        self.assertTrue(lines[1].startswith("[26:01 - 26:04] **Speaker 1**: 我們購物節多少"), lines[1])
-        self.assertTrue(lines[2].startswith("[26:04 - 26:05] **Speaker 4**:"), lines[2])
+        # End uses ceil (121.64 -> 02:02); the next start uses floor (02:01).
+        self.assertTrue(lines[0].startswith("[01:41 - 02:02] **Speaker 2**:"), lines[0])
+        self.assertIn("甲乙丙丁一二三四五六七八九十完", lines[0])
+        self.assertTrue(lines[1].startswith("[02:01 - 02:04] **Speaker 1**: 請問經費多少呢"), lines[1])
+        self.assertTrue(lines[2].startswith("[02:04 - 02:05] **Speaker 2**:"), lines[2])
         self.assertNotIn("SPEAKER_SPLIT", "\n".join(lines))
 
     def test_whole_line_relabel(self):
         raw = (
-            "[26:01 - 26:04] **Speaker 1**: 獎品預算只有多少？\n\n"
-            "[26:04 - 26:05] **Speaker 1**: 啊？\n\n"
-            "[26:06 - 26:08] **Speaker 1**: 只有六百萬？\n\n"
-            "[26:07 - 26:09] **Speaker 4**: 六百萬。"
+            "[02:01 - 02:04] **Speaker 1**: 請問經費多少呢？\n\n"
+            "[02:04 - 02:05] **Speaker 1**: 啊？\n\n"
+            "[02:06 - 02:08] **Speaker 1**: 只有這些嗎？\n\n"
+            "[02:07 - 02:09] **Speaker 2**: 是的。"
         )
         fake = (
-            "[26:01 - 26:04] **Speaker 1**: 獎品預算只有多少？\n"
-            "[26:04 - 26:05] **Speaker 1**: <SPEAKER_SPLIT: Speaker 4> 啊？\n"
-            "[26:06 - 26:08] **Speaker 1**: 只有六百萬？\n"
-            "[26:07 - 26:09] **Speaker 4**: 六百萬。"
+            "[02:01 - 02:04] **Speaker 1**: 請問經費多少呢？\n"
+            "[02:04 - 02:05] **Speaker 1**: <SPEAKER_SPLIT: Speaker 2> 啊？\n"
+            "[02:06 - 02:08] **Speaker 1**: 只有這些嗎？\n"
+            "[02:07 - 02:09] **Speaker 2**: 是的。"
         )
         lines = self._run(raw, fake)
         self.assertEqual(len(lines), 4)
-        self.assertEqual(lines[1], "[26:04 - 26:05] **Speaker 4**: 啊？")
+        self.assertEqual(lines[1], "[02:04 - 02:05] **Speaker 2**: 啊？")
 
     def test_unknown_speaker_marker_is_ignored(self):
         raw = "[00:01 - 00:05] **Speaker 1**: Hello there, how are you today?"

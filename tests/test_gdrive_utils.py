@@ -31,7 +31,7 @@ class TestGDriveUtils(unittest.TestCase):
         )
 
     def test_fix_mojibake_filename_and_content_disposition(self):
-        original = "20260901市政會議專案簡報_128k.mp3"
+        original = "20260101範例會議簡報_128k.mp3"
         latin1_mojibake = original.encode("utf-8").decode("latin-1")
         self.assertEqual(fix_mojibake_filename(latin1_mojibake), original)
         self.assertEqual(fix_mojibake_filename(original), original)

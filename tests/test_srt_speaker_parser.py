@@ -175,26 +175,26 @@ class TestRoleColumnFallback(unittest.TestCase):
 
 | 發言標籤 | 時間區間 | 官職／身分 | 姓名 | 主管機關／服務單位 | 備註 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `Speaker 1` | 全程 | 市長（主席） | 黃偉哲 | 市政府 | 主持 |
-| `Speaker 2` | 07:54 - 11:58 | 處長 | 方川和 | 動保處 | 報告 |
+| `Speaker 1` | 全程 | 主席（召集人） | 王小明 | 範例機構 | 主持 |
+| `Speaker 2` | 07:54 - 11:58 | 經理 | 李小華 | 範例部門 | 報告 |
 """
 
     def test_localized_header_keeps_role(self):
         rules = parse_scoped_speaker_mapping(self.LOCALIZED_TABLE)
         by_id = {r["spk_id"]: r for r in rules}
-        self.assertEqual(by_id["spk_1"]["name"], "黃偉哲 (市長（主席）)")
-        self.assertEqual(by_id["spk_2"]["role"], "處長")
+        self.assertEqual(by_id["spk_1"]["name"], "王小明 (主席（召集人）)")
+        self.assertEqual(by_id["spk_2"]["role"], "經理")
 
     def test_section6_speaker_includes_role(self):
         md = (
             self.LOCALIZED_TABLE
             + "\n## 6. 完整逐字記錄\n\n"
             + "[07:33 - 07:44] **Speaker 1**: 請問各位同仁。\n\n"
-            + "[07:54 - 08:24] **Speaker 2**: 市長好。\n"
+            + "[07:54 - 08:24] **Speaker 2**: 主席好。\n"
         )
         out = consolidate_meeting_minutes(md)
-        self.assertIn("**黃偉哲 (市長（主席）)**", out)
-        self.assertIn("**方川和 (處長)**", out)
+        self.assertIn("**王小明 (主席（召集人）)**", out)
+        self.assertIn("**李小華 (經理)**", out)
 
     def test_unknown_name_dash_uses_role_only(self):
         md = (
@@ -202,14 +202,14 @@ class TestRoleColumnFallback(unittest.TestCase):
             "| Speaker ID | Time Range | Role / Title | Name | Organization | Remarks |\n"
             "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
             "| `Speaker 0` | - | Master of Ceremonies | - | Secretariat | Reads the agenda |\n"
-            "| `Speaker 1` | - | Mayor (Chair) | John Doe | City Hall | Chairs the meeting |\n\n"
+            "| `Speaker 1` | - | Chairperson | John Doe | Example Corp | Chairs the meeting |\n\n"
             "## 6. Full Verbatim Transcript\n\n"
             "[00:01 - 00:03] **Speaker 0**: Item two.\n\n"
             "[00:04 - 00:09] **Speaker 1**: Thank you.\n"
         )
         out = consolidate_meeting_minutes(md)
         self.assertIn("**Master of Ceremonies**", out)
-        self.assertIn("**John Doe (Mayor (Chair))**", out)
+        self.assertIn("**John Doe (Chairperson)**", out)
 
     def test_korean_header_parsed_by_position(self):
         md = (
@@ -244,27 +244,27 @@ class TestEntityCorrectionsBlock(unittest.TestCase):
         "## 1. 會議基本資訊\n\n"
         "| 發言代碼 | 時間區間 | 職稱 | 姓名 | 機關 | 備註 |\n"
         "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
-        "| `Speaker 1` | - | 市長 | 黃偉哲 | 市政府 | 主席 |\n"
+        "| `Speaker 1` | - | 主席 | 王小明 | 範例機構 | 召集人 |\n"
         "<!-- ENTITY_CORRECTIONS_START -->\n"
         "- **語音辨識名詞更正表**：\n"
         "  | 原音誤聽詞 | 更正後 | 語境 |\n"
         "  | :--- | :--- | :--- |\n"
-        "  | 陳豪起 | 陳豪吉 | 專門委員 |\n"
+        "  | 李小樺 | 李小華 | 經理 |\n"
         "<!-- ENTITY_CORRECTIONS_END -->\n\n"
         "## 2. 執行摘要\n\n內容。\n\n"
         "## 6. 完整逐字記錄\n\n"
-        "[00:01 - 00:03] **Speaker 1**: 請陳豪起報告。\n"
+        "[00:01 - 00:03] **Speaker 1**: 請李小樺報告。\n"
     )
 
     def test_corrections_parsed_by_position_inside_markers(self):
         from scripts.canonicalizer import parse_entity_corrections_from_markdown
-        self.assertEqual(parse_entity_corrections_from_markdown(self.MD), {"陳豪起": "陳豪吉"})
+        self.assertEqual(parse_entity_corrections_from_markdown(self.MD), {"李小樺": "李小華"})
 
     def test_block_applied_then_removed_from_deliverable(self):
         out = consolidate_meeting_minutes(self.MD)
-        self.assertIn("請陳豪吉報告", out)
+        self.assertIn("請李小華報告", out)
         self.assertNotIn("ENTITY_CORRECTIONS", out)
         self.assertNotIn("語音辨識名詞更正表", out)
-        self.assertNotIn("陳豪起", out)
+        self.assertNotIn("李小樺", out)
         self.assertIn("## 2. 執行摘要", out)
-        self.assertIn("**黃偉哲 (市長)**", out)
+        self.assertIn("**王小明 (主席)**", out)
