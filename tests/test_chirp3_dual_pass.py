@@ -27,7 +27,11 @@ from scripts.alignment_engine import (
     normalize_multilingual_token,
     normalize_speaker_label,
 )
-from scripts.chirp3_engine import compute_track_b_chunk_windows, validate_chirp_model
+from scripts.chirp3_engine import (
+    compute_track_b_chunk_windows,
+    resolve_chirp3_language_codes,
+    validate_chirp_model,
+)
 from scripts.gemini_engine import refine_verbatim_transcript_chunks
 
 
@@ -39,6 +43,19 @@ class TestMultilingualNormalization(unittest.TestCase):
         self.assertEqual(validate_chirp_model("chirp_4"), "chirp_4")
         with self.assertRaises(ValueError):
             validate_chirp_model("invalid_non_chirp_model")
+
+    def test_resolve_chirp3_language_codes(self):
+        self.assertEqual(resolve_chirp3_language_codes("auto", for_diarization=True), ["auto"])
+        self.assertEqual(resolve_chirp3_language_codes("auto", for_diarization=False), ["auto"])
+        self.assertEqual(
+            resolve_chirp3_language_codes("cmn-Hant-TW", for_diarization=True),
+            ["cmn-Hans-CN", "en-US"],
+        )
+        self.assertEqual(
+            resolve_chirp3_language_codes("cmn-Hant-TW", for_diarization=False),
+            ["cmn-Hant-TW", "en-US"],
+        )
+        self.assertEqual(resolve_chirp3_language_codes("en-US", for_diarization=True), ["en-US"])
 
     def test_normalize_multilingual_token(self):
         self.assertEqual(normalize_multilingual_token("Hello,"), "hello")
@@ -119,6 +136,32 @@ class TestHybridMultilingualAlignment(unittest.TestCase):
         self.assertAlmostEqual(aligned[3]["end"], 3.0, places=2)
         self.assertEqual(aligned[4]["speaker"], "Speaker 2")
         self.assertAlmostEqual(aligned[4]["start"], 3.5, places=2)
+
+    def test_cross_script_simplified_track_a_to_traditional_track_b_alignment(self):
+        """Verify Track A (cmn-Hans-CN diarization) aligns with Track B (cmn-Hant-TW timestamps) and restores Traditional Chinese."""
+        engine = AlignmentEngine()
+        macro_words = [
+            {"word": "各位好,", "speaker": "Speaker 1"},
+            {"word": "今天我们", "speaker": "Speaker 1"},
+            {"word": "讨论", "speaker": "Speaker 1"},
+            {"word": "云端架构与会议记录。", "speaker": "Speaker 1"},
+        ]
+        micro_words = [
+            {"word": "各位", "start": 0.0, "end": 0.36},
+            {"word": "好,", "start": 0.36, "end": 0.84},
+            {"word": "今天", "start": 0.96, "end": 1.44},
+            {"word": "我們", "start": 1.44, "end": 1.70},
+            {"word": "討論", "start": 1.70, "end": 2.00},
+            {"word": "雲端", "start": 2.00, "end": 2.30},
+            {"word": "架構與", "start": 2.30, "end": 2.75},
+            {"word": "會議記錄。", "start": 2.75, "end": 3.40},
+        ]
+        aligned = engine.project_timestamps(macro_words, micro_words, prefer_micro_cjk=True)
+        turns = engine.aggregate_turns(aligned)
+        self.assertEqual(len(turns), 1)
+        self.assertEqual(turns[0]["text"], "各位好, 今天我們討論雲端架構與會議記錄。")
+        self.assertAlmostEqual(turns[0]["start"], 0.0, places=2)
+        self.assertAlmostEqual(turns[0]["end"], 3.40, places=2)
 
     def test_missing_micro_words_interpolation(self):
         """Verify linear interpolation when Track B misses middle tokens."""

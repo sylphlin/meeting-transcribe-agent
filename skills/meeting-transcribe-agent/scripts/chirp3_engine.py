@@ -58,25 +58,63 @@ def clear_last_aligned_turns() -> None:
     _LAST_ALIGNED_TURNS_CACHE.clear()
 
 
-def resolve_chirp3_language_codes(language: Optional[str] = None) -> List[str]:
-    """
-    Resolve up to 3 BCP-47 language codes for Chirp 3 multilingual recognition.
-    Defaults to ['en-US', 'cmn-Hant-TW', 'ja-JP'] to support code-switching.
-    """
-    default_codes = ["en-US", "cmn-Hant-TW", "ja-JP"]
-    if not language or str(language).strip().lower() == "auto":
-        return default_codes
+# Official Cloud STT v2 chirp_3 locales that support speaker_diarization
+CHIRP3_DIARIZATION_SUPPORTED_LANGS = {
+    "auto",
+    "cmn-Hans-CN",
+    "de-DE",
+    "en-GB",
+    "en-IN",
+    "en-US",
+    "es-ES",
+    "es-US",
+    "fr-CA",
+    "fr-FR",
+    "hi-IN",
+    "it-IT",
+    "ja-JP",
+    "ko-KR",
+    "pt-BR",
+}
 
-    raw = str(language).strip()
+CHIRP3_DIARIZATION_FALLBACK_MAP = {
+    "cmn-hant-tw": "cmn-Hans-CN",
+    "yue-hant-hk": "cmn-Hans-CN",
+    "en-au": "en-US",
+    "en-ph": "en-US",
+    "es-mx": "es-US",
+    "pt-pt": "pt-BR",
+}
+
+
+def resolve_chirp3_language_codes(
+    language: Optional[str] = None,
+    for_diarization: bool = False,
+) -> List[str]:
+    """
+    Resolve BCP-47 language codes for Chirp 3 recognition (maximum 2 codes per Cloud STT v2 limit,
+    or ['auto'] for automatic language detection).
+    When for_diarization=True (Track A), automatically maps locales that do not support
+    speaker_diarization in Cloud STT v2 (such as cmn-Hant-TW) to their supported acoustic
+    counterpart (cmn-Hans-CN) or 'auto'.
+    """
+    if not language or str(language).strip().lower() == "auto":
+        return ["auto"]
+
+    raw = str(language).strip().split(",")[0].strip()
     lower = raw.lower().replace("_", "-")
     lang_map = {
         "en": "en-US",
         "en-us": "en-US",
         "en-gb": "en-GB",
+        "en-in": "en-IN",
+        "en-au": "en-AU",
         "zh": "cmn-Hant-TW",
         "zh-tw": "cmn-Hant-TW",
         "zh-hant": "cmn-Hant-TW",
         "cmn-hant-tw": "cmn-Hant-TW",
+        "zh-hk": "yue-Hant-HK",
+        "yue-hant-hk": "yue-Hant-HK",
         "zh-cn": "cmn-Hans-CN",
         "zh-hans": "cmn-Hans-CN",
         "cmn-hans-cn": "cmn-Hans-CN",
@@ -88,15 +126,32 @@ def resolve_chirp3_language_codes(language: Optional[str] = None) -> List[str]:
         "de-de": "de-DE",
         "fr": "fr-FR",
         "fr-fr": "fr-FR",
+        "fr-ca": "fr-CA",
         "es": "es-ES",
         "es-es": "es-ES",
+        "es-us": "es-US",
+        "it": "it-IT",
+        "it-it": "it-IT",
+        "pt": "pt-BR",
+        "pt-br": "pt-BR",
+        "hi": "hi-IN",
+        "hi-in": "hi-IN",
     }
     primary = lang_map.get(lower, raw)
-    result = [primary]
-    for code in default_codes:
-        if code.lower() != primary.lower() and len(result) < 3:
-            result.append(code)
-    return result
+
+    if for_diarization:
+        supported_lower = {c.lower(): c for c in CHIRP3_DIARIZATION_SUPPORTED_LANGS}
+        if primary.lower() in supported_lower:
+            primary = supported_lower[primary.lower()]
+        else:
+            primary = CHIRP3_DIARIZATION_FALLBACK_MAP.get(primary.lower(), "auto")
+
+    if primary.lower() == "auto":
+        return ["auto"]
+
+    if not primary.lower().startswith("en-"):
+        return [primary, "en-US"]
+    return [primary]
 
 
 def get_gcp_credentials_and_project(project_id: Optional[str] = None) -> Tuple[Any, str]:
@@ -659,7 +714,9 @@ def transcribe_with_chirp3_dual_pass(
         or DEFAULT_STT_LOCATION
     )
     credentials, resolved_project = get_gcp_credentials_and_project(project_id)
-    language_codes = resolve_chirp3_language_codes(language)
+    track_a_lang_codes = resolve_chirp3_language_codes(language, for_diarization=True)
+    track_b_lang_codes = resolve_chirp3_language_codes(language, for_diarization=False)
+    prefer_micro_cjk = (track_a_lang_codes != track_b_lang_codes)
     run_id = uuid.uuid4().hex[:10]
     run_gcs_prefix = f"raw/chirp3_{run_id}/"
 
@@ -672,7 +729,8 @@ def transcribe_with_chirp3_dual_pass(
         total_duration = get_audio_duration(temp_mp3)
         print(
             f"[*] Audio ready ({format_offset(total_duration)}). Launching concurrent Dual-Pass "
-            f"`{resolved_model}` (Location: {resolved_stt_loc}, Languages: {', '.join(language_codes)})..."
+            f"`{resolved_model}` (Location: {resolved_stt_loc}, "
+            f"Track A Langs: {', '.join(track_a_lang_codes)} | Track B Langs: {', '.join(track_b_lang_codes)})..."
         )
 
         # Launch Track A and Track B concurrently
@@ -685,7 +743,7 @@ def transcribe_with_chirp3_dual_pass(
                 project_id=resolved_project,
                 stt_location=resolved_stt_loc,
                 credentials=credentials,
-                language_codes=language_codes,
+                language_codes=track_a_lang_codes,
                 model_name=resolved_model,
                 min_speakers=min_speakers,
                 max_speakers=max_speakers,
@@ -699,7 +757,7 @@ def transcribe_with_chirp3_dual_pass(
                 project_id=resolved_project,
                 stt_location=resolved_stt_loc,
                 credentials=credentials,
-                language_codes=language_codes,
+                language_codes=track_b_lang_codes,
                 model_name=resolved_model,
             )
 
@@ -713,7 +771,11 @@ def transcribe_with_chirp3_dual_pass(
             removed = len(macro_words) - len(clean_macro_words)
             print(f"[*] Suppressed {removed} repetitive loop tokens from Track A stream.")
 
-        aligned_words = aligner.project_timestamps(clean_macro_words, micro_words)
+        aligned_words = aligner.project_timestamps(
+            clean_macro_words,
+            micro_words,
+            prefer_micro_cjk=prefer_micro_cjk,
+        )
         turns = aligner.aggregate_turns(aligned_words)
 
         _LAST_ALIGNED_TURNS_CACHE.extend(turns)

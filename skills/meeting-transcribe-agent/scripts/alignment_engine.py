@@ -260,19 +260,27 @@ class AlignmentEngine:
                 )
                 n_sub = max(1, len(sub_tokens))
                 dur = (et - st) if (st is not None and et is not None and et >= st) else 0.0
+                cjk_ord = 0
                 for s_i, sub_tok in enumerate(sub_tokens):
                     sub_st = (st + (dur * s_i / n_sub)) if st is not None else None
                     sub_et = (st + (dur * (s_i + 1) / n_sub)) if st is not None else None
+                    is_single_cjk = len(sub_tok) == 1 and _is_cjk_char(sub_tok)
+                    cur_cjk_ord = cjk_ord if is_single_cjk else None
+                    if is_single_cjk:
+                        cjk_ord += 1
                     units.append({
                         "token": sub_tok,
                         "word_idx": w_idx,
+                        "cjk_order": cur_cjk_ord,
                         "start": sub_st,
                         "end": sub_et,
                     })
             else:
+                is_single_cjk = len(norm) == 1 and _is_cjk_char(norm)
                 units.append({
                     "token": norm,
                     "word_idx": w_idx,
+                    "cjk_order": 0 if is_single_cjk else None,
                     "start": st,
                     "end": et,
                 })
@@ -282,9 +290,13 @@ class AlignmentEngine:
         self,
         macro_words: List[Dict[str, Any]],
         micro_words: List[Dict[str, Any]],
+        prefer_micro_cjk: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Project physical word timestamps from Track B (micro_words) onto Track A (macro_words).
+        When prefer_micro_cjk is True (for example, when Track A uses cmn-Hans-CN for speaker
+        diarization and Track B uses cmn-Hant-TW for Traditional Chinese word timestamps),
+        also project Track B's CJK character glyphs onto Track A words.
         """
         if not macro_words:
             return []
@@ -303,22 +315,61 @@ class AlignmentEngine:
         norm_micro = [u["token"] for u in micro_units]
 
         matcher = SequenceMatcher(None, norm_macro, norm_micro, autojunk=False)
+        paired_indices: List[Tuple[int, int]] = []
 
-        for block in matcher.get_matching_blocks():
-            for i in range(block.size):
-                u_macro = macro_units[block.a + i]
-                u_micro = micro_units[block.b + i]
-                w_idx = u_macro["word_idx"]
-                st = u_micro["start"]
-                et = u_micro["end"]
-                if st is not None:
-                    cur_st = macro_words[w_idx].get("start")
-                    if cur_st is None or st < cur_st:
-                        macro_words[w_idx]["start"] = st
-                if et is not None:
-                    cur_et = macro_words[w_idx].get("end")
-                    if cur_et is None or et > cur_et:
-                        macro_words[w_idx]["end"] = et
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == "equal":
+                for k in range(i2 - i1):
+                    paired_indices.append((i1 + k, j1 + k))
+            elif tag == "replace":
+                len_a = i2 - i1
+                len_b = j2 - j1
+                if len_a > 0 and len_b > 0:
+                    all_cjk_a = all(any(_is_cjk_char(c) for c in macro_units[idx]["token"]) for idx in range(i1, i2))
+                    all_cjk_b = all(any(_is_cjk_char(c) for c in micro_units[idx]["token"]) for idx in range(j1, j2))
+                    if all_cjk_a and all_cjk_b and abs(len_a - len_b) <= max(2, int(0.4 * max(len_a, len_b))):
+                        for k in range(len_a):
+                            j_mapped = j1 + (
+                                k if len_a == len_b else min(len_b - 1, int(round(k * (len_b - 1) / max(1, len_a - 1))))
+                            )
+                            paired_indices.append((i1 + k, j_mapped))
+
+        cjk_replacements: Dict[int, Dict[int, str]] = {}
+
+        for a_idx, b_idx in paired_indices:
+            u_macro = macro_units[a_idx]
+            u_micro = micro_units[b_idx]
+            w_idx = u_macro["word_idx"]
+            st = u_micro["start"]
+            et = u_micro["end"]
+            if st is not None:
+                cur_st = macro_words[w_idx].get("start")
+                if cur_st is None or st < cur_st:
+                    macro_words[w_idx]["start"] = st
+            if et is not None:
+                cur_et = macro_words[w_idx].get("end")
+                if cur_et is None or et > cur_et:
+                    macro_words[w_idx]["end"] = et
+
+            if (
+                prefer_micro_cjk
+                and u_macro.get("cjk_order") is not None
+                and len(u_micro["token"]) == 1
+                and _is_cjk_char(u_micro["token"])
+            ):
+                cjk_replacements.setdefault(w_idx, {})[u_macro["cjk_order"]] = u_micro["token"]
+
+        if prefer_micro_cjk and cjk_replacements:
+            for w_idx, repl_map in cjk_replacements.items():
+                raw_w = str(macro_words[w_idx].get("word", ""))
+                chars = list(raw_w)
+                cjk_pos = 0
+                for c_i, ch in enumerate(chars):
+                    if _is_cjk_char(ch):
+                        if cjk_pos in repl_map:
+                            chars[c_i] = repl_map[cjk_pos]
+                        cjk_pos += 1
+                macro_words[w_idx]["word"] = "".join(chars)
 
         return self._interpolate_word_timestamps(macro_words)
 
