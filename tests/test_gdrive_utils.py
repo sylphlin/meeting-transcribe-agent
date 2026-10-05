@@ -43,7 +43,7 @@ class TestGDriveUtils(unittest.TestCase):
             original,
         )
 
-        cd_rfc5987_lower = "attachment; filename=\"fallback.mp3\"; filename*=utf-8''20260901%E5%B8%82%E6%94%BF%E6%9C%83%E8%AD%B0%E5%B0%88%E6%A1%88%E7%B0%A1%E5%A0%B1_128k.mp3"
+        cd_rfc5987_lower = "attachment; filename=\"fallback.mp3\"; filename*=utf-8''20260101%E7%AF%84%E4%BE%8B%E6%9C%83%E8%AD%B0%E7%B0%A1%E5%A0%B1_128k.mp3"
         self.assertEqual(
             extract_filename_from_content_disposition(cd_rfc5987_lower, "fallback.mp3"),
             original,
