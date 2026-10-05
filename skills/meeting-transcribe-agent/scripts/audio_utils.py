@@ -6,6 +6,7 @@ Guarantees ASCII-safe file basenames to prevent google-genai httpx header Unicod
 
 import shutil
 import hashlib
+import math
 import subprocess
 import re
 from pathlib import Path
@@ -362,11 +363,64 @@ def get_audio_duration(audio_path: Path) -> float:
     return 0.0
 
 
-def format_offset(seconds: float) -> str:
-    """Format seconds into MM:SS or HH:MM:SS for long meetings."""
+def detect_audio_speech_onset(
+    audio_path: Path,
+    noise_db: float = -45.0,
+    min_silence_sec: float = 2.0,
+    min_onset_sec: float = 3.0,
+) -> float:
+    """
+    Detect the physical speech onset (seconds) with FFmpeg silencedetect.
+    Return the end of the leading silence segment when the recording starts with silence.
+    Return 0.0 when speech starts immediately or when detection is not possible.
+    Use the result only as a lower bound for word timestamps.
+    """
+    try:
+        cmd = [
+            "ffmpeg", "-nostdin", "-hide_banner", "-y",
+            "-i", str(audio_path),
+            "-af", f"silencedetect=noise={noise_db}dB:d={min_silence_sec}",
+            "-f", "null", "-",
+        ]
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stderr_text = proc.stderr or ""
+    except Exception:
+        return 0.0
+
+    first_start = re.search(r"silence_start:\s*(-?[\d\.]+)", stderr_text)
+    first_end = re.search(r"silence_end:\s*([\d\.]+)", stderr_text)
+    if not first_start or not first_end:
+        return 0.0
+    try:
+        start_val = float(first_start.group(1))
+        end_val = float(first_end.group(1))
+    except ValueError:
+        return 0.0
+
+    # The leading silence must start at the beginning of the file.
+    if start_val > 0.5:
+        return 0.0
+    if end_val >= min_onset_sec:
+        return round(end_val, 3)
+    return 0.0
+
+
+def format_offset(seconds: float, mode: str = "round") -> str:
+    """
+    Format seconds into MM:SS or HH:MM:SS for long meetings.
+    mode="round" rounds to the nearest second.
+    mode="floor" rounds down (use for turn start times so seeking never skips speech).
+    mode="ceil" rounds up (use for turn end times so the interval encloses the speech).
+    """
     if seconds is None:
         return "00:00"
-    total_sec = int(round(seconds))
+    sec_val = max(0.0, float(seconds))
+    if mode == "floor":
+        total_sec = int(math.floor(sec_val + 1e-6))
+    elif mode == "ceil":
+        total_sec = int(math.ceil(sec_val - 1e-6))
+    else:
+        total_sec = int(round(sec_val))
     h = total_sec // 3600
     m = (total_sec % 3600) // 60
     s = total_sec % 60

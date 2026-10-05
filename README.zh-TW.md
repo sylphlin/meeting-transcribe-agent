@@ -41,7 +41,7 @@
 為了同時兼顧**「跨數小時的全域語者一致性」**與**「毫秒級逐字時間戳」**，Stage 1 採用雙軌平行架構：
 - **Track A — 全域巨觀語者分群 (Macro Global Diarization)**：以不切塊的完整 16 kHz 單聲道音訊執行單次 `BatchRecognize`（`enableSpeakerDiarization=True`、`enableWordTimeOffsets=False`），在整場會議中維持單一全域聲紋空間，精準捕捉快速語者切換。
 - **Track B — 微觀逐字時間戳提取 (Micro Word Timestamps)**：將音訊切分為 18 分鐘（`1080s`）並帶 5 秒重疊視窗的平行分塊（`enableWordTimeOffsets=True`、`enableSpeakerDiarization=False`），於重疊區間中點自動去重，確保時間戳嚴格單調遞增。
-- **中日韓字元與西文單詞混合 LCS 對齊 (`AlignmentEngine`)**：透過混合式中日韓單字元 + 西文單詞最長公共子序列（LCS）演算法，將 Track B 的物理逐字時間戳 100% 投射至 Track A 的全域語者文字流，並內建重複迴圈抑制（Repetition Loop Suppression）與缺漏時間戳線性插值。
+- **Track B 物理時間軸為主 + LCS 語者標籤指派 (`AlignmentEngine`)**：以 Track B 的物理逐字時間戳為主時間軸，透過混合式中日韓單字元 + 西文單詞最長公共子序列（LCS）演算法，將 Track A 的全域語者標籤指派到每個字詞（Track A 在比對前先做簡繁轉換）。以 FFmpeg `silencedetect` 偵測物理語音起點，濾除開頭靜音內的雜訊 token。發言起點取 `floor`、結束取 `ceil`，確保跳轉不會落在前一位語者的尾音內。雙軌皆內建重複迴圈抑制（Repetition Loop Suppression）。
 - **Stage 2 語意段落分段與物理時間戳反推**：當單一講者進行數分鐘長篇發言時，**Gemini 3.8 Flash** 會在 Stage 2 校對時依主題轉換插入 `<PARA>` 語意分段標記；`AlignmentEngine` 隨即根據底層逐字時間戳反推出每個語意段落的精準起訖秒數，並在互動式播放器中以同語者視覺串接卡片（`isGrouped`）呈現，兼顧閱讀舒適度與獨立跳轉播放。
 
 ---
@@ -104,7 +104,7 @@
 ### 1. 雲端雙軌 Chirp 3 + Vertex AI 模式（預設）
 * **雙模型協同**：由 **Cloud Speech-to-Text v2 Chirp 3**（`TRANSCRIBE_MODEL=chirp_3`，僅限 Chirp 系列模型）負責雙軌聲學語者分群與逐字時間戳，**Gemini 3.8 Flash**（`SUMMARY_MODEL=gemini-3.8-flash`）負責多模態分析、語意分段與分塊校對。
 * **雙軌平行執行**：同時啟動 Track A（不切塊全域語者分群）與 Track B（18 分鐘平行切塊逐字時間戳 + 5 秒重疊區間中點去重）。
-* **確定性時間戳投射與反推**：以中日韓字元與西文單詞混合 LCS 演算法對齊雙軌時間戳，並將 Stage 2 語意分段反推回物理逐字邊界。
+* **確定性物理時間軸語者指派與反推**：以 Track B 逐字時間戳為主，透過中日韓字元與西文單詞混合 LCS 演算法指派 Track A 語者標籤，濾除 FFmpeg 語音起點之前的 token，並將 Stage 2 語意分段反推回物理逐字邊界。
 * **GCS 雙層生命週期管理**：暫存於 `gs://<bucket>/raw/` 的原始媒體於推論完成後在 `finally` 區塊即時清理（並由 2 天生命週期規則兜底），最終產出物則保留 15 天。
 
 ### 2. 本地離線模式（僅限明確要求）

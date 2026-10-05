@@ -314,8 +314,8 @@ def refine_verbatim_transcript_chunks(
         )
         expanded_lines: list[str] = []
         for p_item in projected:
-            p_st_str = format_offset(p_item["start"])
-            p_et_str = format_offset(p_item["end"])
+            p_st_str = format_offset(p_item["start"], mode="floor")
+            p_et_str = format_offset(p_item["end"], mode="ceil")
             expanded_lines.append(f"[{p_st_str} - {p_et_str}] **{speaker_str}**: {p_item['text']}")
         return expanded_lines
 

@@ -29,6 +29,7 @@ from scripts.alignment_engine import (
     normalize_speaker_label,
 )
 from scripts.audio_utils import (
+    detect_audio_speech_onset,
     format_offset,
     get_audio_duration,
     safe_ascii_upload_path,
@@ -764,17 +765,26 @@ def transcribe_with_chirp3_dual_pass(
             macro_words = fut_macro.result()
             micro_words = fut_micro.result()
 
-        print("[*] Running Multilingual LCS Alignment & Fusion Engine...")
+        print("[*] Running Multilingual LCS Alignment & Fusion Engine (Track B physical timeline as master)...")
+        physical_onset = detect_audio_speech_onset(temp_mp3)
+        if physical_onset > 0.0:
+            print(f"[*] Physical speech onset detected at {format_offset(physical_onset, mode='floor')} ({physical_onset:.2f}s). Earlier tokens are discarded.")
+
         aligner = AlignmentEngine(segment_base_seconds=0.0)
         clean_macro_words = aligner.suppress_repetition_loops(macro_words)
         if len(clean_macro_words) < len(macro_words):
             removed = len(macro_words) - len(clean_macro_words)
             print(f"[*] Suppressed {removed} repetitive loop tokens from Track A stream.")
+        clean_micro_words = aligner.suppress_repetition_loops(micro_words)
+        if len(clean_micro_words) < len(micro_words):
+            removed = len(micro_words) - len(clean_micro_words)
+            print(f"[*] Suppressed {removed} repetitive loop tokens from Track B stream.")
 
         aligned_words = aligner.project_timestamps(
             clean_macro_words,
-            micro_words,
+            clean_micro_words,
             prefer_micro_cjk=prefer_micro_cjk,
+            physical_onset_sec=physical_onset,
         )
         turns = aligner.aggregate_turns(aligned_words)
 
@@ -785,8 +795,8 @@ def transcribe_with_chirp3_dual_pass(
             text = (turn.get("text") or "").strip()
             if not text:
                 continue
-            start_str = format_offset(turn.get("start") or 0.0)
-            end_str = format_offset(turn.get("end") or 0.0)
+            start_str = format_offset(turn.get("start") or 0.0, mode="floor")
+            end_str = format_offset(turn.get("end") or 0.0, mode="ceil")
             spk = turn.get("speaker") or "Speaker 1"
             formatted_lines.append(f"[{start_str} - {end_str}] **{spk}**: {text}")
 

@@ -14,6 +14,9 @@ import unicodedata
 _SENTENCE_END_RE = re.compile(r'[.!?。！？]+["\'”’）\)]*$')
 _CLAUSE_END_RE = re.compile(r'[,;:，；：、]+["\'”’）\)]*$')
 
+# Minimum acoustic gap (seconds) inserted when an inferred paragraph start overlaps the previous paragraph tail.
+PARA_ACOUSTIC_GAP_SEC = 0.15
+
 
 def _is_cjk_char(ch: str) -> bool:
     """Return True if the character belongs to CJK Ideographs, Kana, or Hangul blocks."""
@@ -380,20 +383,108 @@ class AlignmentEngine:
                 })
         return units
 
+    def _prepare_micro_words(
+        self,
+        micro_words: List[Dict[str, Any]],
+        physical_onset_sec: float = 0.0,
+    ) -> List[Dict[str, Any]]:
+        """
+        Parse Track B words into absolute-second records and apply the physical onset floor.
+        Drop words that end before the physical speech onset (silence hallucinations).
+        Clamp the start of a word that spans the onset (STT absorbs leading silence into the first word).
+        """
+        onset = max(0.0, float(physical_onset_sec or 0.0))
+        prepared: List[Dict[str, Any]] = []
+        for w in micro_words:
+            text = str(w.get("word", "")).strip()
+            if not text:
+                continue
+            st_raw = w.get("startOffset", w.get("start"))
+            et_raw = w.get("endOffset", w.get("end"))
+            st = (self._parse_offset(st_raw) + self.base_sec) if st_raw is not None else None
+            et = (self._parse_offset(et_raw) + self.base_sec) if et_raw is not None else None
+            if st is None and et is None:
+                continue
+            if st is None:
+                st = et
+            if et is None or et < st:
+                et = st
+            if onset > 0.0:
+                if et <= onset:
+                    continue
+                if st < onset:
+                    st = onset
+            prepared.append({"word": text, "start": round(st, 3), "end": round(et, 3)})
+        return prepared
+
+    @staticmethod
+    def _vote_speaker_for_unassigned_runs(words: List[Dict[str, Any]]) -> None:
+        """
+        Assign speakers to Track B words that have no Track A match.
+        Inside each unassigned run, split at the largest acoustic gap between the
+        previous and next assigned speakers so sentence-initial fillers follow the
+        next speaker and sentence-final tails stay with the previous speaker.
+        """
+        n = len(words)
+        idx = 0
+        while idx < n:
+            if words[idx].get("speakerLabel"):
+                idx += 1
+                continue
+            run_start = idx
+            while idx < n and not words[idx].get("speakerLabel"):
+                idx += 1
+            run_end = idx  # exclusive
+            prev_spk = words[run_start - 1]["speakerLabel"] if run_start > 0 else None
+            next_spk = words[run_end]["speakerLabel"] if run_end < n else None
+
+            if prev_spk is None and next_spk is None:
+                chosen = "Speaker 1"
+                for k in range(run_start, run_end):
+                    words[k]["speakerLabel"] = chosen
+                continue
+            if prev_spk is None or next_spk is None or prev_spk == next_spk:
+                chosen = prev_spk or next_spk
+                for k in range(run_start, run_end):
+                    words[k]["speakerLabel"] = chosen
+                continue
+
+            # Candidate split points: before run_start .. after run_end-1
+            best_gap = -1.0
+            best_split = run_start
+            lo = run_start - 1
+            hi = run_end
+            for k in range(lo, hi):
+                left_end = words[k]["end"]
+                right_start = words[k + 1]["start"]
+                gap = (right_start - left_end) if (left_end is not None and right_start is not None) else 0.0
+                if gap > best_gap:
+                    best_gap = gap
+                    best_split = k + 1
+            for k in range(run_start, run_end):
+                words[k]["speakerLabel"] = prev_spk if k < best_split else next_spk
+
     def project_timestamps(
         self,
         macro_words: List[Dict[str, Any]],
         micro_words: List[Dict[str, Any]],
         prefer_micro_cjk: bool = False,
+        physical_onset_sec: float = 0.0,
+        long_delete_min_units: int = 8,
     ) -> List[Dict[str, Any]]:
         """
-        Project physical word timestamps from Track B (micro_words) onto Track A (macro_words).
-        When prefer_micro_cjk is True (for example, when Track A uses cmn-Hans-CN for speaker
-        diarization and Track B uses cmn-Hant-TW for Traditional Chinese word timestamps),
-        first convert Track A words from Simplified to Traditional Chinese before alignment,
-        and then project Track B's CJK character glyphs onto Track A words.
+        Build the aligned word stream with Track B (micro_words) as the master timeline.
+        Every output word keeps its physical Track B timestamp, so no leading silence is
+        stretched and no sentence start is moved onto the previous speaker's tail.
+        Speaker labels come from Track A (macro_words) through LCS alignment:
+          - equal / replace blocks: copy the matched Track A speaker.
+          - insert blocks (Track B only): vote by neighbors and the largest acoustic gap.
+          - delete blocks (Track A only): drop short blocks; keep long blocks (>= long_delete_min_units)
+            with bounded interpolation between the surrounding Track B anchors.
+        When prefer_micro_cjk is True, convert Track A words from Simplified to Traditional
+        Chinese before alignment to maximize LCS hits. Output text always comes from Track B.
         """
-        if not macro_words:
+        if not macro_words and not micro_words:
             return []
 
         for w in macro_words:
@@ -402,102 +493,128 @@ class AlignmentEngine:
             if prefer_micro_cjk and w.get("word"):
                 w["word"] = convert_simplified_to_traditional(str(w["word"]))
 
-        if not micro_words:
+        timed_micro = self._prepare_micro_words(micro_words, physical_onset_sec=physical_onset_sec)
+        if not timed_micro:
             return macro_words
 
+        if not macro_words:
+            for w in timed_micro:
+                w["speakerLabel"] = "Speaker 1"
+            return timed_micro
+
         macro_units = self._build_alignment_units(macro_words, is_micro=False)
-        micro_units = self._build_alignment_units(micro_words, is_micro=True)
+        micro_units = self._build_alignment_units(timed_micro, is_micro=True)
+        if not micro_units:
+            return macro_words
 
         norm_macro = [u["token"] for u in macro_units]
         norm_micro = [u["token"] for u in micro_units]
-
         matcher = SequenceMatcher(None, norm_macro, norm_micro, autojunk=False)
-        paired_indices: List[Tuple[int, int]] = []
+
+        unit_speaker: List[Optional[str]] = [None] * len(micro_units)
+        # Long Track A-only blocks: (macro_unit_start, macro_unit_end, micro_unit_insert_before)
+        long_delete_blocks: List[Tuple[int, int, int]] = []
+
+        def _macro_speaker(unit_idx: int) -> str:
+            mw = macro_words[macro_units[unit_idx]["word_idx"]]
+            return normalize_speaker_label(mw.get("speakerLabel", mw.get("speaker", "Speaker 1")))
 
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag == "equal":
                 for k in range(i2 - i1):
-                    paired_indices.append((i1 + k, j1 + k))
+                    unit_speaker[j1 + k] = _macro_speaker(i1 + k)
             elif tag == "replace":
                 len_a = i2 - i1
                 len_b = j2 - j1
-                if len_a > 0 and len_b > 0:
-                    all_cjk_a = all(any(_is_cjk_char(c) for c in macro_units[idx]["token"]) for idx in range(i1, i2))
-                    all_cjk_b = all(any(_is_cjk_char(c) for c in micro_units[idx]["token"]) for idx in range(j1, j2))
-                    if all_cjk_a and all_cjk_b and abs(len_a - len_b) <= max(2, int(0.4 * max(len_a, len_b))):
-                        for k in range(len_a):
-                            j_mapped = j1 + (
-                                k if len_a == len_b else min(len_b - 1, int(round(k * (len_b - 1) / max(1, len_a - 1))))
-                            )
-                            paired_indices.append((i1 + k, j_mapped))
+                if len_a <= 0 or len_b <= 0:
+                    continue
+                for k in range(len_b):
+                    a_mapped = i1 + (
+                        k if len_a == len_b else min(len_a - 1, int(round(k * (len_a - 1) / max(1, len_b - 1))))
+                    )
+                    unit_speaker[j1 + k] = _macro_speaker(a_mapped)
+            elif tag == "delete":
+                if (i2 - i1) >= long_delete_min_units:
+                    long_delete_blocks.append((i1, i2, j1))
+            # insert: Track B-only units stay unassigned for neighbor voting
 
-        cjk_replacements: Dict[int, Dict[int, str]] = {}
+        # Collapse unit-level speakers onto Track B words (majority vote per word)
+        word_votes: Dict[int, Dict[str, int]] = {}
+        for u_idx, u in enumerate(micro_units):
+            spk = unit_speaker[u_idx]
+            if spk is None:
+                continue
+            w_idx = u["word_idx"]
+            word_votes.setdefault(w_idx, {})
+            word_votes[w_idx][spk] = word_votes[w_idx].get(spk, 0) + 1
 
-        for a_idx, b_idx in paired_indices:
-            u_macro = macro_units[a_idx]
-            u_micro = micro_units[b_idx]
-            w_idx = u_macro["word_idx"]
-            st = u_micro["start"]
-            et = u_micro["end"]
-            if st is not None:
-                cur_st = macro_words[w_idx].get("start")
-                if cur_st is None or st < cur_st:
-                    macro_words[w_idx]["start"] = st
-            if et is not None:
-                cur_et = macro_words[w_idx].get("end")
-                if cur_et is None or et > cur_et:
-                    macro_words[w_idx]["end"] = et
+        for w_idx, w in enumerate(timed_micro):
+            votes = word_votes.get(w_idx)
+            if votes:
+                w["speakerLabel"] = max(votes.items(), key=lambda kv: kv[1])[0]
+            else:
+                w["speakerLabel"] = None
 
-            if (
-                prefer_micro_cjk
-                and u_macro.get("cjk_order") is not None
-                and len(u_micro["token"]) == 1
-                and _is_cjk_char(u_micro["token"])
-            ):
-                cjk_replacements.setdefault(w_idx, {})[u_macro["cjk_order"]] = u_micro["token"]
+        self._vote_speaker_for_unassigned_runs(timed_micro)
 
-        if prefer_micro_cjk and cjk_replacements:
-            for w_idx, repl_map in cjk_replacements.items():
-                raw_w = str(macro_words[w_idx].get("word", ""))
-                chars = list(raw_w)
-                cjk_pos = 0
-                for c_i, ch in enumerate(chars):
-                    if _is_cjk_char(ch):
-                        if cjk_pos in repl_map:
-                            chars[c_i] = repl_map[cjk_pos]
-                        cjk_pos += 1
-                macro_words[w_idx]["word"] = "".join(chars)
+        if not long_delete_blocks:
+            return timed_micro
 
-        micro_starts = [u["start"] for u in micro_units if u.get("start") is not None]
-        acoustic_start_sec = min(micro_starts) if micro_starts else 0.0
+        # Merge long Track A-only blocks back into the stream, bounded by neighbor anchors
+        output: List[Dict[str, Any]] = []
+        micro_pos = 0
+        for (a1, a2, insert_before_unit) in long_delete_blocks:
+            insert_before_word = (
+                micro_units[insert_before_unit]["word_idx"]
+                if insert_before_unit < len(micro_units)
+                else len(timed_micro)
+            )
+            while micro_pos < insert_before_word and micro_pos < len(timed_micro):
+                output.append(timed_micro[micro_pos])
+                micro_pos += 1
+            seen_word_idx: set = set()
+            for u_idx in range(a1, a2):
+                mw_idx = macro_units[u_idx]["word_idx"]
+                if mw_idx in seen_word_idx:
+                    continue
+                seen_word_idx.add(mw_idx)
+                mw = macro_words[mw_idx]
+                output.append({
+                    "word": str(mw.get("word", "")),
+                    "start": None,
+                    "end": None,
+                    "speakerLabel": _macro_speaker(u_idx),
+                })
+        while micro_pos < len(timed_micro):
+            output.append(timed_micro[micro_pos])
+            micro_pos += 1
 
-        return self._interpolate_word_timestamps(
-            macro_words,
-            acoustic_start_sec=acoustic_start_sec,
-        )
+        return self._interpolate_word_timestamps(output, acoustic_start_sec=physical_onset_sec)
 
     def _interpolate_word_timestamps(
         self,
         words: List[Dict[str, Any]],
         acoustic_start_sec: Optional[float] = None,
+        nominal_char_sec: float = 0.25,
     ) -> List[Dict[str, Any]]:
         """
-        Interpolate missing timestamps on unaligned words using anchored neighbors.
-        For leading unaligned words (i == 0), anchor the start bound to the physical
-        acoustic onset from Track B (acoustic_start_sec) so leading silence is not consumed.
+        Fill timestamps for the rare words without physical timing (long Track A-only blocks).
+        Estimate the block duration from its character count and attach the block to the
+        neighbor that shares its speaker, so natural pauses between speakers are preserved.
+        Never extend a block before the physical speech onset.
         """
         n = len(words)
         if n == 0:
             return words
 
-        # Fill missing start or end if one side exists on the same word
         for w in words:
             if w.get("start") is not None and w.get("end") is None:
                 w["end"] = w["start"] + 0.15
             elif w.get("end") is not None and w.get("start") is None:
                 w["start"] = max(0.0, w["end"] - 0.15)
 
-        # Find contiguous spans of unaligned words
+        onset_floor = max(0.0, float(acoustic_start_sec)) if acoustic_start_sec is not None else 0.0
+
         i = 0
         while i < n:
             if words[i].get("start") is not None:
@@ -507,31 +624,42 @@ class AlignmentEngine:
             while j < n and words[j].get("start") is None:
                 j += 1
 
-            span_count = j - i
-            if i == 0:
-                onset_floor = max(0.0, float(acoustic_start_sec)) if acoustic_start_sec is not None else 0.0
-                if j < n and words[j].get("start") is not None:
-                    next_start = words[j]["start"]
-                    if acoustic_start_sec is not None and onset_floor < next_start:
-                        prev_end = onset_floor
-                    else:
-                        prev_end = max(onset_floor, next_start - (span_count * 0.25))
-                else:
-                    prev_end = onset_floor
-                    next_start = prev_end + span_count * 0.25
+            span_chars = sum(max(1, len(normalize_multilingual_token(str(words[k].get("word", ""))))) for k in range(i, j))
+            est_dur = span_chars * nominal_char_sec
+            block_spk = words[i].get("speakerLabel")
+
+            prev_end = words[i - 1]["end"] if i > 0 and words[i - 1].get("end") is not None else None
+            next_start = words[j]["start"] if j < n and words[j].get("start") is not None else None
+            prev_spk = words[i - 1].get("speakerLabel") if i > 0 else None
+            next_spk = words[j].get("speakerLabel") if j < n else None
+
+            if prev_end is None and next_start is None:
+                block_start = onset_floor
+            elif prev_end is None:
+                block_start = max(onset_floor, next_start - est_dur)
+            elif next_start is None:
+                block_start = prev_end
             else:
-                prev_end = words[i - 1]["end"] if words[i - 1].get("end") is not None else 0.0
-                next_start = words[j]["start"] if j < n and words[j].get("start") is not None else prev_end + span_count * 0.25
+                gap = max(0.0, next_start - prev_end)
+                est_dur = min(est_dur, gap) if gap > 0 else est_dur
+                if block_spk == prev_spk and block_spk != next_spk:
+                    block_start = prev_end
+                elif block_spk == next_spk and block_spk != prev_spk:
+                    block_start = next_start - est_dur
+                else:
+                    block_start = prev_end + (gap - est_dur) / 2.0
+                block_start = max(prev_end, block_start)
 
-            if next_start < prev_end:
-                next_start = prev_end
+            block_end = block_start + est_dur
+            if next_start is not None and block_end > next_start:
+                block_end = next_start
+                block_start = min(block_start, block_end)
 
-            step = (next_start - prev_end) / span_count if span_count > 0 else 0.0
+            span_count = j - i
+            step = (block_end - block_start) / span_count if span_count > 0 else 0.0
             for k in range(span_count):
-                w_st = prev_end + k * step
-                w_et = prev_end + (k + 1) * step
-                words[i + k]["start"] = round(w_st, 3)
-                words[i + k]["end"] = round(w_et, 3)
+                words[i + k]["start"] = round(block_start + k * step, 3)
+                words[i + k]["end"] = round(block_start + (k + 1) * step, 3)
 
             i = j
 
@@ -612,7 +740,10 @@ class AlignmentEngine:
         self,
         turns: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """Smooth and fill missing boundary timestamps across adjacent turns."""
+        """
+        Smooth and fill missing boundary timestamps across adjacent turns.
+        Keep turn boundaries monotonic so a turn never starts before the previous turn ends.
+        """
         for i, turn in enumerate(turns):
             if turn["start"] is None and i > 0 and turns[i - 1]["end"] is not None:
                 turn["start"] = turns[i - 1]["end"]
@@ -622,6 +753,10 @@ class AlignmentEngine:
                 turn["end"] = turns[i + 1]["start"]
             if turn["end"] is None or turn["end"] < turn["start"]:
                 turn["end"] = turn["start"]
+            if i > 0 and turns[i - 1]["end"] is not None and turn["start"] < turns[i - 1]["end"]:
+                turn["start"] = turns[i - 1]["end"]
+                if turn["end"] < turn["start"]:
+                    turn["end"] = turn["start"]
         return turns
 
     def reproject_semantic_paragraphs(
@@ -689,7 +824,8 @@ class AlignmentEngine:
                 for idx in range(len(clean_paras)):
                     if para_bounds[idx]["start"] is None:
                         prev_et = para_bounds[idx - 1]["end"] if idx > 0 else total_st
-                        para_bounds[idx]["start"] = prev_et if prev_et is not None else total_st
+                        inferred = (prev_et + PARA_ACOUSTIC_GAP_SEC) if (idx > 0 and prev_et is not None) else total_st
+                        para_bounds[idx]["start"] = min(inferred, total_et) if prev_et is not None else total_st
                     if para_bounds[idx]["end"] is None:
                         next_st = (
                             para_bounds[idx + 1]["start"]
@@ -697,10 +833,11 @@ class AlignmentEngine:
                             else total_et
                         )
                         para_bounds[idx]["end"] = max(para_bounds[idx]["start"], next_st)
-                    # Snap contiguous boundary so paragraph i+1 starts smoothly at paragraph i end
+                    # Keep an acoustic gap only when paragraph i+1 overlaps paragraph i's tail
                     if idx > 0 and para_bounds[idx - 1]["end"] is not None:
-                        if para_bounds[idx]["start"] < para_bounds[idx - 1]["end"]:
-                            para_bounds[idx]["start"] = para_bounds[idx - 1]["end"]
+                        prev_end_val = para_bounds[idx - 1]["end"]
+                        if para_bounds[idx]["start"] < prev_end_val:
+                            para_bounds[idx]["start"] = min(prev_end_val + PARA_ACOUSTIC_GAP_SEC, max(para_bounds[idx]["end"], prev_end_val))
                         if para_bounds[idx]["end"] < para_bounds[idx]["start"]:
                             para_bounds[idx]["end"] = para_bounds[idx]["start"]
 

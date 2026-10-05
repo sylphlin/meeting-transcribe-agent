@@ -41,7 +41,7 @@
 为了同时实现**“跨数小时的全局说话人一致性”**与**“毫秒级逐字时间戳”**，Stage 1 并发执行双轨推理：
 - **Track A — 全局宏观说话人聚类 (Macro Global Diarization)**：对不切块的完整 16 kHz 单声道音频执行单次 `BatchRecognize`（`enableSpeakerDiarization=True`、`enableWordTimeOffsets=False`），在整场会议中保持统一声纹空间并精准识别快速交接。
 - **Track B — 微观逐字时间戳提取 (Micro Word Timestamps)**：将音频切分为 18 分钟（`1080s`）带 5 秒重叠窗口的并行分块（`enableWordTimeOffsets=True`、`enableSpeakerDiarization=False`），在重叠窗口中点去重以保证时间戳严格单调递增。
-- **中日韩字符与西文单词混合 LCS 对齐 (`AlignmentEngine`)**：通过混合 LCS 算法将 Track B 的物理逐字时间戳 100% 投射至 Track A 的全局说话人词流，并内置重复循环抑制与缺失时间戳插值。
+- **Track B 物理时间轴为主 + LCS 说话人标签指派 (`AlignmentEngine`)**：以 Track B 的物理逐字时间戳为主时间轴，通过混合 LCS 算法将 Track A 的全局说话人标签指派到每个词（Track A 在比对前先做简繁转换）。以 FFmpeg `silencedetect` 检测物理语音起点，滤除开头静音内的噪声 token。发言起点取 `floor`、结束取 `ceil`，确保跳转不会落在前一位说话人的尾音内。双轨均内置重复循环抑制。
 - **Stage 2 语义分段与物理时间戳反推**：对于数分钟的长篇独白，**Gemini 3.8 Flash** 在 Stage 2 校对时按主题转换插入 `<PARA>` 标记，由 `AlignmentEngine` 精确反推出每个语义段落的起止秒数，并在交互式播放器中以同说话人视觉串联卡片（`isGrouped`）呈现。
 
 ---
@@ -51,7 +51,7 @@
 ### 1. 云端双轨 Chirp 3 + Vertex AI 模式（默认）
 * **双模型协同**：由 **Cloud Speech-to-Text v2 Chirp 3**（`TRANSCRIBE_MODEL=chirp_3`，仅限 Chirp 系列模型）负责双轨声学说话人聚类与逐字时间戳，**Gemini 3.8 Flash**（`SUMMARY_MODEL=gemini-3.8-flash`）负责多模态分析、语义分段与分块校对。
 * **双轨并发执行**：同时运行 Track A（不切块全局说话人聚类）与 Track B（18 分钟并行切块逐字时间戳 + 5 秒重叠中点去重）。
-* **确定性时间戳投射与反推**：通过混合 LCS 算法对齐双轨时间戳，并将 Stage 2 语义分段反推回物理逐字边界。
+* **确定性物理时间轴说话人指派与反推**：以 Track B 逐字时间戳为主，通过混合 LCS 算法指派 Track A 说话人标签，滤除 FFmpeg 语音起点之前的 token，并将 Stage 2 语义分段反推回物理逐字边界。
 * **GCS 双层生命周期管理**：暂存于 `gs://<bucket>/raw/` 的原始媒体在推理完成后于 `finally` 块即时清理（并由 2 天生命周期规则兜底），最终交付物保留 15 天。
 
 ### 2. 本地离线模式（仅限显式指定）

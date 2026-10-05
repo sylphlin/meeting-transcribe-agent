@@ -40,7 +40,7 @@
 **'다시간 글로벌 화자 일관성'**과 **'밀리초 단위의 단어 타임스탬프'**를 동시에 달성하기 위해 Stage 1은 두 개의 트랙을 병렬로 실행합니다:
 - **Track A — 글로벌 거시 화자 분리 (Macro Global Diarization)**: 분할하지 않은 전체 16 kHz 모노 오디오에 대해 단일 `BatchRecognize`(`enableSpeakerDiarization=True`, `enableWordTimeOffsets=False`)를 실행하여 회의 전체에서 단일 화자 성문 공간을 유지합니다.
 - **Track B — 미시 단어 타임스탬프 추출 (Micro Word Timestamps)**: 오디오를 5초 중첩 구간을 가진 18분(`1080s`) 청크로 분할하여 병렬 실행(`enableWordTimeOffsets=True`, `enableSpeakerDiarization=False`)하고, 중첩 구간 중앙값에서 중복을 제거하여 단조 증가하는 타임스탬프를 보장합니다.
-- **하이브리드 다국어 LCS 정렬 (`AlignmentEngine`)**: CJK 문자 단위 및 서구권 단어 단위의 하이브리드 최장 공통 부분 수열(LCS) 알고리즘을 통해 Track B의 물리적 단어 타임스탬프를 Track A의 화자 분리 단어 스트림에 100% 투영합니다.
+- **Track B 물리 타임라인 마스터 + LCS 화자 레이블 할당 (`AlignmentEngine`)**: Track B의 물리적 단어 타임스탬프를 마스터 타임라인으로 유지하고, CJK 문자 단위 및 서구권 단어 단위의 하이브리드 최장 공통 부분 수열(LCS) 알고리즘으로 Track A의 화자 레이블을 각 단어에 할당합니다(Track A는 매칭 전에 간체에서 번체로 변환). FFmpeg `silencedetect`로 물리적 발화 시작점을 감지하고 선행 무음 구간 내 노이즈 토큰을 제거합니다. 발언 구간의 시작은 `floor`, 종료는 `ceil`을 사용하여 탐색이 이전 화자의 꼬리에 들어가지 않도록 합니다. 두 트랙 모두에 n-gram 반복 루프 억제를 적용합니다.
 - **Stage 2 의미 문단 분할 및 타임스탬프 재투영**: 수 분간 이어지는 긴 독백에서 **Gemini 3.8 Flash**가 주제 전환 지점에 `<PARA>` 마커를 삽입하면, `AlignmentEngine`이 각 의미 문단의 시작/종료 시각을 물리적 단어 타임스탬프로 재투영합니다. 인터랙티브 HTML 플레이어는 동일 화자의 연속 문단을 시각적으로 연결(`isGrouped`)하여 가독성과 개별 구간 탐색을 동시에 제공합니다.
 
 ---
@@ -50,7 +50,7 @@
 ### 1. 클라우드 듀얼 패스 Chirp 3 + Vertex AI 모드 (기본값)
 * **모델 연동**: 음향 화자 분리 및 단어 타임스탬프에는 **Cloud Speech-to-Text v2 Chirp 3**(`TRANSCRIBE_MODEL=chirp_3`, Chirp 시리즈 전용), 멀티모달 분석, 의미 문단 분할 및 교정에는 **Gemini 3.8 Flash**(`SUMMARY_MODEL=gemini-3.8-flash`)를 사용합니다.
 * **듀얼 패스 병렬 실행**: Track A(비분할 글로벌 화자 분리)와 Track B(18분 병렬 청크 단어 타임스탬프 + 5초 중첩 중복 제거)를 동시에 실행합니다.
-* **결정론적 타임스탬프 투영**: 하이브리드 LCS 알고리즘으로 Track A와 Track B를 정렬하고 Stage 2 의미 문단을 물리적 단어 경계로 재투영합니다.
+* **물리 타임라인 기반 결정론적 화자 할당**: Track B 단어 타임스탬프를 마스터로 유지하고, 하이브리드 LCS로 Track A 화자 레이블을 할당하며, FFmpeg 발화 시작점 이전 토큰을 제거하고 Stage 2 의미 문단을 물리적 단어 경계로 재투영합니다.
 * **GCS 2단계 수명 주기 관리**: `gs://<bucket>/raw/`에 스테이징된 원본 미디어는 추론 완료 즉시 `finally` 블록에서 삭제(및 2일 수명 주기 규칙으로 자동 삭제)되며, 최종 결과물은 **15일간** 보관됩니다.
 
 ### 2. 로컬 오프라인 모드 (명시적 요청 전용)
