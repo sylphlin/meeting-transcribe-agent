@@ -10,6 +10,7 @@ from pathlib import Path
 import random
 import re
 import time
+from typing import Optional
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
@@ -270,6 +271,11 @@ def transcribe_with_gemini_cloud(
 _TURN_LINE_PREFIX_RE = re.compile(
     r"^(\[\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*\]\s*\*\*([^*]+)\*\*\s*:\s*)(.+)$"
 )
+# Stage 2 conversational split marker: `<SPEAKER_SPLIT: Speaker 4>`. The text after the marker
+# belongs to the named speaker. A marker at the start of the line relabels the whole line.
+_SPEAKER_SPLIT_RE = re.compile(r"\s*<\s*SPEAKER_SPLIT\s*:\s*([^>]+?)\s*>\s*", re.IGNORECASE)
+_SPLIT_MERGE_MAX_GAP_SEC = 0.5
+
 _TURN_BRACKET_EXTRACT_RE = re.compile(
     r"^\s*\[\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*\]\s*(?:\*\*[^*]+\*\*\s*:\s*)?(.+)$"
 )
@@ -289,7 +295,7 @@ def refine_verbatim_transcript_chunks(
     long monologues (using inline `<PARA>` markers) and re-projects physical word-level
     timestamps onto each resulting paragraph via AlignmentEngine.
     """
-    from scripts.alignment_engine import AlignmentEngine
+    from scripts.alignment_engine import AlignmentEngine, join_multilingual_words
     from scripts.canonicalizer import parse_timestamp_to_seconds
     from scripts.chirp3_engine import get_last_aligned_turns
 
@@ -300,8 +306,9 @@ def refine_verbatim_transcript_chunks(
     aligned_turns_cache = get_last_aligned_turns()
     turn_words_by_ts: dict[tuple[str, str], list[list[dict]]] = {}
     for aturn in aligned_turns_cache:
-        t_st = format_offset(aturn.get("start") or 0.0)
-        t_et = format_offset(aturn.get("end") or 0.0)
+        # Keys must match the Section 6 line format: floor for start, ceil for end.
+        t_st = format_offset(aturn.get("start") or 0.0, mode="floor")
+        t_et = format_offset(aturn.get("end") or 0.0, mode="ceil")
         w_items = aturn.get("word_items") or []
         if w_items:
             turn_words_by_ts.setdefault((t_st, t_et), []).append(w_items)
@@ -320,18 +327,73 @@ def refine_verbatim_transcript_chunks(
     chunks = [turn_lines[i : i + chunk_size] for i in range(0, len(turn_lines), chunk_size)]
     num_chunks = len(chunks)
 
+    # Speaker IDs that exist in this document. A split marker may only name one of these.
+    known_speakers: dict[str, str] = {}
+    for t_line in turn_lines:
+        m_known = _TURN_LINE_PREFIX_RE.match(t_line)
+        if m_known:
+            spk_known = m_known.group(4).strip()
+            known_speakers.setdefault(_normalize_speaker_key(spk_known), spk_known)
+
+    def _split_by_speaker_markers(speaker_str: str, new_utt: str) -> list[tuple[str, str, bool]]:
+        """
+        Split one proofread utterance on `<SPEAKER_SPLIT: X>` markers.
+        Return [(speaker, text, relabeled)], where `relabeled` is True when the segment speaker
+        differs from the original line speaker. Markers that name an unknown speaker are dropped
+        and their text stays with the current speaker.
+        """
+        parts = _SPEAKER_SPLIT_RE.split(new_utt)
+        if len(parts) == 1:
+            return [(speaker_str, new_utt.strip(), False)]
+        segments: list[tuple[str, str, bool]] = []
+        cur_speaker = speaker_str
+        head = parts[0].strip()
+        if head:
+            segments.append((cur_speaker, head, False))
+        for idx in range(1, len(parts), 2):
+            requested = parts[idx].strip()
+            text = parts[idx + 1].strip() if idx + 1 < len(parts) else ""
+            resolved = known_speakers.get(_normalize_speaker_key(requested))
+            if resolved:
+                cur_speaker = resolved
+            if not text:
+                continue
+            if segments and segments[-1][0] == cur_speaker:
+                prev_spk, prev_text, prev_flag = segments[-1]
+                segments[-1] = (prev_spk, join_multilingual_words([prev_text, text]), prev_flag)
+            else:
+                segments.append((cur_speaker, text, cur_speaker != speaker_str))
+        return segments or [(speaker_str, _SPEAKER_SPLIT_RE.sub(" ", new_utt).strip(), False)]
+
     def _expand_turn_with_semantic_paragraphs(
         prefix: str,
         ts_pair: tuple[str, str],
         speaker_str: str,
         new_utt: str,
-    ) -> list[str]:
-        if "<PARA>" not in new_utt:
-            return [f"{prefix}{new_utt}"]
-        paras = [p.strip() for p in re.split(r"\s*<PARA>\s*", new_utt) if p.strip()]
-        if len(paras) <= 1:
-            clean_single = paras[0] if paras else new_utt.replace("<PARA>", "").strip()
-            return [f"{prefix}{clean_single}"]
+    ) -> list[tuple[str, bool]]:
+        """
+        Expand one proofread line into output lines.
+        Return [(line, is_split_head)], where `is_split_head` marks the first segment of a line
+        that was split by a speaker marker, so the caller can merge it into the previous turn
+        when both belong to the same speaker.
+        """
+        segments = _split_by_speaker_markers(speaker_str, new_utt)
+        has_speaker_split = len(segments) > 1 or (segments and segments[0][2])
+        if not has_speaker_split and "<PARA>" not in new_utt:
+            return [(f"{prefix}{segments[0][1] if segments else new_utt}", False)]
+
+        # Build the paragraph list: speaker segments first, then <PARA> inside each segment.
+        para_specs: list[tuple[str, str]] = []
+        for seg_speaker, seg_text, _ in segments:
+            paras = [p.strip() for p in re.split(r"\s*<PARA>\s*", seg_text) if p.strip()]
+            for p_text in paras or [seg_text.replace("<PARA>", "").strip()]:
+                if p_text:
+                    para_specs.append((seg_speaker, p_text))
+        if not para_specs:
+            return [(f"{prefix}{_SPEAKER_SPLIT_RE.sub(' ', new_utt).replace('<PARA>', ' ').strip()}", False)]
+        if len(para_specs) == 1:
+            only_speaker, only_text = para_specs[0]
+            return [(f"[{ts_pair[0]} - {ts_pair[1]}] **{only_speaker}**: {only_text}", False)]
 
         turn_words = []
         if ts_pair in turn_words_by_ts and turn_words_by_ts[ts_pair]:
@@ -341,18 +403,20 @@ def refine_verbatim_transcript_chunks(
         fallback_et = parse_timestamp_to_seconds(ts_pair[1])
         projected = AlignmentEngine().reproject_semantic_paragraphs(
             turn_words=turn_words,
-            paragraphs=paras,
+            paragraphs=[p_text for _, p_text in para_specs],
             fallback_start=fallback_st,
             fallback_end=fallback_et,
         )
-        expanded_lines: list[str] = []
-        for p_item in projected:
+        expanded_lines: list[tuple[str, bool]] = []
+        for p_idx, p_item in enumerate(projected):
+            p_speaker = para_specs[p_idx][0] if p_idx < len(para_specs) else speaker_str
             p_st_str = format_offset(p_item["start"], mode="floor")
             p_et_str = format_offset(p_item["end"], mode="ceil")
-            expanded_lines.append(f"[{p_st_str} - {p_et_str}] **{speaker_str}**: {p_item['text']}")
+            is_split_head = has_speaker_split and p_idx == 0
+            expanded_lines.append((f"[{p_st_str} - {p_et_str}] **{p_speaker}**: {p_item['text']}", is_split_head))
         return expanded_lines
 
-    def _process_chunk(chunk_idx: int) -> tuple[int, list[str]]:
+    def _process_chunk(chunk_idx: int) -> tuple[int, list[tuple[str, bool]]]:
         chunk_lines = chunks[chunk_idx]
         chunk_body = "\n".join(chunk_lines)
         prompt_chunk = f"""# Role & Objective
@@ -369,7 +433,8 @@ Proofread and align the orthographic script, domain terminology, and semantic pa
 4. Align the written orthographic script (such as Traditional vs. Simplified characters) to match the script used in the Reference Context ({target_lang}).
 5. Correct acoustic phonetic mishearings of participant names, titles, organizations, and technical terms using the Reference Context and Global Consistency Glossary.
 6. Semantic Paragraph Segmentation for Long Turns: When a single turn line contains a long uninterrupted monologue or presentation (more than 4 sentences or 300 characters) that covers multiple sub-topics, insert the inline marker ` <PARA> ` at natural semantic topic transitions within that same line (keep it on one line). Leave short conversational turns without ` <PARA> `.
-7. Output ONLY the refined transcript lines. Do not include Markdown code fences or commentary.
+7. Conversational Speaker Split Correction: Acoustic diarization can smear a speaker boundary when two people talk with no pause. When one line clearly contains two different people (for example a presenter's statement followed by the chair's question, or an answer followed by the asker's follow-up), insert the inline marker ` <SPEAKER_SPLIT: Speaker X> ` at the exact word where the other person starts. Text after the marker belongs to `Speaker X`. When the whole line belongs to another person, place the marker at the start of the text. Constraints: (a) `Speaker X` must be a speaker tag that already appears in this transcript; never invent a new one. (b) Use the marker only when the dialogue logic of the ADJACENT lines proves it (for example the previous line is a question by A, this line is the answer, and the next line is A's follow-up, yet this line is tagged A). Do not split on tone or wording alone. Rhetorical self-questions and quoted speech are NOT splits. Keep the line on one line; the pipeline splits it and recomputes timestamps.
+8. Output ONLY the refined transcript lines. Do not include Markdown code fences or commentary.
 
 # Transcript Segment to Proofread
 {chunk_body}
@@ -383,7 +448,7 @@ Proofread and align the orthographic script, domain terminology, and semantic pa
             )
         except Exception as e:
             print(f"[!] Warning: Verbatim proofreading chunk {chunk_idx + 1}/{num_chunks} failed ({e}). Keeping raw turns.")
-            return chunk_idx, chunk_lines
+            return chunk_idx, [(ln, False) for ln in chunk_lines]
 
         by_ts: dict[tuple[str, str], list[str]] = {}
         ordered_utterances: list[str] = []
@@ -396,11 +461,11 @@ Proofread and align the orthographic script, domain terminology, and semantic pa
                     by_ts.setdefault(ts_pair, []).append(utt_clean)
                     ordered_utterances.append(utt_clean)
 
-        refined_chunk: list[str] = []
+        refined_chunk: list[tuple[str, bool]] = []
         for line_i, orig_line in enumerate(chunk_lines):
             m_orig = _TURN_LINE_PREFIX_RE.match(orig_line)
             if not m_orig:
-                refined_chunk.append(orig_line)
+                refined_chunk.append((orig_line, False))
                 continue
             prefix = m_orig.group(1)
             ts_pair = (m_orig.group(2), m_orig.group(3))
@@ -416,7 +481,7 @@ Proofread and align the orthographic script, domain terminology, and semantic pa
                     _expand_turn_with_semantic_paragraphs(prefix, ts_pair, speaker_str, new_utt)
                 )
             else:
-                refined_chunk.append(orig_line)
+                refined_chunk.append((orig_line, False))
 
         return chunk_idx, refined_chunk
 
@@ -430,9 +495,46 @@ Proofread and align the orthographic script, domain terminology, and semantic pa
     results.sort(key=lambda x: x[0])
     all_refined: list[str] = []
     for _, c_lines in results:
-        all_refined.extend(c_lines)
+        for line, is_split_head in c_lines:
+            merged = _merge_split_head_into_previous(all_refined, line) if is_split_head else None
+            if merged is None:
+                all_refined.append(line)
 
     return "\n\n".join(all_refined)
+
+
+def _normalize_speaker_key(label: str) -> str:
+    """Normalize `Speaker 4`, `speaker_4`, `spk-4` to one key for lookup."""
+    m = re.search(r"(?:spk|speaker)[\s_-]*(\d+|[a-zA-Z])\b", label or "", re.IGNORECASE)
+    if m:
+        return f"spk_{m.group(1).lower()}"
+    return (label or "").strip().lower()
+
+
+def _merge_split_head_into_previous(lines: list[str], head_line: str) -> Optional[bool]:
+    """
+    Merge the first segment of a speaker-split line into the previous output line when both
+    have the same speaker and the segment starts within `_SPLIT_MERGE_MAX_GAP_SEC` of the
+    previous end. Return True when merged, None when not merged.
+    """
+    from scripts.alignment_engine import join_multilingual_words
+    from scripts.canonicalizer import parse_timestamp_to_seconds
+
+    if not lines:
+        return None
+    m_prev = _TURN_LINE_PREFIX_RE.match(lines[-1])
+    m_head = _TURN_LINE_PREFIX_RE.match(head_line)
+    if not m_prev or not m_head:
+        return None
+    if _normalize_speaker_key(m_prev.group(4)) != _normalize_speaker_key(m_head.group(4)):
+        return None
+    prev_end = parse_timestamp_to_seconds(m_prev.group(3))
+    head_start = parse_timestamp_to_seconds(m_head.group(2))
+    if head_start > prev_end + _SPLIT_MERGE_MAX_GAP_SEC:
+        return None
+    merged_text = join_multilingual_words([m_prev.group(5).strip(), m_head.group(5).strip()])
+    lines[-1] = f"[{m_prev.group(2)} - {m_head.group(3)}] **{m_prev.group(4).strip()}**: {merged_text}"
+    return True
 
 
 def generate_minutes_with_gemini(

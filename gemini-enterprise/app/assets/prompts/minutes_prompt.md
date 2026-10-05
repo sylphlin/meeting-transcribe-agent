@@ -78,6 +78,10 @@ CRITICAL FORMATTING RULES:
 - **Role Validation Rules**:
   - Distinguish between meeting host/chair, presenters, and ad-hoc contributors based on context.
   - When simultaneous speech occurs, label accordingly: `[MM:SS - MM:SS] **Speaker A / Speaker B (Simultaneous)**: ...` (or `[HH:MM:SS - HH:MM:SS]`)
+- **Conversational Speaker Split Correction (`<SPEAKER_SPLIT: Speaker X>`)**:
+  - Acoustic diarization can smear a speaker boundary when two people talk with no pause. When one turn line clearly contains two different people (a presenter's statement followed by the chair's question, or an answer followed by the asker's follow-up), insert ` <SPEAKER_SPLIT: Speaker X> ` at the exact word where the other person starts. Text after the marker belongs to `Speaker X`. When the whole line belongs to another person, place the marker at the start of the text.
+  - Constraints: (a) `Speaker X` must be a speaker tag that already appears in the transcript; never invent a new one. (b) Use the marker only when the dialogue logic of the adjacent lines proves it. Do not split on tone or wording alone; rhetorical self-questions and quoted speech are not splits.
+  - Keep the line on one line. The pipeline splits it, recomputes physical timestamps from word-level data, and merges a split-off head segment into the previous turn of the same speaker.
 - **Phonetic & Terminology Correction**:
   - Correct ASR homophones, transcription slips, and acronym spellings using the provided Global Consistency Glossary and semantic context.
   - Maintain 100% transcript completeness: never summarize, omit, or censor any verbatim dialogue.
