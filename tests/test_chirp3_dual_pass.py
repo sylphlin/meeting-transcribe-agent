@@ -363,6 +363,21 @@ class TestHybridMultilingualAlignment(unittest.TestCase):
         self.assertAlmostEqual(turns[1]["start"], 940.96, places=2)
 
 
+class TestTurnBoundaryMonotonicity(unittest.TestCase):
+    def test_turn_start_never_regresses_before_previous_end(self):
+        engine = AlignmentEngine()
+        turns = [
+            {"speaker": "Speaker 1", "start": 120.0, "end": 146.0},
+            {"speaker": "Speaker 1", "start": 1.0, "end": 175.0},
+            {"speaker": "Speaker 1", "start": 175.0, "end": 216.0},
+        ]
+        out = engine._smooth_turn_timestamps(turns)
+        self.assertEqual(out[1]["start"], 146.0)
+        for prev, cur in zip(out, out[1:]):
+            self.assertGreaterEqual(cur["start"], prev["end"])
+            self.assertGreaterEqual(cur["end"], cur["start"])
+
+
 class TestOverlapDeduplication(unittest.TestCase):
     """Test Track B chunk window generation and 5-second overlap midpoint deduplication."""
 

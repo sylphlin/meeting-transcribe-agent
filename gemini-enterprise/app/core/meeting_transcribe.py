@@ -49,6 +49,7 @@ from scripts.canonicalizer import (
     consolidate_meeting_minutes,
     generate_auto_outline_from_srt,
 )
+from scripts.srt_speaker_resolver import build_speaker_resolver
 from scripts.html_generator import generate_interactive_html
 
 
@@ -180,6 +181,7 @@ def generate_meeting_minutes_and_transcript(
     # Branch 2 & 3: Local Video & Audio Pipelines (Unified Stage 1 ASR Core)
     is_local_video = is_vid and not extract_audio
     subtitles_path: Optional[Path] = None
+    speaker_resolver = None
 
     if is_vid:
         video_p = Path(source_str).resolve()
@@ -208,10 +210,17 @@ def generate_meeting_minutes_and_transcript(
             subtitles_path = extract_embedded_subtitles(video_p, srt_candidate)
             if subtitles_path and subtitles_path.exists():
                 print(f"[✓] Embedded subtitles successfully extracted: {subtitles_path.name}")
+                # One Gemini call classifies the distinct subtitle speaker tokens.
+                # The client is created lazily; the rule-based guardrail is the fallback.
+                speaker_resolver = build_speaker_resolver(
+                    client_factory=lambda: get_gemini_client(project_id=project_id, location=location),
+                    model=summary_model,
+                    cache_path=scratch_dir / f"{default_out_stem}_speaker_candidates.json",
+                )
                 if not outline:
                     auto_outline_path = scratch_dir / f"{default_out_stem}_auto_outline.md"
                     try:
-                        generate_auto_outline_from_srt(subtitles_path, auto_outline_path)
+                        generate_auto_outline_from_srt(subtitles_path, auto_outline_path, speaker_resolver=speaker_resolver)
                         outline = auto_outline_path
                         print(f"[✓] Auto-generated meeting agenda outline from subtitles: {auto_outline_path.name}")
                     except Exception as e:
@@ -372,6 +381,7 @@ def generate_meeting_minutes_and_transcript(
                     summary_language=summary_language,
                     outline_path=Path(outline) if outline else None,
                     srt_path=subtitles_path,
+                    speaker_resolver=speaker_resolver,
                 )
             except Exception as e:
                 print(f"[!] Warning: Multimodal video fusion failed ({e}). Falling back to standalone acoustic transcript.")
@@ -387,6 +397,7 @@ def generate_meeting_minutes_and_transcript(
                     summary_model=summary_model,
                     summary_language=summary_language,
                     srt_path=subtitles_path,
+                    speaker_resolver=speaker_resolver,
                 )
             except Exception as e:
                 print(f"[!] Warning: Gemini minutes structuring unavailable ({e}). Falling back to standalone verbatim transcript.")
@@ -408,7 +419,7 @@ def generate_meeting_minutes_and_transcript(
             f"{sec6_heading}\n\n"
             f"{raw_transcript_text.strip()}\n"
         )
-        final_markdown = consolidate_meeting_minutes(final_markdown, srt_path=subtitles_path)
+        final_markdown = consolidate_meeting_minutes(final_markdown, srt_path=subtitles_path, speaker_resolver=speaker_resolver)
 
     total_time = time.time() - t_total_start
 

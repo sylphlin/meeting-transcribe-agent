@@ -36,17 +36,89 @@ def parse_timestamp_to_seconds(ts_str: str) -> float:
     return 0.0
 
 
-def parse_srt_timeline(srt_content_or_path: str | Path) -> List[dict]:
+# Subtitle cue: optional index line, timestamps (SRT `HH:MM:SS,mmm` or WebVTT `[HH:]MM:SS.mmm`),
+# optional cue settings after the end time, then the payload up to the next blank line.
+_SUBTITLE_CUE_RE = re.compile(
+    r'(?:^|\n)[ \t]*(?:\d+[ \t]*\n)?'
+    r'((?:\d{1,2}:)?\d{2}:\d{2}[,\.]\d{3})[ \t]*-->[ \t]*((?:\d{1,2}:)?\d{2}:\d{2}[,\.]\d{3})[^\n]*\n'
+    r'(.*?)(?=\n[ \t]*\n|\Z)',
+    re.DOTALL
+)
+# Layer 1: W3C WebVTT voice tag `<v Name>text</v>` or `<v.class Name>text`.
+_VTT_VOICE_RE = re.compile(r'^\s*<v(?:\.[^\s>]+)?\s+([^>]+)>(.*)$', re.DOTALL)
+# Layer 2: bracketed token `(Name)` or `[Name]` on its own line, before a colon, or before text.
+# One nested level is allowed for pronoun or device suffixes: `(Jane Smith (she/her))`.
+_BRACKET_SPEAKER_RE = re.compile(
+    r'^\s*(?:\(((?:[^()\n]|\([^()\n]*\))+)\)|\[((?:[^\[\]\n]|\[[^\[\]\n]*\])+)\])[ \t]*(?:[:：]|\n|[ \t]|$)\s*(.*)$',
+    re.DOTALL
+)
+# Layer 3: colon-delimited token `Name: text` or `Name：text` on the first line.
+_COLON_SPEAKER_RE = re.compile(r'^\s*([^\n:：]{1,60}?)\s*[:：]\s*(.*)$', re.DOTALL)
+_HTML_TAG_RE = re.compile(r'<[^>]+>')
+_DIALOGUE_PREFIX_RE = re.compile(r'^\s*(?:>>|-)\s*')
+
+
+def _extract_speaker_candidate(payload: str) -> Tuple[Optional[str], str]:
     """
-    Parses an SRT subtitle track into chronological speaker events:
+    Extract a lenient speaker candidate token and the remaining dialogue text from one cue payload.
+    Return (None, dialogue) when the cue has no speaker token.
+    Plausibility is decided later by the speaker resolver, not here.
+    """
+    raw = (payload or "").strip()
+    if not raw:
+        return None, ""
+
+    m_vtt = _VTT_VOICE_RE.match(raw)
+    if m_vtt:
+        token = m_vtt.group(1).strip()
+        dialogue = _HTML_TAG_RE.sub('', m_vtt.group(2)).strip()
+        return token or None, dialogue
+
+    clean = _HTML_TAG_RE.sub('', raw).strip()
+    clean = _DIALOGUE_PREFIX_RE.sub('', clean).strip()
+    if not clean:
+        return None, ""
+
+    m_bracket = _BRACKET_SPEAKER_RE.match(clean)
+    if m_bracket:
+        token = (m_bracket.group(1) or m_bracket.group(2) or "").strip()
+        # An empty tag such as `[ ]:` or `():` marks an unknown speaker. Return "" so the
+        # caller skips the cue and does not inherit the previous speaker.
+        return token, (m_bracket.group(3) or "").strip()
+
+    m_colon = _COLON_SPEAKER_RE.match(clean)
+    if m_colon:
+        token = m_colon.group(1).strip()
+        return token or None, (m_colon.group(2) or "").strip()
+
+    return None, clean
+
+
+def parse_srt_timeline(
+    srt_content_or_path: str | Path,
+    speaker_resolver=None,
+    inherit_previous_speaker: bool = True,
+    inherit_max_gap_sec: float = 2.0,
+) -> List[dict]:
+    """
+    Parse an SRT or WebVTT subtitle track into chronological speaker events:
     [{"start": float, "end": float, "name": str}, ...]
-    
-    Robustly handles:
-    - WebRTC speaker tags: 'Name: dialogue', '(Name): dialogue', '[Name]: dialogue'
-    - Empty speaker tags: '(): dialogue', '[]: dialogue' (ignored)
-    - Embedded HTML/formatting tags (<font color="...">, <b>, <i>, etc.)
-    - Subtitles without speaker tags (ignored to prevent mistaking dialogue for names)
+
+    Extraction is a two-step process:
+    1. Deterministic cue parsing with three lenient layers:
+       - WebVTT voice tags `<v Name>` (Microsoft Teams, W3C)
+       - Bracketed tokens `(Name)` / `[Name]` on their own line or before text (Google Meet, broadcast)
+       - Colon-delimited tokens `Name:` / `Name：` (Zoom, Webex, Otter.ai, WhisperX)
+    2. Candidate resolution on the distinct token set:
+       - `speaker_resolver(candidates)` maps token -> canonical name or None (not a speaker).
+       - When no resolver is given, the rule-based guardrail from `srt_speaker_resolver` is used.
+
+    When `inherit_previous_speaker` is True, a cue without a speaker token takes the previous
+    speaker when it starts within `inherit_max_gap_sec` of the previous cue end. Google Meet
+    shows the name only when the speaker changes, so this keeps continuous turns covered.
     """
+    from scripts.srt_speaker_resolver import is_hard_rejected_token, resolve_with_rules
+
     text = ""
     if isinstance(srt_content_or_path, Path) or (isinstance(srt_content_or_path, str) and "\n" not in srt_content_or_path and Path(srt_content_or_path).is_file()):
         try:
@@ -58,61 +130,90 @@ def parse_srt_timeline(srt_content_or_path: str | Path) -> List[dict]:
 
     if not text.strip():
         return []
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # Match SRT cues: index, timestamps, and payload
-    cue_pattern = re.compile(
-        r'(?:^|\n)\s*\d+\s*\n(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*\n(.*?)(?=\n\s*\n|\Z)',
-        re.DOTALL
-    )
+    cues: List[dict] = []
+    candidates: Dict[str, List[str]] = {}
+    for match in _SUBTITLE_CUE_RE.finditer(text):
+        start_str, end_str, payload = match.groups()
+        token, dialogue = _extract_speaker_candidate(payload)
+        explicit_unknown = token == ""
+        if token:
+            token = re.sub(r'[*`_]', '', token).strip()
+            if is_hard_rejected_token(token):
+                token = None
+                explicit_unknown = True
+        cue = {
+            "start": parse_timestamp_to_seconds(start_str),
+            "end": parse_timestamp_to_seconds(end_str),
+            "token": token or None,
+            "dialogue": dialogue,
+            "explicit_unknown": explicit_unknown,
+        }
+        cues.append(cue)
+        if token:
+            candidates.setdefault(token, [])
+            if dialogue and len(candidates[token]) < 5:
+                candidates[token].append(dialogue)
+
+    if not cues:
+        return []
+
+    resolution: Dict[str, Optional[str]] = {}
+    if candidates:
+        if speaker_resolver is not None:
+            try:
+                resolution = dict(speaker_resolver(candidates) or {})
+            except Exception:
+                resolution = {}
+        if not resolution:
+            resolution = resolve_with_rules(candidates)
 
     events: List[dict] = []
-    speaker_prefix_pattern = re.compile(
-        r'^\s*(?:\(([^()]+)\)|\[([^\[\]]+)\]|([^:：\n]+))\s*[:：]\s*(.*)$',
-        re.DOTALL
-    )
-    invalid_name_tokens = {"-", "--", "none", "n/a", "null", "nil", "unknown", "()", "[]"}
-
-    for match in cue_pattern.finditer(text):
-        start_str, end_str, payload = match.groups()
-        start_sec = parse_timestamp_to_seconds(start_str)
-        end_sec = parse_timestamp_to_seconds(end_str)
-
-        clean_payload = re.sub(r'<[^>]+>', '', payload).strip()
-        if not clean_payload:
-            continue
-
-        spk_m = speaker_prefix_pattern.match(clean_payload)
-        if not spk_m:
-            continue
-
-        candidate_name = (spk_m.group(1) or spk_m.group(2) or spk_m.group(3) or "").strip()
-        candidate_name = re.sub(r'[*`_]', '', candidate_name).strip()
-
-        if (
-            not candidate_name
-            or candidate_name.lower() in invalid_name_tokens
-            or candidate_name.isdigit()
-            or len(candidate_name) > 60
-            or re.search(r'[.!?。！？]\s*$', candidate_name)
+    prev_name: Optional[str] = None
+    prev_end: Optional[float] = None
+    for cue in cues:
+        name: Optional[str] = None
+        token = cue["token"]
+        if token:
+            name = resolution.get(token)
+            if name is None and token not in resolution:
+                name = token
+            if name is None:
+                # Sound description or label: this cue has no speaker and breaks continuity.
+                prev_name = None
+                prev_end = None
+                continue
+        elif (
+            inherit_previous_speaker
+            and not cue["explicit_unknown"]
+            and prev_name
+            and prev_end is not None
+            and cue["dialogue"]
+            and 0.0 <= (cue["start"] - prev_end) <= inherit_max_gap_sec
         ):
+            name = prev_name
+
+        if not name:
+            prev_name = None
+            prev_end = None
             continue
 
-        events.append({
-            "start": start_sec,
-            "end": end_sec,
-            "name": candidate_name
-        })
+        events.append({"start": cue["start"], "end": cue["end"], "name": name})
+        prev_name = name
+        prev_end = cue["end"]
 
     return events
 
 
-def generate_auto_outline_from_srt(srt_path: Path, output_path: Path = None) -> Path:
+def generate_auto_outline_from_srt(srt_path: Path, output_path: Path = None, speaker_resolver=None) -> Path:
     """
     Analyzes an SRT subtitle file to generate an auto-outline Markdown document
     containing confirmed attendee roster and macro speaker timeline.
     Strictly plain text (Zero-Emoji policy).
+    `speaker_resolver` is forwarded to `parse_srt_timeline` for candidate classification.
     """
-    events = parse_srt_timeline(srt_path)
+    events = parse_srt_timeline(srt_path, speaker_resolver=speaker_resolver)
     if output_path is None:
         output_path = srt_path.parent / "auto_outline.md"
     else:
@@ -154,7 +255,7 @@ def generate_auto_outline_from_srt(srt_path: Path, output_path: Path = None) -> 
         for s, e in merged:
             dur = e - s
             if dur >= 3.0:
-                from .audio_utils import format_offset
+                from scripts.audio_utils import format_offset
                 timeline_lines.append(f"- [{format_offset(s)} - {format_offset(e)}] {name}")
 
     attendee_lines = "\n".join(f"- {name}" for name in attendee_order)
@@ -195,10 +296,10 @@ def parse_scoped_speaker_mapping(markdown_text: str) -> List[dict]:
     table_row_pattern = re.compile(r'^\s*\|(.+)\|\s*$')
     time_range_pattern = re.compile(r'(\d+:\d+(?::\d+)?)\s*(?:-|–|—|to)\s*(\d+:\d+(?::\d+)?)', re.IGNORECASE)
 
-    re_name = re.compile(r'\b(?:name|speaker|attendee|participant|nom|nombre)\b|姓名|名字|名稱|氏名|名前', re.IGNORECASE)
-    re_role = re.compile(r'\b(?:role|title|position|titre|cargo|rolle)\b|職稱|角色|職務|役職|役割', re.IGNORECASE)
-    re_spk_id = re.compile(r'\b(?:id|spk|speaker\s*id)\b|話者|發言人|發言者|識別', re.IGNORECASE)
-    re_time = re.compile(r'\b(?:time|timerange|range|duration|timestamp)\b|時段|時間|時間軸|期間', re.IGNORECASE)
+    re_name = re.compile(r'\b(?:name|speaker|attendee|participant|nom|nombre)\b|姓名|名字|名稱|氏名|名前|이름|성명', re.IGNORECASE)
+    re_role = re.compile(r'\b(?:role|title|position|titre|cargo|rolle)\b|職稱|職銜|職位|職務|官職|頭銜|身分|身份|角色|役職|役割|肩書|직책|직위|직함|역할', re.IGNORECASE)
+    re_spk_id = re.compile(r'\b(?:id|spk|speaker\s*id|label)\b|話者|發言人|發言者|發言標籤|語者|識別|標籤|ラベル|화자|레이블', re.IGNORECASE)
+    re_time = re.compile(r'\b(?:time|timerange|range|duration|timestamp)\b|時段|時間|時間軸|期間|구간|시간', re.IGNORECASE)
 
     lines = markdown_text.splitlines()
     i = 0
@@ -240,6 +341,13 @@ def parse_scoped_speaker_mapping(markdown_text: str) -> List[dict]:
                 col_name = c_idx
             elif re_role.search(h_clean):
                 col_role = c_idx
+
+        # Positional fallback: the template places "Role / Title" directly before "Name".
+        # Localized headers can use words outside the keyword lists, so trust the column order.
+        if col_role < 0 and col_name > 0:
+            prev_idx = col_name - 1
+            if prev_idx not in (col_id, col_time):
+                col_role = prev_idx
 
         start_row = 1
         if len(table_rows) > 1 and all(re.match(r'^:?-+:?$', _clean_cell(c) or "-") for c in table_rows[1]):
@@ -434,6 +542,24 @@ def consolidate_verbatim_transcript(
         re.DOTALL
     )
 
+    # Lookup: bare name (lowercase) -> "Name (Role)" from Stage 2 rules and mapping.
+    # Subtitle events carry only the name, so Level 1 results are enriched with the role.
+    name_to_full: Dict[str, str] = {}
+    for r in rules:
+        full_n = (r.get("name") or "").strip()
+        raw_n = (r.get("raw_name") or re.sub(r'\(.*?\)', '', full_n)).strip()
+        if raw_n and full_n and raw_n.lower() not in name_to_full:
+            name_to_full[raw_n.lower()] = full_n
+    for spk_val in mapping.values():
+        full_n = (spk_val or "").strip()
+        raw_n = re.sub(r'\(.*?\)', '', full_n).strip()
+        if raw_n and full_n and raw_n.lower() not in name_to_full:
+            name_to_full[raw_n.lower()] = full_n
+
+    def _with_role(bare_name: str) -> str:
+        full = name_to_full.get(bare_name.strip().lower())
+        return full if full else bare_name
+
     parsed_turns: List[dict] = []
     other_lines: List[Tuple[int, str]] = []
 
@@ -469,7 +595,7 @@ def consolidate_verbatim_transcript(
                         best_ev = ev
 
                 if best_ev and max_overlap > 0.0:
-                    resolved_speaker = best_ev["name"]
+                    resolved_speaker = _with_role(best_ev["name"])
                 elif turn_dur <= 2.5:
                     # Tolerance radius for brief interjections / short turns
                     closest_ev = None
@@ -484,7 +610,7 @@ def consolidate_verbatim_transcript(
                             min_dist = dist
                             closest_ev = ev
                     if closest_ev:
-                        resolved_speaker = closest_ev["name"]
+                        resolved_speaker = _with_role(closest_ev["name"])
 
             # ----------------------------------------------------
             # Level 2: Multimodal Scoped Rules (Visual / Time-Bounded)
@@ -679,12 +805,17 @@ def find_transcript_boundary(markdown_content: str) -> Tuple[str, str, str]:
         return summary_part, "", transcript_body
 
 
-def consolidate_meeting_minutes(markdown_content: str, srt_path: Path | str = None) -> str:
+def consolidate_meeting_minutes(
+    markdown_content: str,
+    srt_path: Path | str = None,
+    speaker_resolver=None,
+) -> str:
     """
     Full pipeline canonicalization:
     1. Extracts scoped speaker mapping rules structurally.
     2. Extracts phonetic entity corrections table structurally.
-    3. Optionally loads subtitle timeline events from SRT if available.
+    3. Optionally loads subtitle timeline events from SRT if available
+       (`speaker_resolver` classifies subtitle speaker candidates).
     4. Identifies summary and transcript boundaries.
     5. Normalizes speaker IDs with hierarchical resolution (SRT -> Scoped -> Handover).
     6. Reconstructs unified markdown document.
@@ -696,7 +827,7 @@ def consolidate_meeting_minutes(markdown_content: str, srt_path: Path | str = No
 
     timeline_events = []
     if srt_path:
-        timeline_events = parse_srt_timeline(srt_path)
+        timeline_events = parse_srt_timeline(srt_path, speaker_resolver=speaker_resolver)
 
     if not transcript_body:
         return markdown_content

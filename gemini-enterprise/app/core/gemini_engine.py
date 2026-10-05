@@ -411,6 +411,7 @@ def generate_minutes_with_gemini(
     prompt_template_path: Path = None,
     summary_language: str = None,
     srt_path: Path | str = None,
+    speaker_resolver=None,
 ) -> tuple[str, float]:
     """
     Executes Stage 2: Generates complete 6-section meeting minutes and verbatim transcript.
@@ -546,7 +547,7 @@ Output strictly and exclusively Sections 1 to 5, ending immediately with the loc
 
     combined_raw = f"{sections_1_5.strip()}\n\n{refined_transcript.strip()}\n"
     print(f"[*] Consolidating canonical speaker identities, entity corrections, and sequential turns...")
-    final_text = consolidate_meeting_minutes(combined_raw, srt_path=srt_path)
+    final_text = consolidate_meeting_minutes(combined_raw, srt_path=srt_path, speaker_resolver=speaker_resolver)
     duration = time.time() - t0
     print(f"[*] ✓ [Stage 2] Meeting minutes structuring successfully completed in {duration:.1f}s.")
     return final_text, duration
@@ -762,6 +763,7 @@ def analyze_video_with_transcript(
     summary_language: str = None,
     outline_path: Path = None,
     srt_path: Path | str = None,
+    speaker_resolver=None,
 ) -> tuple[str, float]:
     """
     Stage 2 of the Local Video Pipeline: Multimodal Vision + Transcript Fusion.
@@ -964,7 +966,7 @@ Output strictly the following structure in Markdown (DO NOT include any emojis o
 
         combined_raw = f"{output_text.strip()}\n\n{refined_transcript.strip()}\n"
         print(f"[*] Consolidating canonical speaker identities, entity corrections, and sequential turns...")
-        final_text = consolidate_meeting_minutes(combined_raw, srt_path=srt_path)
+        final_text = consolidate_meeting_minutes(combined_raw, srt_path=srt_path, speaker_resolver=speaker_resolver)
 
         # Print token usage accounting
         if hasattr(resp, "usage_metadata") and resp.usage_metadata:

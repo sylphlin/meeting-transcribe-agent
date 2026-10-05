@@ -19,7 +19,7 @@
    - **인터랙티브 YouTube 플레이어**: 녹취록 동기화 스크롤 및 타임스탬프 탐색을 지원하는 3단 HTML 플레이어를 생성합니다.
 
 2. **로컬 비디오 2단계 융합 파이프라인 (Acoustic Ground Truth + Vision Fusion)**:
-   - **내장 자막 추출**: 비디오 컨테이너의 자막 트랙(`mov_text`, `srt`, `vtt`) 또는 `.srt` 파일을 감지하여 참석자 명단 및 안건 참조로 활용합니다.
+   - **내장 자막 추출**: 비디오 컨테이너의 자막 트랙(`mov_text`, `srt`, `vtt`) 또는 `.srt` 파일을 감지하여 참석자 명단 및 안건 참조로 활용합니다. 범용 파서는 Google Meet의 독립 행 `(이름)`, WebVTT `<v 이름>` 화자 태그(Microsoft Teams), `이름:` 접두사(Zoom, Webex, Otter.ai)를 지원합니다. 중복 제거된 화자 후보는 Gemini가 한 번에 분류하며(효과음 제외, 이름 변형 병합), 오프라인 시 규칙 기반 가드레일로 대체됩니다.
    - **Stage 0 (전문 용어집 및 언어 코드 감지)**: 도메인 용어집을 구축하고 주요 음성 `BCP-47` 언어 코드(예: `ko-KR`, `cmn-Hant-TW`, `en-US`, `ja-JP`)를 감지합니다.
    - **Stage 1 (듀얼 패스 Chirp 3 음향 기준 ASR 전사)**: 16 kHz 모노 MP3 오디오를 추출하고 **듀얼 패스 Cloud Speech-to-Text v2 Chirp 3 (`chirp_3`)**(기본값) 또는 **로컬 Whisper + Sherpa-ONNX**(오프라인 모드 지정 시)를 통해 글로벌 화자 레이블(`Speaker 1`, `Speaker 2`)과 물리적 단어 타임스탬프 `[MM:SS - MM:SS]`를 고정합니다.
    - **Stage 2 (멀티모달 비전 융합, 의미 문단 분할 및 청크 교정)**: 대용량 비디오(>250 MB)를 Apple Silicon `VideoToolbox` 하드웨어 가속으로 720p H.264(`10 fps`, `1초 GOP -g 10`, `+faststart`, `libx264` 자동 폴백 지원)로 압축하여 클라우드 업로드 및 Agentic 프레임 탐색을 가속화한 뒤, Stage 1 녹취록과 함께 **Gemini 3.8 Flash**에 전달합니다. 슬라이드와 명패를 읽어 섹션 1–5 요약을 생성하고, 섹션 6 전문 녹취록을 60줄 단위 병렬 배치로 표기 교정 및 장시간 독백의 의미 문단 분할(`<PARA>`)을 수행하여 단어 타임스탬프에 재투영합니다.

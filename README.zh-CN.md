@@ -19,7 +19,7 @@
    - **交互式 YouTube 播放器**：生成独立三栏式 HTML 播放器，支持逐字稿同步滚动与点击时间戳跳转。
 
 2. **本地视频双阶段融合管线 (Acoustic Ground Truth + Vision Fusion)**：
-   - **内嵌字幕提取**：自动检测视频容器中的内嵌字幕轨（`mov_text`, `srt`, `vtt`）或同名 `.srt` 字幕文件，作为参会名单与议程参考。
+   - **内嵌字幕提取**：自动检测视频容器中的内嵌字幕轨（`mov_text`, `srt`, `vtt`）或同名 `.srt` 字幕文件，作为参会名单与议程参考。通用解析器支持 Google Meet 独立一行的 `(姓名)`、WebVTT `<v 姓名>` 说话人标签（Microsoft Teams）与 `姓名：` 前缀（Zoom、Webex、Otter.ai）。去重后的说话人候选由 Gemini 一次性分类（过滤音效描述、合并同名变体），离线时回退到规则式防护。
    - **Stage 0（术语表与语种检测）**：构建领域专业术语表，并检测主要口语 `BCP-47` 语言代码（例如 `cmn-Hant-TW`、`zh-CN`、`en-US`、`ja-JP`）。
    - **Stage 1（双轨 Chirp 3 声学基准语音转录）**：提取 16 kHz 单声道 MP3 音频，通过 **双轨 Cloud Speech-to-Text v2 Chirp 3 (`chirp_3`)**（默认）或 **本地 Whisper + Sherpa-ONNX**（显式指定离线模式时）执行语音转录，锁定全局一致的说话人代号（`Speaker 1`, `Speaker 2`）与物理逐字时间戳 `[MM:SS - MM:SS]`。
    - **Stage 2（多模态视觉融合、语义分段与分块校对）**：大型视频（>250 MB）自动通过 Apple Silicon `VideoToolbox` 硬件加速压缩为 720p H.264（`10 fps`、`1 秒 GOP -g 10`、`+faststart`，支持 `libx264` 自动降级）以加速云端上传与 Agentic 幻灯片抽帧，并连同 Stage 1 逐字稿输入 **Gemini 3.8 Flash**。模型读取幻灯片画面与桌牌以生成第 1–5 节纪要，并以 60 行对话为单位并行校对第 6 节逐字稿的字形、专业术语与长篇独白语义分段（`<PARA>`），再将语义段落反推回物理逐字时间戳。

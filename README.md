@@ -19,7 +19,7 @@
    - **Interactive YouTube Player**: Generates a standalone 3-pane HTML player with synchronized transcript scrolling and click-to-seek navigation.
 
 2. **Local Video Two-Stage Fusion Pipeline (Acoustic Ground Truth + Vision Fusion)**:
-   - **Embedded Subtitle Probe**: Extracts embedded subtitle tracks (`mov_text`, `srt`, `vtt`) or sidecar `.srt` files as attendee and agenda references.
+   - **Embedded Subtitle Probe**: Extracts embedded subtitle tracks (`mov_text`, `srt`, `vtt`) or sidecar `.srt` files as attendee and agenda references. A universal parser reads Google Meet `(Name)` lines, WebVTT `<v Name>` voice tags (Microsoft Teams), and `Name:` prefixes (Zoom, Webex, Otter.ai). Distinct speaker tokens are classified once by Gemini to drop sound effects and merge name variants; a rule-based guardrail is the offline fallback.
    - **Stage 0 (Glossary & Language Detection)**: Builds a domain terminology table and detects the primary spoken `BCP-47` language code (for example, `cmn-Hant-TW`, `en-US`, `ja-JP`).
    - **Stage 1 (Dual-Pass Chirp 3 Acoustic Ground Truth ASR)**: Extracts 16 kHz mono MP3 audio and runs **Dual-Pass Cloud Speech-to-Text v2 Chirp 3 (`chirp_3`)** (default) or **Local Whisper + Sherpa-ONNX** (when offline mode is requested). This stage locks global speaker turns (`Speaker 1`, `Speaker 2`) and millisecond physical word timestamps `[MM:SS - MM:SS]`.
    - **Stage 2 (Multimodal Vision, Semantic Paragraph Segmentation & Chunked Proofreading)**: Compresses large videos (>250 MB) to 720p H.264 (`10 fps`, `1s GOP -g 10`, `+faststart` via Apple Silicon `VideoToolbox` with `libx264` fallback) for fast cloud upload and Agentic frame seeking, then sends the video and Stage 1 transcript to **Gemini 3.8 Flash**. The model reads visual slides and nameplates, generates Sections 1–5, proofreads Section 6 in parallel 60-line batches, and segments long monologues into semantic paragraphs (`<PARA>`) that re-project onto physical word timestamps.
@@ -389,6 +389,7 @@ meeting-transcribe-agent/
 │       │   ├── diarization.py                            # Local Sherpa-ONNX acoustic diarization & Whisper/MLX
 │       │   ├── glossary.py                               # Dual-track terminology mining
 │       │   ├── canonicalizer.py                          # Speaker identity convergence & turn merging
+│       │   ├── srt_speaker_resolver.py                   # Gemini one-shot subtitle speaker candidate classification & rule fallback
 │       │   └── html_generator.py                         # Dedicated audio/video player renderer
 │       └── assets/                                       # Canonical player templates & prompts (SSOT)
 │           ├── audio_player_template.html                # 2-pane offline audio player template
