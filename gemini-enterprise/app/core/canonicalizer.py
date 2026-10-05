@@ -284,10 +284,20 @@ def _clean_cell(cell: str) -> str:
 
 def parse_scoped_speaker_mapping(markdown_text: str) -> List[dict]:
     """
-    Parses speaker identity mapping rules structurally from markdown tables.
-    Supports Time Range column for temporal scoping to eliminate acoustic under-clustering:
-      | Speaker ID | Time Range (optional if unique) | Role / Title | Name | Organization / Department | Remarks |
-    
+    Parse speaker identity mapping rules structurally from the Section 1 table.
+
+    Column contract (defined in `assets/prompts/minutes_prompt.md`): the LLM may localize the
+    header text, but the column ORDER is fixed and language-independent:
+      | Speaker ID | Time Range | Role / Title | Name | Organization | Remarks |
+
+    Detection is structural, not linguistic:
+      - Speaker ID column: the first column whose data cells contain `Speaker N` / `spk_N`.
+      - Time Range column: the first other column that holds a time range; when no column holds
+        one, the contract position right after Speaker ID is used if it is empty (`-`).
+        When neither applies, the table has no time column.
+      - Role, then Name: the next two columns in order after excluding the two above.
+    No per-language header keyword lists are used.
+
     Returns a list of scoped rule dicts:
       [{"spk_id": "spk_0", "start": 0.0, "end": 4.0, "name": "Alice Smith (Host)", "raw_name": "Alice Smith", "role": "Host"}, ...]
     """
@@ -295,11 +305,6 @@ def parse_scoped_speaker_mapping(markdown_text: str) -> List[dict]:
     spk_pattern = re.compile(r'\b(?:spk[_\s-]*|speaker\s*)(\d+|[a-zA-Z])\b', re.IGNORECASE)
     table_row_pattern = re.compile(r'^\s*\|(.+)\|\s*$')
     time_range_pattern = re.compile(r'(\d+:\d+(?::\d+)?)\s*(?:-|–|—|to)\s*(\d+:\d+(?::\d+)?)', re.IGNORECASE)
-
-    re_name = re.compile(r'\b(?:name|speaker|attendee|participant|nom|nombre)\b|姓名|名字|名稱|氏名|名前|이름|성명', re.IGNORECASE)
-    re_role = re.compile(r'\b(?:role|title|position|titre|cargo|rolle)\b|職稱|職銜|職位|職務|官職|頭銜|身分|身份|角色|役職|役割|肩書|직책|직위|직함|역할', re.IGNORECASE)
-    re_spk_id = re.compile(r'\b(?:id|spk|speaker\s*id|label)\b|話者|發言人|發言者|發言標籤|語者|識別|標籤|ラベル|화자|레이블', re.IGNORECASE)
-    re_time = re.compile(r'\b(?:time|timerange|range|duration|timestamp)\b|時段|時間|時間軸|期間|구간|시간', re.IGNORECASE)
 
     lines = markdown_text.splitlines()
     i = 0
@@ -325,88 +330,52 @@ def parse_scoped_speaker_mapping(markdown_text: str) -> List[dict]:
         if len(table_rows) < 2:
             continue
 
-        header_cells = table_rows[0]
-        col_id = -1
-        col_time = -1
-        col_name = -1
-        col_role = -1
-
-        for c_idx, h_cell in enumerate(header_cells):
-            h_clean = _clean_cell(h_cell)
-            if re_spk_id.search(h_clean) and not re_name.search(h_clean):
-                col_id = c_idx
-            elif re_time.search(h_clean):
-                col_time = c_idx
-            elif re_name.search(h_clean):
-                col_name = c_idx
-            elif re_role.search(h_clean):
-                col_role = c_idx
-
-        # Positional fallback: the template places "Role / Title" directly before "Name".
-        # Localized headers can use words outside the keyword lists, so trust the column order.
-        if col_role < 0 and col_name > 0:
-            prev_idx = col_name - 1
-            if prev_idx not in (col_id, col_time):
-                col_role = prev_idx
-
         start_row = 1
         if len(table_rows) > 1 and all(re.match(r'^:?-+:?$', _clean_cell(c) or "-") for c in table_rows[1]):
             start_row = 2
+        data_rows = [r for r in table_rows[start_row:] if len(r) >= 2]
+        if not data_rows:
+            continue
+        width = max(len(r) for r in data_rows)
 
-        for r_idx in range(start_row, len(table_rows)):
-            row = table_rows[r_idx]
-            if len(row) < 2:
+        def _column_has(pattern: "re.Pattern[str]", c_idx: int) -> bool:
+            return any(c_idx < len(r) and pattern.search(r[c_idx]) for r in data_rows)
+
+        col_id = next((c for c in range(width) if _column_has(spk_pattern, c)), -1)
+        if col_id < 0:
+            continue
+        # Time Range column: the first column that holds at least one time range. Cells without a
+        # range in that column mean "whole meeting". When all speakers are unique the whole column
+        # is `-`, so accept the contract position right after Speaker ID when it is empty.
+        col_time = next((c for c in range(width) if c != col_id and _column_has(time_range_pattern, c)), -1)
+        if col_time < 0 and col_id + 1 < width:
+            if all(col_id + 1 >= len(r) or not _clean_cell(r[col_id + 1]) for r in data_rows):
+                col_time = col_id + 1
+        remaining = [c for c in range(width) if c not in (col_id, col_time)]
+        col_role = remaining[0] if len(remaining) >= 1 else -1
+        col_name = remaining[1] if len(remaining) >= 2 else -1
+        if col_name < 0:
+            # Single descriptor column: treat it as the name.
+            col_name, col_role = col_role, -1
+
+        for row in data_rows:
+            if col_id >= len(row):
+                continue
+            spk_matches = spk_pattern.findall(row[col_id])
+            if not spk_matches:
                 continue
 
-            spk_cell_idx = col_id if (col_id >= 0 and col_id < len(row) and spk_pattern.search(row[col_id])) else -1
-            spk_matches = []
-            if spk_cell_idx >= 0:
-                spk_matches = spk_pattern.findall(row[spk_cell_idx])
-            else:
-                for c_idx, cell in enumerate(row):
-                    matches = spk_pattern.findall(cell)
-                    if matches:
-                        spk_cell_idx = c_idx
-                        spk_matches = matches
-                        break
-
-            if not spk_matches or spk_cell_idx == -1:
-                continue
-
-            # Time range detection
             start_sec = 0.0
             end_sec = float('inf')
-            if col_time >= 0 and col_time < len(row):
+            if 0 <= col_time < len(row):
                 tm = time_range_pattern.search(row[col_time])
                 if tm:
                     start_sec = parse_timestamp_to_seconds(tm.group(1))
                     end_sec = parse_timestamp_to_seconds(tm.group(2))
-            else:
-                for idx, cell in enumerate(row):
-                    if idx == spk_cell_idx:
-                        continue
-                    tm = time_range_pattern.search(cell)
-                    if tm:
-                        start_sec = parse_timestamp_to_seconds(tm.group(1))
-                        end_sec = parse_timestamp_to_seconds(tm.group(2))
-                        break
 
-            name_val = _clean_cell(row[col_name]) if (col_name >= 0 and col_name < len(row)) else ""
-            role_val = _clean_cell(row[col_role]) if (col_role >= 0 and col_role < len(row)) else ""
-
-            if not name_val and not role_val:
-                descriptors = []
-                for idx, cell in enumerate(row):
-                    if idx == spk_cell_idx or idx == col_time:
-                        continue
-                    clean = _clean_cell(cell)
-                    if clean and not time_range_pattern.search(clean):
-                        descriptors.append(clean)
-                if len(descriptors) >= 2:
-                    role_val = descriptors[0]
-                    name_val = descriptors[1]
-                elif descriptors:
-                    name_val = descriptors[0]
+            # An empty Name cell (`-`) means the name is unknown: the role alone becomes the label.
+            name_val = _clean_cell(row[col_name]) if 0 <= col_name < len(row) else ""
+            role_val = _clean_cell(row[col_role]) if 0 <= col_role < len(row) else ""
 
             if name_val and role_val:
                 if role_val.lower() == name_val.lower() or role_val.lower() in name_val.lower():

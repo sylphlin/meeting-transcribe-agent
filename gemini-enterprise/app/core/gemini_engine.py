@@ -53,6 +53,23 @@ def load_env_file():
             continue
 
 
+# Section 1 speaker table contract. Python reads this table by column POSITION, so the LLM
+# may translate the header text but must keep the six columns, their order, and `-` placeholders.
+SPEAKER_TABLE_CONTRACT = (
+    "  **Column contract (machine-read by the pipeline, CRITICAL)**:\n"
+    "  1. Output exactly these six columns in exactly this order. You may translate the header text, but never add, remove, merge, or reorder columns:\n"
+    "     `Speaker ID | Time Range | Role / Title | Name | Organization / Team | Remarks`\n"
+    "  2. Keep the original `Speaker X` / `spk_X` identifier unchanged in the first column.\n"
+    "  3. Time Range: write `MM:SS - MM:SS`. When one person holds the identifier for the whole meeting, write `-`. Never write words such as \"entire meeting\" in this cell.\n"
+    "  4. Name: write the real person name. When the name is not known, write `-`. Never write placeholders such as \"N/A\", \"Unknown\", or a translated equivalent. The pipeline then shows the Role / Title alone.\n"
+    "  | Speaker ID | Time Range | Role / Title | Name | Organization / Team | Remarks |\n"
+    "  | :--- | :--- | :--- | :--- | :--- | :--- |\n"
+    "  | `spk_0` | `00:00 - 00:04` | Meeting Host | Alice Smith | Executive Board | Opens the meeting |\n"
+    "  | `spk_0` | `07:35 - 10:20` | Keynote Speaker | Bob Jones | Architecture Dept | Same acoustic ID, different person |\n"
+    "  | `spk_1` | - | Master of Ceremonies | - | Secretariat | Name not stated; role only |"
+)
+
+
 def get_gemini_client(project_id: str = None, location: str = None) -> genai.Client:
     """
     Initialize and return a Google GenAI Client backed by Vertex AI with Application
@@ -500,11 +517,8 @@ Output strictly and exclusively Sections 1 to 5, ending immediately with the loc
 - **Estimated Date / Time**: (Inferred from context or agenda)
 - **Chairperson / Host**: (Identified meeting leader)
 - **Speaker Mapping Table**:
-  Cross-reference dialogue context, self-introductions, titles, organizations, and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role (if an acoustic ID is shared across different segments, provide the approximate Time Range):
-  | Speaker ID | Time Range (optional if unique) | Role / Title | Name | Organization / Team |
-  | :--- | :--- | :--- | :--- | :--- |
-  | `spk_0` | `00:00 - 00:04` | Meeting Host | Alice Smith | Executive Board |
-  | `spk_0` | `07:35 - 10:20` | Keynote Speaker | Bob Jones | Architecture Dept |
+  Cross-reference dialogue context, self-introductions, titles, organizations, and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role (if an acoustic ID is shared across different segments, add one row per segment with its Time Range).
+{SPEAKER_TABLE_CONTRACT}
 - **Phonetic & Entity Corrections Table**:
   Identify any proper names, participant names, or technical terms in the draft transcript that were mistranscribed due to acoustic phonetic slips or rare name mishearings:
   | Mistranscribed Term | Corrected Name / Term | Target Speaker / Context |
@@ -821,11 +835,8 @@ def analyze_video_with_transcript(
 - **Chairperson / Host**: (Identified meeting leader)
 - **Speaker Mapping Table**:
   Cross-reference the draft transcript's dialogue turns with video frames, presentation slides, attendee video boxes, nameplates, and lower-third titles.
-  If multiple people share the same acoustic ID across different time segments (under-clustering), specify the approximate Time Range for each segment:
-  | Speaker ID | Time Range (optional if unique) | Role / Title | Name | Organization / Department | Remarks / Context |
-  | :--- | :--- | :--- | :--- | :--- | :--- |
-  | `spk_0` | `00:00 - 00:04` | Meeting Host | Alice Smith | Executive Board | Opening remarks |
-  | `spk_0` | `07:35 - 10:20` | Keynote Speaker | Bob Jones | Architecture Dept | System overview presentation |
+  If multiple people share the same acoustic ID across different time segments (under-clustering), add one row per segment with its Time Range.
+{SPEAKER_TABLE_CONTRACT}
 - **Phonetic & Entity Corrections Table**:
   Cross-reference visual slide text, nameplates, and titles with the acoustic draft transcript. Identify any proper names, participant names, or technical terms that were mistranscribed due to acoustic phonetic slips or rare name mishearings:
   | Mistranscribed Term | Corrected Name / Term | Target Speaker / Context |

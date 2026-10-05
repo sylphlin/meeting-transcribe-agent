@@ -196,12 +196,37 @@ class TestRoleColumnFallback(unittest.TestCase):
         self.assertIn("**黃偉哲 (市長（主席）)**", out)
         self.assertIn("**方川和 (處長)**", out)
 
+    def test_unknown_name_dash_uses_role_only(self):
+        md = (
+            "## 1. Metadata\n\n"
+            "| Speaker ID | Time Range | Role / Title | Name | Organization | Remarks |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `Speaker 0` | - | Master of Ceremonies | - | Secretariat | Reads the agenda |\n"
+            "| `Speaker 1` | - | Mayor (Chair) | John Doe | City Hall | Chairs the meeting |\n\n"
+            "## 6. Full Verbatim Transcript\n\n"
+            "[00:01 - 00:03] **Speaker 0**: Item two.\n\n"
+            "[00:04 - 00:09] **Speaker 1**: Thank you.\n"
+        )
+        out = consolidate_meeting_minutes(md)
+        self.assertIn("**Master of Ceremonies**", out)
+        self.assertIn("**John Doe (Mayor (Chair))**", out)
+
+    def test_korean_header_parsed_by_position(self):
+        md = (
+            "| 화자 | 구간 | 직책 | 이름 | 소속 | 비고 |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `Speaker 2` | 01:00 - 02:00 | 팀장 | 김민수 | 개발팀 | 보고 |\n"
+        )
+        rules = parse_scoped_speaker_mapping(md)
+        self.assertEqual(rules[0]["name"], "김민수 (팀장)")
+        self.assertAlmostEqual(rules[0]["start"], 60.0)
+
     def test_subtitle_ground_truth_keeps_role(self):
         md = (
             "## 1. Meeting Metadata & Attendees\n\n"
             "| Speaker ID | Time Range | Role / Title | Name | Organization |\n"
             "| :--- | :--- | :--- | :--- | :--- |\n"
-            "| `Speaker 1` | Full | Host | Jane Smith | Example Corp |\n\n"
+            "| `Speaker 1` | - | Host | Jane Smith | Example Corp |\n\n"
             "## 6. Full Verbatim Transcript\n\n"
             "[00:01 - 00:03] **Speaker 2**: Hello.\n"
         )

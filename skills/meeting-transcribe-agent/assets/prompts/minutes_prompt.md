@@ -30,11 +30,18 @@ CRITICAL FORMATTING RULES:
 - **Estimated Date / Time**: Inferred from context or agenda.
 - **Chairperson / Host**: Identified meeting leader.
 - **Speaker Mapping Table**:
-  Cross-reference dialogue context (self-introductions, direct address, reporting hierarchies) and acoustic clues to map every `spk_X` or `Speaker X` identifier to a real person and role (if multiple people share the same acoustic ID across different time segments, specify the approximate Time Range):
-  | Speaker ID | Time Range (optional if unique) | Role / Title | Name | Organization / Team |
-  | :--- | :--- | :--- | :--- | :--- |
-  | `spk_0` | `00:00 - 00:04` | Meeting Host | Alice Smith | Executive Board |
-  | `spk_0` | `07:35 - 10:20` | Keynote Speaker | Bob Jones | Architecture Dept |
+  Cross-reference dialogue context (self-introductions, direct address, reporting hierarchies) and acoustic clues to map every `spk_X` or `Speaker X` identifier to a real person and role (if multiple people share the same acoustic ID across different time segments, add one row per segment with its Time Range).
+  **Column contract (machine-read by the pipeline, CRITICAL)**:
+  1. Output exactly these six columns in exactly this order. You may translate the header text, but never add, remove, merge, or reorder columns:
+     `Speaker ID | Time Range | Role / Title | Name | Organization / Team | Remarks`
+  2. Keep the original `Speaker X` / `spk_X` identifier unchanged in the first column.
+  3. Time Range: write `MM:SS - MM:SS`. When one person holds the identifier for the whole meeting, write `-`. Never write words such as "entire meeting" in this cell.
+  4. Name: write the real person name. When the name is not known, write `-`. Never write placeholders such as "N/A", "Unknown", or a translated equivalent. The pipeline then shows the Role / Title alone.
+  | Speaker ID | Time Range | Role / Title | Name | Organization / Team | Remarks |
+  | :--- | :--- | :--- | :--- | :--- | :--- |
+  | `spk_0` | `00:00 - 00:04` | Meeting Host | Alice Smith | Executive Board | Opens the meeting |
+  | `spk_0` | `07:35 - 10:20` | Keynote Speaker | Bob Jones | Architecture Dept | Same acoustic ID, different person |
+  | `spk_1` | - | Master of Ceremonies | - | Secretariat | Name not stated; role only |
 
 ## 2. Executive Summary
 - A high-level, 200–300 word executive overview synthesizing the core strategic purpose, major discussion themes, pivotal agreements, and overarching outcomes.
