@@ -183,6 +183,54 @@ class TestHybridMultilingualAlignment(unittest.TestCase):
         self.assertAlmostEqual(aligned[0]["start"], 10.0, places=2)
         self.assertAlmostEqual(aligned[3]["end"], 15.0, places=2)
 
+    def test_short_opening_sentence_simplified_to_traditional_at_late_onset(self):
+        """TC-01 & TC-03: Verify short Simplified Track A opening after 7m35s silence converts to Traditional first and locks to 455.0s."""
+        engine = AlignmentEngine()
+        macro_words = [
+            {"word": "请问各位同仁", "speaker": "Speaker 1"},
+            {"word": "对于上次会议纪录", "speaker": "Speaker 1"},
+            {"word": "有没有疑问？", "speaker": "Speaker 1"},
+            {"word": "有没有要提出来的？", "speaker": "Speaker 1"},
+        ]
+        micro_words = [
+            {"word": "請問", "start": 455.0, "end": 455.5},
+            {"word": "各位同仁", "start": 455.5, "end": 456.4},
+            {"word": "對於", "start": 456.4, "end": 456.9},
+            {"word": "上次", "start": 456.9, "end": 457.4},
+            {"word": "會議紀錄", "start": 457.4, "end": 458.5},
+            {"word": "有沒有", "start": 458.5, "end": 459.1},
+            {"word": "疑問？", "start": 459.1, "end": 459.8},
+            {"word": "有沒有要", "start": 460.0, "end": 460.8},
+            {"word": "提出來的？", "start": 460.8, "end": 461.8},
+        ]
+        aligned = engine.project_timestamps(macro_words, micro_words, prefer_micro_cjk=True)
+        turns = engine.aggregate_turns(aligned)
+        self.assertEqual(len(turns), 1)
+        self.assertEqual(
+            turns[0]["text"],
+            "請問各位同仁對於上次會議紀錄有沒有疑問？有沒有要提出來的？",
+        )
+        self.assertAlmostEqual(turns[0]["start"], 455.0, places=2)
+        self.assertAlmostEqual(turns[0]["end"], 461.8, places=2)
+
+    def test_leading_unaligned_words_anchor_to_acoustic_onset_not_zero(self):
+        """TC-01 & TC-02: Verify unaligned leading words (i == 0) anchor to Track B acoustic onset (455.0s) instead of 0.0s."""
+        engine = AlignmentEngine()
+        macro_words = [
+            {"word": "喂", "speaker": "Speaker 1"},
+            {"word": "测试", "speaker": "Speaker 1"},
+            {"word": "开始報告。", "speaker": "Speaker 2"},
+        ]
+        # Track B acoustic onset is at 455.0s (07:35), first matched anchor is at 492.0s (08:12).
+        micro_words = [
+            {"word": "雜音", "start": 455.0, "end": 455.6},
+            {"word": "開始報告。", "start": 492.0, "end": 493.5},
+        ]
+        aligned = engine.project_timestamps(macro_words, micro_words, prefer_micro_cjk=True)
+        self.assertAlmostEqual(aligned[0]["start"], 455.0, places=2)
+        self.assertGreaterEqual(aligned[1]["start"], 455.0)
+        self.assertAlmostEqual(aligned[2]["start"], 492.0, places=2)
+
 
 class TestOverlapDeduplication(unittest.TestCase):
     """Test Track B chunk window generation and 5-second overlap midpoint deduplication."""
