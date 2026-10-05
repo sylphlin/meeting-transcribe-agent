@@ -5,26 +5,18 @@ Uses Vertex AI with Application Default Credentials exclusively -- no AI Studio 
 """
 
 import concurrent.futures
-import json
 import os
 from pathlib import Path
 import random
 import re
-import subprocess
-import tempfile
 import time
-import uuid
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
 from scripts.audio_utils import (
     format_offset,
-    compress_audio_for_upload,
-    get_audio_duration,
-    find_silence_cut_points,
     safe_ascii_upload_path,
-    should_compress_audio,
     is_youtube_url,
     optimize_video_for_upload,
     fix_mojibake_filename,
@@ -59,7 +51,6 @@ def load_env_file():
                             os.environ[k] = v
         except Exception:
             continue
-
 
 
 def get_gemini_client(project_id: str = None, location: str = None) -> genai.Client:
@@ -97,58 +88,6 @@ def get_gemini_client(project_id: str = None, location: str = None) -> genai.Cli
 def _unique_raw_blob_name(local_path: Path) -> str:
     """Deterministic object key under raw/ for SHA-256 / gdrive_md5 cache hits and 2-day Lifecycle cleanup."""
     return f"raw/{local_path.name}"
-
-
-def _parse_offset_to_seconds(val) -> float:
-    """Parse Gemini timestamp offset (seconds float/int or string ending in 's') to float."""
-    if isinstance(val, (int, float)):
-        return float(val)
-    s = str(val).rstrip("s")
-    return float(s) if s else 0.0
-
-
-def _extract_transcription_parts(
-    parts,
-    lines: list,
-    raw_parts: list,
-    time_offset: float = 0.0,
-    speaker_offset: int = 0,
-) -> bool:
-    """
-    Extract audio_transcription (diarized turn) or plain text parts from a Gemini
-    response's content parts, appending into `lines`/`raw_parts` in place. Shared by
-    both the streaming and non-streaming code paths so they format output identically.
-    Returns True if any audio_transcription part was found.
-    """
-    has_at = False
-    for part in parts:
-        if getattr(part, "audio_transcription", None):
-            has_at = True
-            at = part.audio_transcription
-            spk_raw = at.speaker_label or "spk:0"
-            clean = spk_raw.replace(":", "_")
-            if speaker_offset > 0:
-                parts_spk = clean.split("_")
-                if len(parts_spk) >= 2 and parts_spk[-1].isdigit():
-                    spk_clean = f"spk_{speaker_offset + int(parts_spk[-1])}"
-                else:
-                    spk_clean = f"spk_{speaker_offset}_{clean}"
-            else:
-                spk_clean = clean
-
-            start_str = "00:00"
-            end_str = "00:00"
-            if at.words:
-                s_sec = _parse_offset_to_seconds(at.words[0].start_offset) + time_offset
-                e_sec = _parse_offset_to_seconds(at.words[-1].end_offset) + time_offset
-                start_str = format_offset(s_sec)
-                end_str = format_offset(e_sec)
-            text = (at.text or "").strip()
-            if text:
-                lines.append(f"[{start_str} - {end_str}] **{spk_clean}**: {text}")
-        elif part.text:
-            raw_parts.append(part.text)
-    return has_at
 
 
 _DURATION_UNIT_TOKEN_RE = re.compile(r'(\d+)\s*(ms|h|m|s)', re.IGNORECASE)
@@ -269,250 +208,34 @@ def transcribe_with_gemini_cloud(
     bucket_name: str,
     model_name: str = None,
     compress: bool = True,
-    language: str = "auto"
+    language: str = "auto",
+    project_id: str = None,
+    stt_location: str = None,
+    min_speakers: int = 2,
+    max_speakers: int = 10,
 ) -> tuple[str, float]:
-    """Upload audio to Cloud Storage and run cloud transcription via Vertex AI."""
+    """
+    Execute Stage 1 cloud speech transcription and diarization via Dual-Pass Chirp
+    (Track A global diarization + Track B parallel word timestamps).
+    """
     load_env_file()
-    model_name = model_name or os.environ.get("TRANSCRIBE_MODEL") or "gemini-3.5-transcribe-preview"
-    t0 = time.time()
-    upload_file_path = audio_path
-    temp_compressed = None
+    from scripts.chirp3_engine import transcribe_with_chirp3_dual_pass, validate_chirp_model
 
-    if compress:
-        needs_comp, reason = should_compress_audio(audio_path, max_size_mb=10.0, target_bitrate_kbps=48)
-        if needs_comp:
-            print(f"[*] Audio compression required: {reason}. Compressing to 48k...")
-            temp_compressed = compress_audio_for_upload(audio_path, bitrate="48k")
-            upload_file_path = temp_compressed
-        else:
-            print(f"[*] Skipping audio compression: {reason}.")
-
-    # Check total audio duration to see if segmenting is required for dedicated transcribe models.
-    # gemini-3.5-transcribe-preview accepts up to 22,500 audio tokens (~900 seconds / 15 minutes).
-    total_duration = get_audio_duration(upload_file_path)
-    chunk_threshold_sec = 840.0  # 14 minutes safety threshold (< 15 min / 22,500 tokens limit)
-
-    if "transcribe" in model_name.lower() and total_duration > chunk_threshold_sec:
-        cut_points = find_silence_cut_points(
-            upload_file_path,
-            total_duration,
-            max_chunk_sec=chunk_threshold_sec,
-            search_window_sec=60.0
-        )
-        num_chunks = len(cut_points)
-        print(f"[*] Audio duration is {format_offset(total_duration)} (> 14 min). Splitting into {num_chunks} silence-bounded segments for `{model_name}`...")
-
-        at_kwargs = {
-            "diarization": True,
-            "word_timestamp": True,
-        }
-        if language and language.lower() != "auto":
-            at_kwargs["language_codes"] = [language]
-
-        def _process_chunk(chunk_idx: int) -> tuple[int, list]:
-            chunk_start, chunk_end = cut_points[chunk_idx]
-            chunk_dur = chunk_end - chunk_start
-            print(f"[*] Preparing segment {chunk_idx + 1}/{num_chunks}: [{format_offset(chunk_start)} - {format_offset(chunk_end)}] ({format_offset(chunk_dur)})...")
-
-            temp_chunk = Path(tempfile.gettempdir()) / f"chunk_{uuid.uuid4().hex[:8]}_{chunk_idx}.m4a"
-            reenc_cmd = [
-                "ffmpeg", "-y",
-                "-ss", str(chunk_start),
-                "-t", str(chunk_dur),
-                "-i", str(upload_file_path),
-                "-vn", "-ac", "1", "-ar", "16000",
-                "-c:a", "aac", "-b:a", "48k",
-                str(temp_chunk)
-            ]
-            subprocess.run(reenc_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-
-            seg_gcs_uri = None
-            try:
-                mime_type = guess_mime_type(temp_chunk)
-                with safe_ascii_upload_path(temp_chunk) as safe_upload_path:
-                    seg_gcs_uri = upload_file_to_gcs(
-                        local_path=safe_upload_path,
-                        bucket_name=bucket_name,
-                        destination_blob_name=_unique_raw_blob_name(safe_upload_path),
-                        content_type=mime_type,
-                    )
-                file_part = types.Part.from_uri(file_uri=seg_gcs_uri, mime_type=mime_type)
-                request_kwargs = {
-                    "model": model_name,
-                    "contents": [file_part],
-                    "config": types.GenerateContentConfig(
-                        audio_transcription_config=types.AudioTranscriptionConfig(**at_kwargs)
-                    ),
-                }
-
-                def _do_chunk_generate():
-                    resp_obj = client.models.generate_content(**request_kwargs)
-                    if (not resp_obj.candidates or not resp_obj.candidates[0].content) and chunk_dur > 5.0:
-                        raise genai_errors.APIError(code=503, response_json={}, response=None)
-                    return resp_obj
-
-                resp = call_gemini_with_retry(
-                    _do_chunk_generate,
-                    op_name=f"Segment {chunk_idx + 1}/{num_chunks} transcription"
-                )
-                seg_lines = []
-                raw_parts = []
-                if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
-                    _extract_transcription_parts(
-                        resp.candidates[0].content.parts,
-                        seg_lines,
-                        raw_parts,
-                        time_offset=chunk_start,
-                        speaker_offset=chunk_idx * 50,
-                    )
-                if not seg_lines and raw_parts:
-                    # Fallback: if structured audio_transcription was omitted, retain text from raw_parts
-                    seg_lines = [p.strip() for p in raw_parts if p.strip()]
-
-                if not seg_lines:
-                    print(f"[*] Notice: Segment {chunk_idx + 1}/{num_chunks} [{format_offset(chunk_start)} - {format_offset(chunk_end)}] contains no speech turns.")
-                else:
-                    print(f"[✓] Segment {chunk_idx + 1}/{num_chunks} transcribed ({len(seg_lines)} turns).")
-                return chunk_idx, seg_lines
-            finally:
-                if seg_gcs_uri:
-                    try:
-                        delete_gcs_blob(seg_gcs_uri)
-                    except Exception:
-                        pass
-                if temp_chunk.exists():
-                    try:
-                        temp_chunk.unlink()
-                    except Exception:
-                        pass
-
-        max_workers = min(num_chunks, 4)
-        results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(_process_chunk, idx) for idx in range(num_chunks)]
-            for fut in concurrent.futures.as_completed(futures):
-                results.append(fut.result())
-
-        results.sort(key=lambda x: x[0])
-        all_lines = []
-        for _, seg_lines in results:
-            all_lines.extend(seg_lines)
-
-        raw_text = "\n\n".join(all_lines)
-        duration = time.time() - t0
-        print(f"[*] ✓ Cloud segmented transcription complete in {duration:.1f}s ({len(raw_text)} chars, {len(all_lines)} turns).")
-
-        if temp_compressed and temp_compressed.exists():
-            try:
-                temp_compressed.unlink()
-            except Exception:
-                pass
-
-        return raw_text, duration
-
-    gcs_uri = None
-    try:
-        mime_type = guess_mime_type(upload_file_path)
-        with safe_ascii_upload_path(upload_file_path) as safe_upload_path:
-            print(f"[*] Uploading audio file to Cloud Storage ({safe_upload_path.stat().st_size / (1024*1024):.1f} MB)...")
-            gcs_uri = upload_file_to_gcs(
-                local_path=safe_upload_path,
-                bucket_name=bucket_name,
-                destination_blob_name=_unique_raw_blob_name(safe_upload_path),
-                content_type=mime_type,
-            )
-        file_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=mime_type)
-
-        print(f"[*] Invoking Gemini transcription model `{model_name}` for speech recognition and turn timestamps...")
-        lines = []
-        raw_parts = []
-        has_at = False
-
-        if "transcribe" in model_name.lower():
-            at_kwargs = {
-                "diarization": True,
-                "word_timestamp": True,
-            }
-            if language and language.lower() != "auto":
-                at_kwargs["language_codes"] = [language]
-
-            request_kwargs = {
-                "model": model_name,
-                "contents": [file_part],
-                "config": types.GenerateContentConfig(
-                    audio_transcription_config=types.AudioTranscriptionConfig(**at_kwargs)
-                ),
-            }
-            # Dedicated transcribe models produce dense multi-byte CJK audio transcription tokens
-            # which can get split across SSE chunk boundaries in the Python SDK, causing JSONDecodeError.
-            # Directly use non-streaming generate_content with retry to guarantee reliable single-pass execution.
-            def _do_single_pass():
-                resp_obj = client.models.generate_content(**request_kwargs)
-                if (not resp_obj.candidates or not resp_obj.candidates[0].content) and total_duration > 5.0:
-                    raise genai_errors.APIError(code=503, response_json={}, response=None)
-                return resp_obj
-
-            resp = call_gemini_with_retry(_do_single_pass, op_name=f"Transcription ({model_name})")
-            if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
-                has_at = _extract_transcription_parts(resp.candidates[0].content.parts, lines, raw_parts)
-            elif resp.text:
-                raw_parts.append(resp.text)
-        else:
-            prompt = (
-                "Transcribe this audio recording completely and accurately. "
-                "Include precise turn timestamps in [MM:SS - MM:SS] format for every utterance. "
-                "Faithfully preserve the original spoken language and words."
-            )
-            request_kwargs = {"model": model_name, "contents": [file_part, prompt]}
-
-            try:
-                stream = client.models.generate_content_stream(**request_kwargs)
-                for chunk in stream:
-                    if not chunk.candidates or not chunk.candidates[0].content or not chunk.candidates[0].content.parts:
-                        continue
-                    if _extract_transcription_parts(chunk.candidates[0].content.parts, lines, raw_parts):
-                        has_at = True
-            except (genai_errors.UnknownApiResponseError, json.JSONDecodeError) as stream_err:
-                # The SDK's streaming (SSE) response parser can mis-split multi-byte UTF-8
-                # text (e.g. CJK transcripts) across chunk boundaries, corrupting the JSON
-                # payload mid-stream. A non-streaming call buffers the complete response
-                # before doing a single JSON parse, so it doesn't hit that code path.
-                print(f"[!] Streaming transcription failed ({stream_err}); retrying without streaming...")
-                lines = []
-                raw_parts = []
-                has_at = False
-                resp = call_gemini_with_retry(
-                    lambda: client.models.generate_content(**request_kwargs),
-                    op_name=f"Non-streaming transcription ({model_name})"
-                )
-                if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
-                    has_at = _extract_transcription_parts(resp.candidates[0].content.parts, lines, raw_parts)
-                elif resp.text:
-                    raw_parts.append(resp.text)
-
-        if has_at:
-            raw_text = "\n\n".join(lines)
-        elif raw_parts:
-            raw_text = "\n\n".join([p.strip() for p in raw_parts if p.strip()])
-        else:
-            raw_text = ""
-
-        duration = time.time() - t0
-        print(f"[*] ✓ Cloud transcription complete in {duration:.1f}s ({len(raw_text)} chars).")
-        return raw_text, duration
-
-    finally:
-        if gcs_uri:
-            try:
-                delete_gcs_blob(gcs_uri)
-            except Exception:
-                pass
-        if temp_compressed and temp_compressed.exists():
-            temp_compressed.unlink()
+    resolved_model = validate_chirp_model(model_name)
+    return transcribe_with_chirp3_dual_pass(
+        audio_path=audio_path,
+        bucket_name=bucket_name,
+        project_id=project_id,
+        stt_location=stt_location,
+        model_name=resolved_model,
+        language=language,
+        min_speakers=min_speakers,
+        max_speakers=max_speakers,
+    )
 
 
 _TURN_LINE_PREFIX_RE = re.compile(
-    r"^(\[\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*\]\s*\*\*[^*]+\*\*\s*:\s*)(.+)$"
+    r"^(\[\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*\]\s*\*\*([^*]+)\*\*\s*:\s*)(.+)$"
 )
 _TURN_BRACKET_EXTRACT_RE = re.compile(
     r"^\s*\[\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*\]\s*(?:\*\*[^*]+\*\*\s*:\s*)?(.+)$"
@@ -529,12 +252,26 @@ def refine_verbatim_transcript_chunks(
 ) -> str:
     """
     Proofread and align the written orthographic script and domain terminology of Section 6
-    dialogue turns in parallel chunks while deterministically preserving every original
-    [MM:SS - MM:SS] **spk_X**: timestamp and speaker prefix.
+    dialogue turns in parallel chunks. Also performs LLM semantic paragraph segmentation on
+    long monologues (using inline `<PARA>` markers) and re-projects physical word-level
+    timestamps onto each resulting paragraph via AlignmentEngine.
     """
+    from scripts.alignment_engine import AlignmentEngine
+    from scripts.canonicalizer import parse_timestamp_to_seconds
+    from scripts.chirp3_engine import get_last_aligned_turns
+
     turn_lines = [line.strip() for line in raw_transcript_text.splitlines() if line.strip()]
     if not turn_lines:
         return raw_transcript_text
+
+    aligned_turns_cache = get_last_aligned_turns()
+    turn_words_by_ts: dict[tuple[str, str], list[list[dict]]] = {}
+    for aturn in aligned_turns_cache:
+        t_st = format_offset(aturn.get("start") or 0.0)
+        t_et = format_offset(aturn.get("end") or 0.0)
+        w_items = aturn.get("word_items") or []
+        if w_items:
+            turn_words_by_ts.setdefault((t_st, t_et), []).append(w_items)
 
     section_1_excerpt = (
         sections_1_5.split("## 2.")[0].strip()
@@ -550,23 +287,56 @@ def refine_verbatim_transcript_chunks(
     chunks = [turn_lines[i : i + chunk_size] for i in range(0, len(turn_lines), chunk_size)]
     num_chunks = len(chunks)
 
+    def _expand_turn_with_semantic_paragraphs(
+        prefix: str,
+        ts_pair: tuple[str, str],
+        speaker_str: str,
+        new_utt: str,
+    ) -> list[str]:
+        if "<PARA>" not in new_utt:
+            return [f"{prefix}{new_utt}"]
+        paras = [p.strip() for p in re.split(r"\s*<PARA>\s*", new_utt) if p.strip()]
+        if len(paras) <= 1:
+            clean_single = paras[0] if paras else new_utt.replace("<PARA>", "").strip()
+            return [f"{prefix}{clean_single}"]
+
+        turn_words = []
+        if ts_pair in turn_words_by_ts and turn_words_by_ts[ts_pair]:
+            turn_words = turn_words_by_ts[ts_pair][0]
+
+        fallback_st = parse_timestamp_to_seconds(ts_pair[0])
+        fallback_et = parse_timestamp_to_seconds(ts_pair[1])
+        projected = AlignmentEngine().reproject_semantic_paragraphs(
+            turn_words=turn_words,
+            paragraphs=paras,
+            fallback_start=fallback_st,
+            fallback_end=fallback_et,
+        )
+        expanded_lines: list[str] = []
+        for p_item in projected:
+            p_st_str = format_offset(p_item["start"])
+            p_et_str = format_offset(p_item["end"])
+            expanded_lines.append(f"[{p_st_str} - {p_et_str}] **{speaker_str}**: {p_item['text']}")
+        return expanded_lines
+
     def _process_chunk(chunk_idx: int) -> tuple[int, list[str]]:
         chunk_lines = chunks[chunk_idx]
         chunk_body = "\n".join(chunk_lines)
         prompt_chunk = f"""# Role & Objective
-Proofread and align the orthographic script and domain terminology of the following verbatim transcript segment.
+Proofread and align the orthographic script, domain terminology, and semantic paragraph breaks of the following verbatim transcript segment.
 
 {glossary_block}
 # Reference Context (Section 1 Metadata & Entity Tables)
 {section_1_excerpt}
 
 # Strict Rules
-1. Preserve every line's exact bracketed timestamp `[MM:SS - MM:SS]` (or `[HH:MM:SS - HH:MM:SS]`) and speaker tag `**spk_X**:` without modification.
-2. Do NOT merge, drop, reorder, or add any dialogue lines. Output the exact same number of lines in the exact same order.
+1. Preserve every line's exact bracketed timestamp `[MM:SS - MM:SS]` (or `[HH:MM:SS - HH:MM:SS]`) and speaker tag `**Speaker X**:` (or `**spk_X**:`) at the start of the line.
+2. Do NOT merge, drop, reorder, or add new dialogue lines. Output the exact same number of lines in the exact same order.
 3. Keep the original spoken language and words of each participant without translating between different spoken languages.
 4. Align the written orthographic script (such as Traditional vs. Simplified characters) to match the script used in the Reference Context ({target_lang}).
 5. Correct acoustic phonetic mishearings of participant names, titles, organizations, and technical terms using the Reference Context and Global Consistency Glossary.
-6. Output ONLY the refined transcript lines. Do not include Markdown code fences or commentary.
+6. Semantic Paragraph Segmentation for Long Turns: When a single turn line contains a long uninterrupted monologue or presentation (more than 4 sentences or 300 characters) that covers multiple sub-topics, insert the inline marker ` <PARA> ` at natural semantic topic transitions within that same line (keep it on one line). Leave short conversational turns without ` <PARA> `.
+7. Output ONLY the refined transcript lines. Do not include Markdown code fences or commentary.
 
 # Transcript Segment to Proofread
 {chunk_body}
@@ -601,11 +371,17 @@ Proofread and align the orthographic script and domain terminology of the follow
                 continue
             prefix = m_orig.group(1)
             ts_pair = (m_orig.group(2), m_orig.group(3))
+            speaker_str = m_orig.group(4).strip()
             if ts_pair in by_ts and by_ts[ts_pair]:
                 new_utt = by_ts[ts_pair].pop(0)
-                refined_chunk.append(f"{prefix}{new_utt}")
+                refined_chunk.extend(
+                    _expand_turn_with_semantic_paragraphs(prefix, ts_pair, speaker_str, new_utt)
+                )
             elif len(ordered_utterances) == len(chunk_lines):
-                refined_chunk.append(f"{prefix}{ordered_utterances[line_i]}")
+                new_utt = ordered_utterances[line_i]
+                refined_chunk.extend(
+                    _expand_turn_with_semantic_paragraphs(prefix, ts_pair, speaker_str, new_utt)
+                )
             else:
                 refined_chunk.append(orig_line)
 

@@ -45,7 +45,7 @@ When modifying code, prompts, infrastructure scripts, or documentation in this r
 ### 5. Architectural & Model Invariants
 - **Runtime Dependencies**: 100% Python + standard browser HTML/CSS/JavaScript. Never introduce Node.js or npm dependencies.
 - **Standalone Audio Offline Playback**: `assets/audio_player_template.html` (2-pane with bottom floating audio controller) must function 100% offline via `file:///...`. `assets/video_player_template.html` provides the 3-pane layout with YouTube IFrame API & native HTML5 video player.
-- **Designated Models via `.env`**: Load models dynamically via `TRANSCRIBE_MODEL` and `SUMMARY_MODEL` from `.env` / `.env.example`. Never hardcode non-designated or invented model IDs.
+- **Designated Models via `.env`**: Load models dynamically via `TRANSCRIBE_MODEL` (Chirp-series only, e.g., `chirp_3`) and `SUMMARY_MODEL` (`gemini-3.8-flash`) from `.env` / `.env.example`. Never hardcode non-designated or invented model IDs.
 - **Mandatory Unit Test Gate**: Run the complete unit test suite before committing any change:
   ```bash
   python3 -m unittest discover -s tests -v

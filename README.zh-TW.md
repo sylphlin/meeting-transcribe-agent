@@ -2,14 +2,14 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Google GenAI SDK](https://img.shields.io/badge/Google%20GenAI%20SDK-v1.0+-4285F4.svg)](https://github.com/google-gemini/generative-ai-python)
-[![Gemini 3.5 Transcribe](https://img.shields.io/badge/Gemini%203.5-Transcribe-orange.svg)](https://ai.google.dev/)
+[![Cloud STT v2 Chirp 3](https://img.shields.io/badge/Cloud%20STT%20v2-Chirp%203-orange.svg)](https://cloud.google.com/speech-to-text)
 [![Gemini 3.8 Flash](https://img.shields.io/badge/Gemini%203.8-Flash-yellow.svg)](https://ai.google.dev/)
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ## 專案總覽 (Overview)
 
-**Meeting Transcribe Agent** 是基於 **Google Gemini 3.5 Transcribe** 與 **Gemini 3.8 Flash** 的多模態會議記錄與逐字稿生成系統。系統支援 YouTube 網址、本地影片檔、Google Drive 分享連結與純音訊錄音檔。每次執行皆會產出結構化 Markdown 會議記錄與獨立的互動式 HTML 播放器。
+**Meeting Transcribe Agent** 是基於 **Google Cloud Speech-to-Text v2 雙軌 Chirp 3 (`chirp_3`)** 與 **Gemini 3.8 Flash (`gemini-3.8-flash`)** 的多模態會議記錄與逐字稿生成系統。系統支援 YouTube 網址、本地影片檔、Google Drive 分享連結與純音訊錄音檔。每次執行皆會產出結構化 Markdown 會議記錄與獨立的互動式 HTML 播放器。
 
 ### 三大專屬處理管線
 
@@ -21,14 +21,28 @@
 2. **本地影片雙階段融合管線 (Acoustic Ground Truth + Vision Fusion)**：
    - **內嵌字幕提取**：自動檢查影片容器中的內嵌字幕軌（`mov_text`, `srt`, `vtt`）或同名 `.srt` 字幕檔，作為與會者名單與議程參考。
    - **Stage 0（專有名詞表與語系偵測）**：建立領域專有名詞對照表，並偵測主要口語 `BCP-47` 語言代碼（例如 `cmn-Hant-TW`、`en-US`、`ja-JP`）。
-   - **Stage 1（聲學基準語音轉錄）**：提取 16 kHz 單聲道音訊，透過 **Gemini 3.5 Transcribe**（預設）或 **本地 Whisper + Sherpa-ONNX**（明確指定離線模式時）進行語音轉錄，鎖定物理時間戳 `[MM:SS - MM:SS]` 與語者分段。
-   - **Stage 2（多模態視覺融合與分塊逐字稿校對）**：大型影片（>250 MB）自動以 Apple Silicon `VideoToolbox` 硬體加速壓縮為 720p H.264（`10 fps`、`1 秒 GOP -g 10`、`+faststart`，具備 `libx264` 自動降級）以加速雲端上傳與 Agentic 投影片跳轉抽幀，並連同 Stage 1 逐字稿送入 **Gemini 3.8 Flash**。模型會讀取簡報畫面與桌牌以生成第 1–5 節摘要，並以 60 行對話為單位平行校對第 6 節逐字稿的字體（如轉換為臺灣正體中文）與專有名詞，同時強制鎖定原始時間戳。
+   - **Stage 1（雙軌 Chirp 3 聲學基準語音轉錄）**：提取 16 kHz 單聲道 MP3 音訊，透過 **雙軌 Cloud Speech-to-Text v2 Chirp 3 (`chirp_3`)**（預設）或 **本地 Whisper + Sherpa-ONNX**（明確指定離線模式時）進行語音轉錄，鎖定全域一致的語者代號（`Speaker 1`, `Speaker 2`）與物理逐字時間戳 `[MM:SS - MM:SS]`。
+   - **Stage 2（多模態視覺融合、語意分段與分塊校對）**：大型影片（>250 MB）自動以 Apple Silicon `VideoToolbox` 硬體加速壓縮為 720p H.264（`10 fps`、`1 秒 GOP -g 10`、`+faststart`，具備 `libx264` 自動降級）以加速雲端上傳與 Agentic 投影片跳轉抽幀，並連同 Stage 1 逐字稿送入 **Gemini 3.8 Flash**。模型讀取簡報畫面與桌牌以生成第 1–5 節摘要，並以 60 行對話為單位平行校對第 6 節逐字稿的字體（如轉換為臺灣正體中文）、專有名詞與長篇獨白語意分段（`<PARA>`），再由系統將語意段落精準反推回物理逐字時間戳。
    - **確定性語者組裝**：Python 程式依據字幕重疊、多模態時段規則與交接語氣整合真實人名與職稱，確保零時間戳偏移。
 
 3. **純音訊高精準管線 (Voice Recorders & Podcasts)**：
    - **Stage 0（專有名詞表與語系偵測）**：從音訊提取專有名詞並識別主要口語語言代碼。
-   - **Stage 1（聲學語音轉錄）**：使用 **Gemini 3.5 Transcribe**（或離線 Whisper + Sherpa-ONNX）產出帶時間戳的語者對話。
-   - **Stage 2（高階摘要與字體校對）**：使用 **Gemini 3.8 Flash** 生成高階主管摘要、行動項目表，並平行校對第 6 節逐字稿字體與術語。
+   - **Stage 1（雙軌 Chirp 3 聲學語音轉錄）**：使用 **雙軌 Chirp 3 (`chirp_3`)**（或離線 Whisper + Sherpa-ONNX）產出全域語者分群與帶時間戳的語者對話。
+   - **Stage 2（高階摘要、語意分段與字體校對）**：使用 **Gemini 3.8 Flash** 生成高階主管摘要、行動項目表，並針對第 6 節逐字稿進行平行正字校對與語意段落切分。
+
+---
+
+### 為何採用「雙軌 Chirp 3 (Dual-Pass Chirp 3)」架構？
+
+傳統將長音訊切塊（Chunking）進行語音轉錄的做法，在長篇會議中會面臨兩大結構性瓶頸：
+1. **跨區塊語者代號重置與交接吞噬 (Speaker Drift & Handover Swallowing)**：每 15 分鐘切分音訊會導致各區塊的語者聲紋代號重置（`spk_0`, `spk_1` 無法跨區塊連貫）；且自回歸模型在主持人引言交接給下一位講者時，容易將兩人的發言合併為同一語者。
+2. **Cloud STT v2 逐字時間戳的 20 分鐘上限**：Google Cloud Speech-to-Text v2 (`chirp_3`) 在開啟 `enableWordTimeOffsets=True` 時，單次 `BatchRecognize` 限制音訊長度不得超過 20 分鐘；但當 `enableWordTimeOffsets=False` 時，單次請求可直接處理長達 8 小時的完整音訊並維持全域語者分群。
+
+為了同時兼顧**「跨數小時的全域語者一致性」**與**「毫秒級逐字時間戳」**，Stage 1 採用雙軌平行架構：
+- **Track A — 全域巨觀語者分群 (Macro Global Diarization)**：以不切塊的完整 16 kHz 單聲道音訊執行單次 `BatchRecognize`（`enableSpeakerDiarization=True`、`enableWordTimeOffsets=False`），在整場會議中維持單一全域聲紋空間，精準捕捉快速語者切換。
+- **Track B — 微觀逐字時間戳提取 (Micro Word Timestamps)**：將音訊切分為 18 分鐘（`1080s`）並帶 5 秒重疊視窗的平行分塊（`enableWordTimeOffsets=True`、`enableSpeakerDiarization=False`），於重疊區間中點自動去重，確保時間戳嚴格單調遞增。
+- **中日韓字元與西文單詞混合 LCS 對齊 (`AlignmentEngine`)**：透過混合式中日韓單字元 + 西文單詞最長公共子序列（LCS）演算法，將 Track B 的物理逐字時間戳 100% 投射至 Track A 的全域語者文字流，並內建重複迴圈抑制（Repetition Loop Suppression）與缺漏時間戳線性插值。
+- **Stage 2 語意段落分段與物理時間戳反推**：當單一講者進行數分鐘長篇發言時，**Gemini 3.8 Flash** 會在 Stage 2 校對時依主題轉換插入 `<PARA>` 語意分段標記；`AlignmentEngine` 隨即根據底層逐字時間戳反推出每個語意段落的精準起訖秒數，並在互動式播放器中以同語者視覺串接卡片（`isGrouped`）呈現，兼顧閱讀舒適度與獨立跳轉播放。
 
 ---
 
@@ -41,10 +55,10 @@
    - 透過 **Gemini 3.8 Flash** 直接雲端串流即可在單次請求中同時分析影音，免除本地下載。
 2. **本地影片檔**：
    - 本地影片缺乏雲端預先索引的聲學時鐘。
-   - 先由 Stage 1 聲學 ASR 鎖定物理時間戳，再由 Stage 2 視覺融合讀取投影片與桌牌，可避免長影片時間軸漂移與輸出截斷。
+   - 先由 Stage 1 雙軌 Chirp 3 鎖定全域語者與物理時間戳，再由 Stage 2 視覺融合讀取投影片與桌牌，可避免長影片時間軸漂移與輸出截斷。
 3. **純音訊錄音**：
    - 錄音筆與 Podcast 不含視覺畫面。
-   - 使用專用聲學模型處理語音，每秒僅消耗約 32 Tokens，具備最佳 Token 經濟效益。
+   - 使用專用聲學模型處理全域語者分群與逐字時間戳，具備最佳成本與準確度效益。
 
 ---
 
@@ -54,7 +68,7 @@
 > 實際 Token 消耗取決於語音密度與畫面變化頻率。以下倍數為長篇會議之實測基準參考。
 
 * **1. 純音訊管線（`~1x` 基準值）**：
-  - **消耗量**：每秒約 32 Tokens（每小時約 10 萬 Tokens）。
+  - **消耗量**：Stage 1 由 Cloud STT v2 (`chirp_3`) 執行聲學轉錄，Stage 2 由 **Gemini 3.8 Flash** 處理純文字合成與校對。
   - **適用場景**：純音訊檔案（`meeting_recording.mp3`、Podcast、訪談），兼具精準時間戳與最低 Token 成本。
 * **2. Gemini Agentic 影片理解（`~2x` 基準值）**：
   - **消耗量**：約為純音訊基準值的 2 倍。
@@ -69,28 +83,29 @@
 
 ### 核心功能
 - **多來源媒體輸入**：支援 YouTube 網址、Google Drive 分享連結、本地影片檔與本地音訊檔。
+- **雙軌 Chirp 3 全域語者分群**：徹底消除長篇會議跨切塊語者代號漂移與主持人交接吞噬問題。
 - **內嵌字幕提取**：自動探測影片容器中的 `mov_text`、`srt` 與 `vtt` 字幕軌以建立出席名單與時間軸參考。
-- **階層式語者正名**：結合畫面桌牌、字卡與口頭介紹，將代號（`spk_0`, `spk_1`）對應至真實姓名與職稱。
-- **Stage 2 分塊逐字稿正字校對**：以 60 行對話為單位平行校對第 6 節逐字稿，統一目標正體/繁體字形與領域專有名詞，且不更動時間戳。
+- **階層式語者正名**：結合畫面桌牌、字卡與口頭介紹，將代號（`Speaker 1`, `spk_0`）對應至真實姓名與職稱。
+- **Stage 2 分塊正字校對與語意分段**：以 60 行對話為單位平行校對第 6 節逐字稿，統一目標正體/繁體字形與領域專有名詞，並將長篇獨白切分為具備物理時間戳的語意段落。
 - **動態多語系在地化**：第 1–5 節標題、屬性欄位與表格依目標語系動態生成，第 6 節則嚴格保留各語者的原始發言語言。
 - **純文字專業排版**：遵守零 Emoji 規範，所有章節標題與表格皆採用純文字企業級排版。
-- **零依賴互動式 HTML 播放器**：產出三欄式影片播放器（`video_player_template.html`）或支援 100% 離線 `file://` 開啟的二欄式音訊播放器（`audio_player_template.html`）。
+- **零依賴互動式 HTML 播放器**：產出三欄式影片播放器（`video_player_template.html`）或支援 100% 離線 `file://` 開啟的二欄式音訊播放器（`audio_player_template.html`），支援同語者連續段落視覺合併（`isGrouped`）。
 
 ### 適用場景
 1. **政府與市政會議**：直接處理 YouTube 直播會議，從畫面桌牌自動辨識官員姓名與職稱。
 2. **技術研討會與演講**：結合簡報投影片文字與演講內容，整理出結構化技術摘要。
-3. **多人高階主管會議**：在數小時的長篇會議中精準追蹤語者切換與待辦行動項目。
+3. **多人高階主管會議**：在數小時的長篇會議中維持全域一致的語者追蹤與待辦行動項目。
 4. **離線本地轉錄需求**：在網路受限或機密環境下，明確指定本地離線模式（`mlx-whisper` 或 `faster-whisper` 搭配 Sherpa-ONNX）。
 
 ---
 
 ## 雙引擎架構 (Dual-Engine Architecture)
 
-### 1. 雲端 Vertex AI 模式（預設）
-* **雙模型協同**：由 **Gemini 3.5 Transcribe**（`TRANSCRIBE_MODEL`）負責聲學語音轉錄，**Gemini 3.8 Flash**（`SUMMARY_MODEL`）負責多模態分析與分塊校對。
-* **智慧音訊前處理**：自動檢測音訊位元率，並將超過 25 分鐘的長音訊於靜音處切分為 20 分鐘音訊塊平行轉錄。
-* **確定性前綴鎖定**：在第 6 節每個校對後的語句前強制還原 Stage 1 的 `[MM:SS - MM:SS] **spk_X**:` 前綴，杜絕時間戳錯位或輸出截斷。
-* **GCS 雙層生命週期管理**：暫存於 `gs://<bucket>/raw/` 的原始媒體於 2 天後自動刪除，最終產出物則保留 15 天。
+### 1. 雲端雙軌 Chirp 3 + Vertex AI 模式（預設）
+* **雙模型協同**：由 **Cloud Speech-to-Text v2 Chirp 3**（`TRANSCRIBE_MODEL=chirp_3`，僅限 Chirp 系列模型）負責雙軌聲學語者分群與逐字時間戳，**Gemini 3.8 Flash**（`SUMMARY_MODEL=gemini-3.8-flash`）負責多模態分析、語意分段與分塊校對。
+* **雙軌平行執行**：同時啟動 Track A（不切塊全域語者分群）與 Track B（18 分鐘平行切塊逐字時間戳 + 5 秒重疊區間中點去重）。
+* **確定性時間戳投射與反推**：以中日韓字元與西文單詞混合 LCS 演算法對齊雙軌時間戳，並將 Stage 2 語意分段反推回物理逐字邊界。
+* **GCS 雙層生命週期管理**：暫存於 `gs://<bucket>/raw/` 的原始媒體於推論完成後在 `finally` 區塊即時清理（並由 2 天生命週期規則兜底），最終產出物則保留 15 天。
 
 ### 2. 本地離線模式（僅限明確要求）
 * **明確啟用機制**：僅在使用者於對話中明確要求「本地/離線轉錄」時啟動，系統絕不自動降級或靜默切換。
@@ -201,28 +216,28 @@ flowchart TD
         GeminiFlash["Google Gemini 3.8 Flash<br>• 原生 Agentic 影片理解<br>• 動態影格瀏覽<br>• 桌牌與投影片 OCR"]:::videoStyle
     end
 
-    subgraph SharedASR["Stage 0 & Stage 1: 詞彙表與聲學 ASR 核心"]
+    subgraph SharedASR["Stage 0 & Stage 1: 詞彙表與雙軌 Chirp 3 ASR 核心"]
         ExtractTrack["音訊前處理 & Stage 0 詞彙表<br>• 提取 16 kHz 單聲道音訊<br>• 偵測口語 BCP-47 語系代碼<br>• 建立領域專有名詞表"]:::asrStyle
         ASREngine{"ASR 引擎選擇"}:::asrStyle
-        ASR_Gemini["雲端預設: Gemini 3.5 Transcribe<br>• 物理時間戳 [MM:SS - MM:SS]<br>• 原生語者分段"]:::asrStyle
+        ASR_Chirp["雲端預設: 雙軌 Chirp 3 (STT v2)<br>• Track A: 不切塊全域語者分群<br>• Track B: 平行分塊逐字時間戳<br>• 中日韓字元/西文單詞混合 LCS 對齊"]:::asrStyle
         ASR_Whisper["離線指定: 本地 Whisper<br>• Apple Silicon MLX / Faster-Whisper<br>• Sherpa-ONNX 聲紋分群"]:::asrStyle
-        RawTranscript["Stage 1 原始逐字稿<br>• 鎖定物理時間戳<br>• 初始語者代號 (spk_0, spk_1)"]:::asrStyle
+        RawTranscript["Stage 1 原始逐字稿<br>• 鎖定物理時間戳<br>• 全域語者代號 (Speaker 1, Speaker 2)"]:::asrStyle
 
         ExtractTrack --> ASREngine
-        ASREngine -- "雲端 (預設)" --> ASR_Gemini --> RawTranscript
+        ASREngine -- "雲端 (預設)" --> ASR_Chirp --> RawTranscript
         ASREngine -- "本地離線 (明確要求時)" --> ASR_Whisper --> RawTranscript
         O -. "注入背景脈絡" .-> ExtractTrack
     end
 
-    subgraph Stage2Divergence["Stage 2: 多模態綜合與分塊正字校對"]
+    subgraph Stage2Divergence["Stage 2: 多模態綜合、語意分段與分塊正字校對"]
         subgraph LocalVideoStage2["本地影片: 視覺融合"]
             Stage2Video["Google Gemini 3.8 Flash<br>• 投影片與桌牌視覺 OCR<br>• 對應語者 ID 至真實姓名<br>• 綜合生成第 1-5 節"]:::fusionStyle
-            Deterministic["確定性組裝 & 分塊正字校對<br>• 60 行平行逐字稿正字校對<br>• 強制鎖定 Stage 1 物理時間戳"]:::fusionStyle
+            Deterministic["確定性組裝 & 分塊正字校對<br>• 60 行平行逐字稿正字校對<br>• 語意分段 (<PARA>) 時間戳反推"]:::fusionStyle
             Stage2Video --> Deterministic
         end
 
         subgraph AudioStage2["純音訊: 語意重構"]
-            Restructure["Google Gemini 3.8 Flash<br>• 綜合生成第 1-5 節<br>• 60 行平行逐字稿正字校對<br>• 純文字標題 (無 Emoji)"]:::audioStyle
+            Restructure["Google Gemini 3.8 Flash<br>• 綜合生成第 1-5 節<br>• 60 行平行校對與 <PARA> 語意分段<br>• 純文字標題 (無 Emoji)"]:::audioStyle
         end
     end
 
@@ -270,7 +285,7 @@ flowchart TD
    - **Windows**：`winget install Gyan.FFmpeg`
 
 2. **設定 Google Cloud ADC 驗證**：
-   執行以下指令以授權 Vertex AI 與 Cloud Storage 存取權限：
+   執行以下指令以授權 Vertex AI、Cloud Speech-to-Text v2 與 Cloud Storage 存取權限：
    ```bash
    gcloud auth application-default login
    ```
@@ -304,9 +319,9 @@ flowchart TD
 3. **初始化 Google Cloud 環境 (`./setup.sh`)**：
    執行 `setup.sh` 自動完成雲端環境設定：
    - 驗證 ADC 憑證狀態。
-   - 啟用 Vertex AI、Cloud Storage 與 Google Drive API。
+   - 啟用 Vertex AI、Cloud Speech-to-Text、Cloud Storage 與 Google Drive API。
    - 建立儲存桶並設定 CORS 與雙層生命週期規則（`raw/`：2 天；產出物：15 天）。
-   - 自動產生 `.env` 設定檔。
+   - 自動產生 `.env` 設定檔（`TRANSCRIBE_MODEL=chirp_3`、`SUMMARY_MODEL=gemini-3.8-flash`、`STT_LOCATION=us`）。
    ```bash
    cd ~/.gemini/config/plugins/meeting-transcribe-agent
    chmod +x setup.sh
@@ -328,7 +343,7 @@ meeting-transcribe-agent/
 ├── skills/
 │   └── meeting-transcribe-agent/                         # 標準技能套件主幹（Single Source of Truth）
 │       ├── SKILL.md                                      # 技能規範與 Agent 專用 CLI 參數參考手冊
-│       ├── scripts/                                      # 核心轉錄、視覺融合與播放器模組實體目錄 (SSOT)
+│       ├── scripts/                                      # 核心轉錄、雙軌 Chirp 3、對齊引擎與視覺融合模組 (SSOT)
 │       └── assets/                                       # 播放器模板與提示詞規範實體目錄 (SSOT)
 ├── AGENTS.md                                             # 工作區與開發工程規範（Part I 執行守則 & Part II 開發規範）
 └── setup.sh / deploy.sh                                  # 原生 gcloud 雲端環境配置與部署腳本
@@ -371,7 +386,7 @@ meeting-transcribe-agent/
 # 步驟 1：授權包含 Google Drive 唯讀權限的 ADC
 gcloud auth application-default login --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
 
-# 步驟 2：啟用 Vertex AI / GCS / Drive API 並建立雙層生命週期規則
+# 步驟 2：啟用 Vertex AI / Cloud Speech-to-Text / GCS / Drive API 並建立雙層生命週期規則
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
@@ -379,8 +394,8 @@ gcloud auth application-default login --scopes="https://www.googleapis.com/auth/
 
 | 情境 | Antigravity 指令範例 | 快取與自動化處理行為 |
 | :--- | :--- | :--- |
-| **情境 A：Google Drive 上的會議影片**<br/>*(MP4 / MOV)* | `/meeting-transcribe-agent 影片: https://drive.google.com/file/d/FILE_ID/view` | 透過 Drive API v3 檢查 `md5Checksum`、快取至 `gdrive_inputs/`、還原 UTF-8 檔名、提取 16 kHz 音訊、暫存 720p 影片至 GCS `raw/`，並執行 Stage 1 + Stage 2 視覺融合。 |
-| **情境 B：Google Drive 上的會議錄音**<br/>*(M4A / MP3 / WAV)* | `/meeting-transcribe-agent 檔案: https://drive.google.com/file/d/FILE_ID/view, 議程: @agenda.md` | 驗證 MD5 快取、執行 Stage 0 語系與專有名詞偵測，並以 Gemini 3.5 Transcribe 與 Gemini 3.8 Flash 產出會議記錄。 |
+| **情境 A：Google Drive 上的會議影片**<br/>*(MP4 / MOV)* | `/meeting-transcribe-agent 影片: https://drive.google.com/file/d/FILE_ID/view` | 透過 Drive API v3 檢查 `md5Checksum`、快取至 `gdrive_inputs/`、還原 UTF-8 檔名、提取 16 kHz 音訊、暫存 720p 影片至 GCS `raw/`，並執行 Stage 1 雙軌 Chirp 3 + Stage 2 視覺融合。 |
+| **情境 B：Google Drive 上的會議錄音**<br/>*(M4A / MP3 / WAV)* | `/meeting-transcribe-agent 檔案: https://drive.google.com/file/d/FILE_ID/view, 議程: @agenda.md` | 驗證 MD5 快取、執行 Stage 0 語系與專有名詞偵測，並以雙軌 Chirp 3 (`chirp_3`) 與 Gemini 3.8 Flash 產出會議記錄。 |
 
 ### 3. GCS 儲存桶雙層自動清理規則（`raw/` 2 天 / 產出物 15 天）
 

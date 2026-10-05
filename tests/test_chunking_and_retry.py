@@ -7,7 +7,6 @@ from google.genai import errors as genai_errors
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "meeting-transcribe-agent"))
 from scripts.gemini_engine import call_gemini_with_retry, generate_minutes_with_gemini
-from scripts.audio_utils import find_silence_cut_points
 
 
 class TestGeminiRetry(unittest.TestCase):
@@ -54,23 +53,6 @@ class TestGeminiRetry(unittest.TestCase):
         self.assertEqual(mock_fn.call_count, 1)
 
 
-class TestSilenceChunking(unittest.TestCase):
-    def test_short_audio_no_split(self):
-        cuts = find_silence_cut_points(Path("dummy.mp3"), total_duration=600.0, max_chunk_sec=840.0)
-        self.assertEqual(cuts, [(0.0, 600.0)])
-
-    def test_long_audio_fallback_split(self):
-        total_dur = 2000.0  # ~33 minutes
-        cuts = find_silence_cut_points(Path("nonexistent.mp3"), total_duration=total_dur, max_chunk_sec=840.0, search_window_sec=60.0)
-        self.assertTrue(len(cuts) >= 3)
-        self.assertEqual(cuts[0][0], 0.0)
-        self.assertEqual(cuts[-1][1], total_dur)
-        for i in range(len(cuts) - 1):
-            self.assertEqual(cuts[i][1], cuts[i+1][0])
-            dur = cuts[i][1] - cuts[i][0]
-            self.assertLessEqual(dur, 840.0)
-
-
 class TestStage2VerbatimAssembly(unittest.TestCase):
     @patch("scripts.gemini_engine.call_gemini_with_retry")
     def test_generate_minutes_deterministic_assembly(self, mock_retry):
@@ -80,8 +62,8 @@ class TestStage2VerbatimAssembly(unittest.TestCase):
 - **講者對照表**:
   | Speaker ID | Role / Title | Name | Organization / Team |
   | :--- | :--- | :--- | :--- |
-  | `spk_0, spk_50` | 總經理 | 林大同 | 營運處 |
-  | `spk_1` | 產品長 | 陳小芬 | 產品處 |
+  | `Speaker 1` | 總經理 | 林大同 | 營運處 |
+  | `Speaker 2` | 產品長 | 陳小芬 | 產品處 |
 
 ## 2. 執行摘要
 本次會議聚焦於第四季產品佈署時程與系統架構優化。
@@ -102,9 +84,9 @@ class TestStage2VerbatimAssembly(unittest.TestCase):
         mock_retry.return_value = mock_gemini_response
 
         raw_transcript = (
-            "[00:01 - 00:05] **spk_0**: 各位同仁早安，我們今天開始討論專案進度。\n\n"
-            "[00:06 - 00:10] **spk_1**: 好的，產品端已經準備就緒。\n\n"
-            "[15:00 - 15:05] **spk_50**: 非常好，請按照計畫推動。"
+            "[00:01 - 00:05] **Speaker 1**: 各位同仁早安，我們今天開始討論專案進度。\n\n"
+            "[00:06 - 00:10] **Speaker 2**: 好的，產品端已經準備就緒。\n\n"
+            "[15:00 - 15:05] **Speaker 1**: 非常好，請按照計畫推動。"
         )
 
         mock_client = MagicMock()
@@ -121,9 +103,8 @@ class TestStage2VerbatimAssembly(unittest.TestCase):
         self.assertIn("**林大同 (總經理)**: 非常好，請按照計畫推動。", final_text)
 
         sec6_part = final_text.split("## 6. 完整逐字記錄")[1]
-        self.assertNotIn("spk_0", sec6_part)
-        self.assertNotIn("spk_50", sec6_part)
-        self.assertNotIn("spk_1", sec6_part)
+        self.assertNotIn("Speaker 1", sec6_part)
+        self.assertNotIn("Speaker 2", sec6_part)
 
     @patch("scripts.gemini_engine.call_gemini_with_retry")
     def test_entity_corrections_and_handover_alignment(self, mock_retry):

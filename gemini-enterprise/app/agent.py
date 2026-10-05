@@ -34,6 +34,8 @@ except Exception:
     pass
 
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+os.environ.setdefault("STT_LOCATION", "us")
+os.environ.setdefault("TRANSCRIBE_MODEL", "chirp_3")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
 AGENT_INSTRUCTION = """You are the official Gemini Enterprise Meeting Intelligence & Transcription Specialist.

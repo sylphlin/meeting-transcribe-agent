@@ -182,8 +182,10 @@ echo ""
 echo "[*] Step 1: Enabling required Google Cloud APIs..."
 REQUIRED_APIS=(
     "aiplatform.googleapis.com"
+    "speech.googleapis.com"
     "storage.googleapis.com"
-    "drive.googleapis.com iamcredentials.googleapis.com"
+    "drive.googleapis.com"
+    "iamcredentials.googleapis.com"
 )
 if [ "$CREATE_SA" = true ]; then
     REQUIRED_APIS+=("iam.googleapis.com")
@@ -293,6 +295,10 @@ if [ "$CREATE_SA" = true ]; then
             --condition=None --quiet 2>/dev/null || true
         gcloud projects add-iam-policy-binding "$PROJECT_ID" \
             --member="serviceAccount:$SERVICE_ACCOUNT" \
+            --role="roles/speech.client" \
+            --condition=None --quiet 2>/dev/null || true
+        gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+            --member="serviceAccount:$SERVICE_ACCOUNT" \
             --role="roles/logging.logWriter" \
             --condition=None --quiet 2>/dev/null || true
 
@@ -309,17 +315,18 @@ if [ "$CREATE_SA" = true ]; then
                 --project="$PROJECT_ID" --quiet 2>/dev/null || true
         fi
     else
-        echo "    [Dry-Run] Would ensure service account $SERVICE_ACCOUNT exists with roles/aiplatform.user and roles/storage.objectUser."
+        echo "    [Dry-Run] Would ensure service account $SERVICE_ACCOUNT exists with roles/aiplatform.user, roles/speech.client, and roles/storage.objectUser."
     fi
 fi
 
-# Grant roles/storage.objectUser to Vertex AI Service Agents
+# Grant roles/storage.objectUser to Vertex AI & Cloud Speech Service Agents
 if [ -n "$PROJECT_NUMBER" ] && [ "$DRY_RUN" = false ]; then
     echo ""
-    echo "[*] Step 4: Ensuring Vertex AI Service Agents access to gs://$BUCKET_NAME..."
+    echo "[*] Step 4: Ensuring Vertex AI and Cloud Speech Service Agents access to gs://$BUCKET_NAME..."
     RE_AGENTS=(
         "service-${PROJECT_NUMBER}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
         "service-${PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com"
+        "service-${PROJECT_NUMBER}@gcp-sa-speech.iam.gserviceaccount.com"
         "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
     )
     for sa in "${RE_AGENTS[@]}"; do
@@ -327,7 +334,7 @@ if [ -n "$PROJECT_NUMBER" ] && [ "$DRY_RUN" = false ]; then
             --member="serviceAccount:$sa" \
             --role="roles/storage.objectUser" --quiet 2>/dev/null || true
     done
-    echo "[✓] Vertex AI service agents access verified."
+    echo "[✓] Vertex AI and Cloud Speech service agents access verified."
 fi
 
 # ------------------------------------------------------------------------------
@@ -367,8 +374,13 @@ if [ "$DRY_RUN" = false ]; then
     update_env_var "GOOGLE_CLOUD_LOCATION" "global" "$ENV_FILE"
     update_env_var "GCP_REGION" "$REGION" "$ENV_FILE"
     update_env_var "MEETING_STORAGE_BUCKET" "$BUCKET_NAME" "$ENV_FILE"
-    update_env_var "TRANSCRIBE_MODEL" "${TRANSCRIBE_MODEL:-gemini-3.5-transcribe-preview}" "$ENV_FILE"
+    if [[ ! "${TRANSCRIBE_MODEL:-chirp_3}" =~ ^[Cc]hirp ]]; then
+        echo "    [!] Resetting non-Chirp TRANSCRIBE_MODEL ('${TRANSCRIBE_MODEL}') to 'chirp_3'."
+        TRANSCRIBE_MODEL="chirp_3"
+    fi
+    update_env_var "TRANSCRIBE_MODEL" "${TRANSCRIBE_MODEL:-chirp_3}" "$ENV_FILE"
     update_env_var "SUMMARY_MODEL" "${SUMMARY_MODEL:-gemini-3.8-flash}" "$ENV_FILE"
+    update_env_var "STT_LOCATION" "${STT_LOCATION:-us}" "$ENV_FILE"
 
     echo "[✓] Local configuration updated in: $ENV_FILE"
 else

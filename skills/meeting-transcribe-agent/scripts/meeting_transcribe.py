@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 scripts/meeting_transcribe.py - Main Pipeline Orchestrator for Meeting Transcribe Agent.
-Universal Cloud-Scale Intelligence (gemini-3.5-transcribe-preview) with Offline Whisper Backup.
-Uses Vertex AI with Application Default Credentials exclusively -- no AI Studio API key.
+Universal Cloud-Scale Intelligence (Dual-Pass Cloud STT v2 chirp_3 + Gemini 3.8 Flash) with Offline Whisper Backup.
+Uses Vertex AI and Cloud Speech-to-Text v2 with Application Default Credentials exclusively -- no AI Studio API key.
 """
 
 import os
@@ -20,6 +20,7 @@ if str(root_dir) not in sys.path:
 from scripts.audio_utils import (
     get_audio_duration,
     format_offset,
+    compress_audio_for_upload,
     is_youtube_url,
     extract_youtube_id,
     is_video_file,
@@ -63,6 +64,7 @@ def generate_meeting_minutes_and_transcript(
     embedding_type: str = "eres2net",
     project_id: str = None,
     location: str = None,
+    stt_location: str = None,
     bucket_name: str = None,
     transcribe_model: str = None,
     summary_model: str = None,
@@ -82,16 +84,15 @@ def generate_meeting_minutes_and_transcript(
     """
     End-to-End Meeting Transcription & Intelligence Pipeline:
     - Pipeline 1 (YouTube Multimodal): Direct cloud ingestion via Gemini Multimodal Vision with native Agentic Video Understanding.
-    - Pipeline 2 (Local Video Two-Stage Fusion): Stage 1 16kHz Audio Extraction + Shared Acoustic ASR (Gemini 3.5 Transcribe or offline Whisper), Stage 2 Gemini 3.8 Flash Native Agentic Multimodal Vision Fusion (slides, faces, nameplates) & minutes synthesis, followed by deterministic assembly & synchronized video player.
-    - Pipeline 3 (Pure Audio): Shared Stage 1 Acoustic ASR (Gemini 3.5 Transcribe with ephemeral Cloud Storage auto-cleanup or offline Whisper + Diarization) + Stage 2 Gemini 3.8 Flash minutes structuring.
+    - Pipeline 2 (Local Video Two-Stage Fusion): Stage 1 16kHz Audio Extraction + Shared Acoustic ASR (Dual-Pass Chirp 3 or offline Whisper), Stage 2 Gemini 3.8 Flash Native Agentic Multimodal Vision Fusion (slides, faces, nameplates) & minutes synthesis, followed by deterministic assembly & synchronized video player.
+    - Pipeline 3 (Pure Audio): Shared Stage 1 Acoustic ASR (Dual-Pass Chirp 3 with ephemeral Cloud Storage auto-cleanup or offline Whisper + Diarization) + Stage 2 Gemini 3.8 Flash minutes structuring.
 
-    Media fed to Gemini (local audio/video, not YouTube URLs) is staged through a
-    Cloud Storage bucket (bucket_name, or MEETING_STORAGE_BUCKET in the
-    environment) -- Vertex AI has no equivalent of the old Files API, so it reads
-    uploads via a gs:// URI instead.
+    Media fed to Cloud STT v2 and Gemini (local audio/video, not YouTube URLs) is staged through a
+    Cloud Storage bucket (bucket_name, or MEETING_STORAGE_BUCKET in the environment).
     """
     load_env_file()
-    transcribe_model = transcribe_model or os.environ.get("TRANSCRIBE_MODEL") or "gemini-3.5-transcribe-preview"
+    from scripts.chirp3_engine import validate_chirp_model
+    transcribe_model = validate_chirp_model(transcribe_model) if engine.lower() != "whisper" else (transcribe_model or os.environ.get("TRANSCRIBE_MODEL") or "chirp_3")
     summary_model = summary_model or os.environ.get("SUMMARY_MODEL") or "gemini-3.8-flash"
     from scripts.gcs_utils import is_gdrive_source, download_gdrive_file_with_cache
     source_str = str(input_source).strip()
@@ -239,7 +240,7 @@ def generate_meeting_minutes_and_transcript(
     if is_local_video:
         print(f"🎥  Meeting Transcribe Agent: Two-Stage Local Video Pipeline")
         print(f"📺  Source Video: {fix_mojibake_filename(video_p.name)}")
-        print(f"🎙️  Stage 1 (Acoustic ASR): {transcribe_model if engine.lower() != 'whisper' else f'Whisper ({whisper_backend})'}")
+        print(f"🎙️  Stage 1 (Acoustic ASR): {f'{transcribe_model} (Dual-Pass)' if engine.lower() != 'whisper' else f'Whisper ({whisper_backend})'}")
         print(f"👁️  Stage 2 (Multimodal Vision Fusion): {summary_model} (Agentic)")
     else:
         print(f"🎙️  Meeting Transcribe Agent: Pure Audio Pipeline: {fix_mojibake_filename(audio_path.name)}")
@@ -247,7 +248,7 @@ def generate_meeting_minutes_and_transcript(
         if engine.lower() == "whisper":
             print(f"   [Offline Setup] Backend: {whisper_backend} | Model: {whisper_model} | Diarization: {enable_diarization}")
         else:
-            print(f"   [Cloud Setup] Model: {transcribe_model} (Ephemeral Cloud Storage upload, auto-cleaned)")
+            print(f"   [Cloud Setup] Stage 1: Dual-Pass Chirp ({transcribe_model}, Ephemeral Cloud Storage upload, auto-cleaned)")
     if resolved_bucket:
         print(f"☁️  Cloud Storage Staging: gs://{resolved_bucket}")
     print(f"========================================================\n")
@@ -258,13 +259,13 @@ def generate_meeting_minutes_and_transcript(
     client = None
     try:
         client = get_gemini_client(project_id=project_id, location=location)
-        if engine.lower() == "gemini" and not resolved_bucket:
+        if engine.lower() != "whisper" and not resolved_bucket:
             raise ValueError(
-                "A Cloud Storage bucket is required to process audio/video with Gemini via Vertex AI. "
+                "A Cloud Storage bucket is required to process audio/video with Cloud STT v2 and Gemini via Vertex AI. "
                 "Pass bucket_name / --bucket, or set MEETING_STORAGE_BUCKET."
             )
     except Exception as e:
-        if engine.lower() == "gemini":
+        if engine.lower() != "whisper":
             raise e
         print(f"[*] Note: Gemini API not available ({e}). Operating in pure offline mode.")
 
@@ -314,14 +315,18 @@ def generate_meeting_minutes_and_transcript(
             language=language
         )
     else:
-        print(f"--- [Stage 1/2] Cloud Gemini Transcribe ({transcribe_model}) ---")
+        print(f"--- [Stage 1/2] Cloud Dual-Pass Transcription & Alignment ({transcribe_model}) ---")
         raw_transcript_text, asr_time = transcribe_with_gemini_cloud(
             client=client,
             audio_path=audio_path,
             bucket_name=resolved_bucket,
             model_name=transcribe_model,
             compress=compress,
-            language=effective_asr_language
+            language=effective_asr_language,
+            project_id=project_id,
+            stt_location=stt_location,
+            min_speakers=num_speakers if num_speakers > 0 else 2,
+            max_speakers=num_speakers if num_speakers > 0 else 10,
         )
 
     # Early return if only verbatim transcript requested
@@ -337,7 +342,7 @@ def generate_meeting_minutes_and_transcript(
             f"- **Duration**: {dur_str}\n"
             f"- **Transcription Engine**: {eng_label}\n"
             f"- **Generated At**: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-            f"## 🎙️ Verbatim Transcript\n\n"
+            f"## 6. Full Verbatim Transcript\n\n"
             f"{raw_transcript_text.strip()}\n"
         )
         out_path.write_text(content, encoding="utf-8")
@@ -471,9 +476,9 @@ def main():
     )
     parser.add_argument(
         "--engine",
-        choices=["gemini", "whisper"],
+        choices=["gemini", "chirp3", "whisper"],
         default="gemini",
-        help="Transcription engine for audio: 'gemini' (default, cloud Gemini 3.5 Transcribe) or 'whisper' (local offline backup)"
+        help="Transcription engine for audio: 'gemini'/'chirp3' (default, Cloud Dual-Pass Chirp 3 + Gemini 3.8 Flash) or 'whisper' (local offline backup)"
     )
     parser.add_argument(
         "--whisper-backend",
@@ -511,20 +516,25 @@ def main():
     )
     parser.add_argument(
         "--project",
-        help="Google Cloud project ID for Vertex AI (default: GOOGLE_CLOUD_PROJECT/GCP_PROJECT env var, or the ADC default project)"
+        help="Google Cloud project ID for Vertex AI and Cloud STT v2 (default: GOOGLE_CLOUD_PROJECT/GCP_PROJECT env var, or the ADC default project)"
     )
     parser.add_argument(
         "--region",
-        help="Google Cloud region for Vertex AI (default: GOOGLE_CLOUD_LOCATION env var, or global)"
+        help="Google Cloud region for Vertex AI Gemini models (default: GOOGLE_CLOUD_LOCATION env var, or global)"
+    )
+    parser.add_argument(
+        "--stt-location",
+        default=os.environ.get("STT_LOCATION") or "us",
+        help="Google Cloud Speech-to-Text v2 location for Chirp 3 (default: STT_LOCATION env var, or us)"
     )
     parser.add_argument(
         "--bucket",
-        help="GCS bucket name used to stage local audio/video for Gemini (default: MEETING_STORAGE_BUCKET env var). Not needed for YouTube URLs or --engine whisper."
+        help="GCS bucket name used to stage local audio/video for Cloud STT v2 and Gemini (default: MEETING_STORAGE_BUCKET env var). Not needed for YouTube URLs or --engine whisper."
     )
     parser.add_argument(
         "--transcribe-model",
-        default=os.environ.get("TRANSCRIBE_MODEL") or "gemini-3.5-transcribe-preview",
-        help="Gemini cloud transcription model (default: TRANSCRIBE_MODEL env var, or gemini-3.5-transcribe-preview)"
+        default=os.environ.get("TRANSCRIBE_MODEL") or "chirp_3",
+        help="Cloud Speech-to-Text v2 Chirp-series model (default: TRANSCRIBE_MODEL env var, or chirp_3)"
     )
     parser.add_argument(
         "--summary-model",
@@ -570,7 +580,7 @@ def main():
         "--language",
         type=str,
         default="auto",
-        help="Spoken audio language code for offline Whisper ASR (e.g. 'auto', 'en', 'zh', 'ja') [default: auto]"
+        help="Spoken audio language code for ASR (e.g. 'auto', 'en', 'zh', 'ja') [default: auto]"
     )
     parser.add_argument(
         "--serve",
@@ -594,6 +604,7 @@ def main():
             embedding_type=args.embedding_type,
             project_id=args.project,
             location=args.region,
+            stt_location=args.stt_location,
             bucket_name=args.bucket,
             transcribe_model=args.transcribe_model,
             summary_model=args.summary_model,

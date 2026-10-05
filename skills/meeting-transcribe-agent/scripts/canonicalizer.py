@@ -1,9 +1,9 @@
 """
-scripts/canonicalizer.py - Canonical Speaker ID Consolidation & Over-Clustering Unification.
+scripts/canonicalizer.py - Canonical Speaker Identity Consolidation & Hierarchical Alignment.
 
-Solves the multi-speaker fragment problem where the same person (e.g. Host, Chair, or Key Speaker)
-is split into multiple acoustic clusters (e.g. spk_2, spk_3, spk_7, spk_28) due to
-acoustic cluster drift over long meetings.
+Maps Stage 1 speaker labels (e.g. Speaker 1, Speaker 2 from Chirp 3 or spk_0, spk_1 from Whisper)
+to real participant names and roles via 3-level hierarchical resolution (SRT Ground Truth ->
+Time-Scoped Multimodal Rules -> Forward Conversational Handover Calibration).
 """
 
 import re
@@ -616,7 +616,7 @@ def consolidate_verbatim_transcript(
             next_spk = next_turn.get("speaker", "")
             next_clean = re.sub(r'\(.*?\)', '', next_spk).strip().lower()
 
-            if not next_spk or re.match(r'^spk[_\s-]*\d+', next_spk, re.IGNORECASE):
+            if not next_spk or re.match(r'^(?:spk[_\s-]*|speaker\s*)\d+', next_spk, re.IGNORECASE):
                 next_turn["speaker"] = target_name
             elif target_clean not in next_clean and next_clean not in target_clean:
                 next_turn["speaker"] = target_name

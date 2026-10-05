@@ -2,14 +2,14 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Google GenAI SDK](https://img.shields.io/badge/Google%20GenAI%20SDK-v1.0+-4285F4.svg)](https://github.com/google-gemini/generative-ai-python)
-[![Gemini 3.5 Transcribe](https://img.shields.io/badge/Gemini%203.5-Transcribe-orange.svg)](https://ai.google.dev/)
+[![Cloud STT v2 Chirp 3](https://img.shields.io/badge/Cloud%20STT%20v2-Chirp%203-orange.svg)](https://cloud.google.com/speech-to-text)
 [![Gemini 3.8 Flash](https://img.shields.io/badge/Gemini%203.8-Flash-yellow.svg)](https://ai.google.dev/)
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ## 项目概览 (Overview)
 
-**Meeting Transcribe Agent** 是基于 **Google Gemini 3.5 Transcribe** 与 **Gemini 3.8 Flash** 的多模态会议纪要与逐字稿生成系统。系统支持 YouTube 链接、本地视频文件、Google Drive 分享链接与纯音频录音。每次运行均会在 `<input_dir>/output/` 隔离目录中自动生成结构化 Markdown 会议纪要与独立的交互式 HTML 播放器，保持原始媒体目录整洁。
+**Meeting Transcribe Agent** 是基于 **Google Cloud Speech-to-Text v2 双轨 Chirp 3 (`chirp_3`)** 与 **Gemini 3.8 Flash (`gemini-3.8-flash`)** 的多模态会议纪要与逐字稿生成系统。系统支持 YouTube 链接、本地视频文件、Google Drive 分享链接与纯音频录音。每次运行均会在 `<input_dir>/output/` 隔离目录中自动生成结构化 Markdown 会议纪要与独立的交互式 HTML 播放器，保持原始媒体目录整洁。
 
 ### 三大专用处理管线
 
@@ -21,24 +21,38 @@
 2. **本地视频双阶段融合管线 (Acoustic Ground Truth + Vision Fusion)**：
    - **内嵌字幕提取**：自动检测视频容器中的内嵌字幕轨（`mov_text`, `srt`, `vtt`）或同名 `.srt` 字幕文件，作为参会名单与议程参考。
    - **Stage 0（术语表与语种检测）**：构建领域专业术语表，并检测主要口语 `BCP-47` 语言代码（例如 `cmn-Hant-TW`、`zh-CN`、`en-US`、`ja-JP`）。
-   - **Stage 1（声学基准语音转录）**：提取 16 kHz 单声道音频，通过 **Gemini 3.5 Transcribe**（默认）或 **本地 Whisper + Sherpa-ONNX**（显式指定离线模式时）执行语音转录，锁定物理时间戳 `[MM:SS - MM:SS]` 与说话人分段。
-   - **Stage 2（多模态视觉融合与分块逐字稿校对）**：大型视频（>250 MB）自动通过 Apple Silicon `VideoToolbox` 硬件加速压缩为 720p H.264（`10 fps`、`1 秒 GOP -g 10`、`+faststart`，支持 `libx264` 自动降级）以加速云端上传与 Agentic 幻灯片抽帧，并连同 Stage 1 逐字稿输入 **Gemini 3.8 Flash**。模型读取幻灯片画面与桌牌以生成第 1–5 节纪要，并以 60 行对话为单位并行校对第 6 节逐字稿的字形与专业术语，同时强制锁定原始时间戳。
+   - **Stage 1（双轨 Chirp 3 声学基准语音转录）**：提取 16 kHz 单声道 MP3 音频，通过 **双轨 Cloud Speech-to-Text v2 Chirp 3 (`chirp_3`)**（默认）或 **本地 Whisper + Sherpa-ONNX**（显式指定离线模式时）执行语音转录，锁定全局一致的说话人代号（`Speaker 1`, `Speaker 2`）与物理逐字时间戳 `[MM:SS - MM:SS]`。
+   - **Stage 2（多模态视觉融合、语义分段与分块校对）**：大型视频（>250 MB）自动通过 Apple Silicon `VideoToolbox` 硬件加速压缩为 720p H.264（`10 fps`、`1 秒 GOP -g 10`、`+faststart`，支持 `libx264` 自动降级）以加速云端上传与 Agentic 幻灯片抽帧，并连同 Stage 1 逐字稿输入 **Gemini 3.8 Flash**。模型读取幻灯片画面与桌牌以生成第 1–5 节纪要，并以 60 行对话为单位并行校对第 6 节逐字稿的字形、专业术语与长篇独白语义分段（`<PARA>`），再将语义段落反推回物理逐字时间戳。
    - **确定性说话人组装**：Python 程序依据字幕重叠、多模态时段规则与交接语义整合真实姓名与职务，确保零时间戳漂移。
 
 3. **纯音频高精度管线 (Voice Recorders & Podcasts)**：
    - **Stage 0（术语表与语种检测）**：从音频提取专业术语并识别主要口语语言代码。
-   - **Stage 1（声学语音转录）**：使用 **Gemini 3.5 Transcribe**（或离线 Whisper + Sherpa-ONNX）输出带时间戳的说话人对话。
-   - **Stage 2（高管纪要合成与字形校对）**：使用 **Gemini 3.8 Flash** 生成高管摘要、行动项表，并并行校对第 6 节逐字稿字形与术语。
+   - **Stage 1（双轨 Chirp 3 声学语音转录）**：使用 **双轨 Chirp 3 (`chirp_3`)**（或离线 Whisper + Sherpa-ONNX）输出全局说话人聚类与带时间戳的对话。
+   - **Stage 2（高管纪要合成、语义分段与字形校对）**：使用 **Gemini 3.8 Flash** 生成高管摘要、行动项表，并并行校对第 6 节逐字稿字形与语义段落。
+
+---
+
+### 为何采用“双轨 Chirp 3 (Dual-Pass Chirp 3)”架构？
+
+传统的长音频分块转录在长篇会议中存在两大结构性痛点：
+1. **跨分块说话人代号重置与交接吞噬**：每 15 分钟切分音频会导致各分块的说话人声纹代号重置（`spk_0`, `spk_1` 无法跨块连贯），且主持人引言交接给下一位发言人时容易被合并为同一说话人。
+2. **Cloud STT v2 逐字时间戳的 20 分钟限制**：Google Cloud Speech-to-Text v2 (`chirp_3`) 在启用 `enableWordTimeOffsets=True` 时限制单次 `BatchRecognize` 不超过 20 分钟；而在 `enableWordTimeOffsets=False` 时可单次处理长达 8 小时的完整音频并保持全局说话人聚类。
+
+为了同时实现**“跨数小时的全局说话人一致性”**与**“毫秒级逐字时间戳”**，Stage 1 并发执行双轨推理：
+- **Track A — 全局宏观说话人聚类 (Macro Global Diarization)**：对不切块的完整 16 kHz 单声道音频执行单次 `BatchRecognize`（`enableSpeakerDiarization=True`、`enableWordTimeOffsets=False`），在整场会议中保持统一声纹空间并精准识别快速交接。
+- **Track B — 微观逐字时间戳提取 (Micro Word Timestamps)**：将音频切分为 18 分钟（`1080s`）带 5 秒重叠窗口的并行分块（`enableWordTimeOffsets=True`、`enableSpeakerDiarization=False`），在重叠窗口中点去重以保证时间戳严格单调递增。
+- **中日韩字符与西文单词混合 LCS 对齐 (`AlignmentEngine`)**：通过混合 LCS 算法将 Track B 的物理逐字时间戳 100% 投射至 Track A 的全局说话人词流，并内置重复循环抑制与缺失时间戳插值。
+- **Stage 2 语义分段与物理时间戳反推**：对于数分钟的长篇独白，**Gemini 3.8 Flash** 在 Stage 2 校对时按主题转换插入 `<PARA>` 标记，由 `AlignmentEngine` 精确反推出每个语义段落的起止秒数，并在交互式播放器中以同说话人视觉串联卡片（`isGrouped`）呈现。
 
 ---
 
 ## 双引擎架构 (Dual-Engine Architecture)
 
-### 1. 云端 Vertex AI 模式（默认）
-* **双模型协同**：由 **Gemini 3.5 Transcribe**（`TRANSCRIBE_MODEL`）负责声学语音转录，**Gemini 3.8 Flash**（`SUMMARY_MODEL`）负责多模态分析与分块校对。
-* **智能音频预处理**：自动检测音频比特率，并将超过 25 分钟的长音频在静音边界处切分为 20 分钟分块并行转录。
-* **确定性前缀锁定**：在第 6 节每个校对后的语句前强制还原 Stage 1 的 `[MM:SS - MM:SS] **spk_X**:` 前缀，杜绝时间戳偏移或输出截断。
-* **GCS 双层生命周期管理**：暂存于 `gs://<bucket>/raw/` 的原始媒体在 2 天后自动删除，最终交付物保留 15 天。
+### 1. 云端双轨 Chirp 3 + Vertex AI 模式（默认）
+* **双模型协同**：由 **Cloud Speech-to-Text v2 Chirp 3**（`TRANSCRIBE_MODEL=chirp_3`，仅限 Chirp 系列模型）负责双轨声学说话人聚类与逐字时间戳，**Gemini 3.8 Flash**（`SUMMARY_MODEL=gemini-3.8-flash`）负责多模态分析、语义分段与分块校对。
+* **双轨并发执行**：同时运行 Track A（不切块全局说话人聚类）与 Track B（18 分钟并行切块逐字时间戳 + 5 秒重叠中点去重）。
+* **确定性时间戳投射与反推**：通过混合 LCS 算法对齐双轨时间戳，并将 Stage 2 语义分段反推回物理逐字边界。
+* **GCS 双层生命周期管理**：暂存于 `gs://<bucket>/raw/` 的原始媒体在推理完成后于 `finally` 块即时清理（并由 2 天生命周期规则兜底），最终交付物保留 15 天。
 
 ### 2. 本地离线模式（仅限显式指定）
 * **显式启用机制**：仅在用户在对话中明确要求“本地/离线转录”时启动，系统绝不自动降级或静默切换。

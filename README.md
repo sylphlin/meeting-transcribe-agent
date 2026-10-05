@@ -2,14 +2,14 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Google GenAI SDK](https://img.shields.io/badge/Google%20GenAI%20SDK-v1.0+-4285F4.svg)](https://github.com/google-gemini/generative-ai-python)
-[![Gemini 3.5 Transcribe](https://img.shields.io/badge/Gemini%203.5-Transcribe-orange.svg)](https://ai.google.dev/)
+[![Cloud STT v2 Chirp 3](https://img.shields.io/badge/Cloud%20STT%20v2-Chirp%203-orange.svg)](https://cloud.google.com/speech-to-text)
 [![Gemini 3.8 Flash](https://img.shields.io/badge/Gemini%203.8-Flash-yellow.svg)](https://ai.google.dev/)
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ## Overview
 
-**Meeting Transcribe Agent** generates structured meeting minutes and verbatim transcripts from video and audio recordings. The system uses **Google Gemini 3.5 Transcribe** for acoustic speech recognition and **Gemini 3.8 Flash** for multimodal synthesis. It processes YouTube URLs, local video files, Google Drive links, and audio recordings. Each run produces a clean Markdown report and a standalone interactive HTML player.
+**Meeting Transcribe Agent** generates structured meeting minutes and verbatim transcripts from video and audio recordings. The system uses **Dual-Pass Google Cloud Speech-to-Text v2 Chirp 3 (`chirp_3`)** for acoustic speaker diarization and word-level timestamps, and **Gemini 3.8 Flash (`gemini-3.8-flash`)** for multimodal synthesis, semantic paragraph segmentation, and proofreading. It processes YouTube URLs, local video files, Google Drive links, and audio recordings. Each run produces a clean Markdown report and a standalone interactive HTML player.
 
 ### Three Specialized Processing Pipelines
 
@@ -21,14 +21,28 @@
 2. **Local Video Two-Stage Fusion Pipeline (Acoustic Ground Truth + Vision Fusion)**:
    - **Embedded Subtitle Probe**: Extracts embedded subtitle tracks (`mov_text`, `srt`, `vtt`) or sidecar `.srt` files as attendee and agenda references.
    - **Stage 0 (Glossary & Language Detection)**: Builds a domain terminology table and detects the primary spoken `BCP-47` language code (for example, `cmn-Hant-TW`, `en-US`, `ja-JP`).
-   - **Stage 1 (Acoustic Ground Truth ASR)**: Extracts 16 kHz mono audio and transcribes speech via **Gemini 3.5 Transcribe** (default) or **Local Whisper + Sherpa-ONNX** (when offline mode is requested). This stage anchors physical timestamps `[MM:SS - MM:SS]` and speaker turns.
-   - **Stage 2 (Multimodal Vision & Chunked Verbatim Proofreading)**: Compresses large videos (>250 MB) to 720p H.264 (`10 fps`, `1s GOP -g 10`, `+faststart` via Apple Silicon `VideoToolbox` with `libx264` fallback) for fast cloud upload and Agentic frame seeking, then sends the video and Stage 1 transcript to **Gemini 3.8 Flash**. The model reads visual slides and nameplates, generates Sections 1–5, and proofreads Section 6 in parallel 60-line batches while locking original timestamps.
+   - **Stage 1 (Dual-Pass Chirp 3 Acoustic Ground Truth ASR)**: Extracts 16 kHz mono MP3 audio and runs **Dual-Pass Cloud Speech-to-Text v2 Chirp 3 (`chirp_3`)** (default) or **Local Whisper + Sherpa-ONNX** (when offline mode is requested). This stage locks global speaker turns (`Speaker 1`, `Speaker 2`) and millisecond physical word timestamps `[MM:SS - MM:SS]`.
+   - **Stage 2 (Multimodal Vision, Semantic Paragraph Segmentation & Chunked Proofreading)**: Compresses large videos (>250 MB) to 720p H.264 (`10 fps`, `1s GOP -g 10`, `+faststart` via Apple Silicon `VideoToolbox` with `libx264` fallback) for fast cloud upload and Agentic frame seeking, then sends the video and Stage 1 transcript to **Gemini 3.8 Flash**. The model reads visual slides and nameplates, generates Sections 1–5, proofreads Section 6 in parallel 60-line batches, and segments long monologues into semantic paragraphs (`<PARA>`) that re-project onto physical word timestamps.
    - **Deterministic Speaker Assembly**: Reconciles speaker identities across subtitle overlaps, multimodal scoped rules, and handover cues with zero timestamp drift.
 
 3. **Pure Audio High-Precision Pipeline (Voice Recorders & Podcasts)**:
    - **Stage 0 (Glossary & Language Detection)**: Extracts terminology and identifies the primary spoken language code from the audio stream.
-   - **Stage 1 (Acoustic Transcription)**: Uses **Gemini 3.5 Transcribe** (or explicit offline Whisper + Sherpa-ONNX) to produce timestamped speaker turns.
-   - **Stage 2 (Executive Synthesis & Script Proofreading)**: Uses **Gemini 3.8 Flash** to synthesize executive summaries, action items, and orthographically consistent verbatim transcripts.
+   - **Stage 1 (Dual-Pass Chirp 3 Acoustic Transcription)**: Uses **Dual-Pass Chirp 3 (`chirp_3`)** (or explicit offline Whisper + Sherpa-ONNX) to produce globally diarized, word-timestamped speaker turns.
+   - **Stage 2 (Executive Synthesis, Semantic Paragraphing & Script Proofreading)**: Uses **Gemini 3.8 Flash** to synthesize executive summaries and action items, segment long monologues into readable semantic paragraphs, and proofread verbatim transcripts.
+
+---
+
+### Purpose of the Dual-Pass Chirp 3 Architecture
+
+Traditional chunked speech recognition suffers from two structural limitations on long meetings:
+1. **Cross-Chunk Speaker Drift & Handover Swallowing**: Splitting audio into 15-minute chunks resets speaker voiceprints (`spk_0`, `spk_1`) across chunk boundaries, and autoregressive attention often merges a host's handover prompt with the next speaker's opening words.
+2. **Cloud STT v2 20-Minute Word-Offset Ceiling**: Google Cloud Speech-to-Text v2 (`chirp_3`) supports unchunked recordings up to 8 hours when `enableWordTimeOffsets=False`, but restricts inline `BatchRecognize` requests to 20 minutes when `enableWordTimeOffsets=True`.
+
+To achieve both **global speaker consistency** and **millisecond word timestamps**, Stage 1 executes two concurrent `chirp_3` passes in parallel:
+- **Track A — Macro Global Diarization (Unchunked Full Audio)**: Processes the complete 16 kHz mono recording in a single unchunked batch (`enableSpeakerDiarization=True`, `enableWordTimeOffsets=False`). Track A preserves a single global speaker embedding space from start to finish and accurately detects rapid speaker handovers.
+- **Track B — Micro Word Timestamps (Parallel 18-Minute Chunks)**: Slices the audio into 18-minute (`1080s`) windows with 5-second overlaps (`enableWordTimeOffsets=True`, `enableSpeakerDiarization=False`) and deduplicates overlap words at the window midpoint for strictly monotonic timestamps.
+- **Hybrid Multilingual LCS Alignment (`AlignmentEngine`)**: Projects Track B's physical word timestamps onto Track A's globally diarized words using a hybrid CJK character + Western word Longest Common Subsequence (LCS) algorithm, plus n-gram repetition loop suppression and linear interpolation.
+- **Stage 2 Semantic Paragraph Re-Projection**: When a speaker delivers a multi-minute monologue, **Gemini 3.8 Flash** inserts inline `<PARA>` breaks at topic transitions during Stage 2 proofreading. `AlignmentEngine` re-projects each semantic paragraph back onto Track B's physical word timestamps so the HTML player renders visually grouped paragraphs (`isGrouped`) with independent `[▶ MM:SS - MM:SS]` seek buttons and zero timestamp hallucination.
 
 ---
 
@@ -41,10 +55,10 @@ Different media sources contain different timing metadata and visual signals:
    - Direct ingestion via **Gemini 3.8 Flash** analyzes video and audio in one request without local file transfers.
 2. **Local Video Files**:
    - Local video files do not have pre-indexed cloud clocks.
-   - Stage 1 acoustic ASR locks physical timestamps first, and Stage 2 vision fusion reads slides and nameplates without timestamp drift.
+   - Stage 1 Dual-Pass Chirp 3 locks global speaker clusters and physical timestamps first, and Stage 2 vision fusion reads slides and nameplates without timestamp drift.
 3. **Pure Audio Recordings**:
    - Audio recordings contain no visual frames.
-   - Dedicated acoustic models process speech at approximately 32 tokens per second for maximum token efficiency.
+   - Dedicated acoustic models process speech with global speaker diarization and low token overhead.
 
 ---
 
@@ -54,7 +68,7 @@ Different media sources contain different timing metadata and visual signals:
 > Token usage varies with speech density and visual complexity. The multipliers below provide reference estimates for long-form meetings.
 
 * **1. Pure Audio Pipeline (`~1x` Baseline)**:
-  - **Consumption**: Approximately 32 tokens per second (~100,000 tokens per hour).
+  - **Consumption**: Stage 1 runs on Cloud STT v2 (`chirp_3`), and Stage 2 processes text tokens with **Gemini 3.8 Flash**.
   - **Use Case**: Audio-only recordings (`meeting_recording.mp3`, podcasts, interviews) requiring exact word timestamps and low token cost.
 * **2. Gemini Agentic Video Understanding (`~2x` Baseline)**:
   - **Consumption**: Approximately 2x the pure audio baseline.
@@ -69,28 +83,29 @@ Different media sources contain different timing metadata and visual signals:
 
 ### Key Features
 - **Multi-Source Ingestion**: Process YouTube URLs, Google Drive share links, local video files, and local audio files.
+- **Dual-Pass Chirp 3 Global Diarization**: Eliminate cross-chunk speaker drift and handover swallowing across multi-hour recordings.
 - **Embedded Caption Extraction**: Probe video containers for `mov_text`, `srt`, and `vtt` tracks to build attendee lists and macro timelines.
-- **Hierarchical Speaker Canonicalization**: Map generic labels (`spk_0`, `spk_1`) to real participant names and official titles using visual nameplates and spoken introductions.
-- **Stage 2 Chunked Verbatim Proofreading**: Proofread Section 6 in parallel 60-line batches to enforce target script consistency (such as Traditional Chinese vs. Simplified Chinese) and domain terminology without altering timestamps.
+- **Hierarchical Speaker Canonicalization**: Map generic labels (`Speaker 1`, `spk_0`) to real participant names and official titles using visual nameplates and spoken introductions.
+- **Stage 2 Chunked Proofreading & Semantic Paragraphing**: Proofread Section 6 in parallel 60-line batches to enforce target script consistency and domain terminology while splitting long monologues into semantic paragraphs anchored to physical word timestamps.
 - **Universal Dynamic Localization**: Generate Section 1–5 headings, metadata labels, and tables in the target language while preserving the original spoken language in Section 6.
 - **Strict Plain-Text Formatting**: Produce enterprise Markdown reports with zero decorative emojis in headings or tables.
-- **Standalone Interactive HTML Players**: Generate a 3-pane video player (`video_player_template.html`) or a 2-pane offline audio player (`audio_player_template.html`).
+- **Standalone Interactive HTML Players**: Generate a 3-pane video player (`video_player_template.html`) or a 2-pane offline audio player (`audio_player_template.html`) with grouped same-speaker paragraph cards (`isGrouped`).
 
 ### Target Scenarios
 1. **Public & Municipal Sessions**: Transcribe livestreamed council meetings from YouTube and identify speakers from desk nameplates.
 2. **Technical Seminars & Keynotes**: Combine presentation slide text with spoken explanations into structured summaries.
-3. **Multi-Speaker Executive Meetings**: Track speaker changes and action items across multi-hour recordings.
+3. **Multi-Speaker Executive Meetings**: Track speaker changes and action items across multi-hour recordings without speaker label drift.
 4. **Offline Local Transcription**: Run local `mlx-whisper` or `faster-whisper` with Sherpa-ONNX when cloud access is restricted or confidential offline processing is required.
 
 ---
 
 ## Dual-Engine Architecture
 
-### 1. Cloud Vertex AI Mode (Default)
-* **Model Pairing**: Uses **Gemini 3.5 Transcribe** (`TRANSCRIBE_MODEL`) for acoustic transcription and **Gemini 3.8 Flash** (`SUMMARY_MODEL`) for multimodal analysis and proofreading.
-* **Adaptive Audio Preprocessing**: Probes input audio bitrates and splits recordings longer than 25 minutes at silence boundaries into 20-minute chunks.
-* **Deterministic Prefix Locking**: Re-attaches the exact Stage 1 `[MM:SS - MM:SS] **spk_X**:` prefix to every proofread turn in Section 6 to prevent timestamp alteration or token truncation.
-* **Two-Tier GCS Lifecycle Management**: Stages raw media under `gs://<bucket>/raw/` (auto-deleted after 2 days) and stores deliverables for 15 days.
+### 1. Cloud Dual-Pass Chirp 3 + Vertex AI Mode (Default)
+* **Model Pairing**: Uses **Cloud Speech-to-Text v2 Chirp 3** (`TRANSCRIBE_MODEL=chirp_3`, Chirp-series only) for Dual-Pass acoustic diarization and word timestamps, and **Gemini 3.8 Flash** (`SUMMARY_MODEL=gemini-3.8-flash`) for multimodal analysis, semantic paragraphing, and proofreading.
+* **Concurrent Dual-Pass Execution**: Runs Track A (unchunked global speaker diarization) and Track B (parallel 18-minute word-offset chunks with 5-second overlap midpoint deduplication) concurrently.
+* **Deterministic Word-Timestamp Projection**: Aligns Track A and Track B via hybrid CJK character + Western word LCS matching, and re-projects Stage 2 semantic paragraphs onto physical word boundaries.
+* **Two-Tier GCS Lifecycle Management**: Stages raw media under `gs://<bucket>/raw/` (ephemeral blobs deleted immediately in `finally` blocks, backed by a 2-day lifecycle rule) and stores deliverables for 15 days.
 
 ### 2. Local Offline Mode (Explicit Request Only)
 * **Explicit Activation**: Runs only when you explicitly request local or offline transcription. The system never falls back silently from cloud mode to local mode.
@@ -201,28 +216,28 @@ flowchart TD
         GeminiFlash["Google Gemini 3.8 Flash<br>• Native Agentic Video Understanding<br>• Dynamic Frame Navigation<br>• Nameplate & Slide OCR"]:::videoStyle
     end
 
-    subgraph SharedASR["Stage 0 & Stage 1: Glossary & Acoustic ASR Core"]
+    subgraph SharedASR["Stage 0 & Stage 1: Glossary & Dual-Pass Chirp 3 ASR Core"]
         ExtractTrack["Audio Preprocessing & Stage 0 Glossary<br>• Extracts 16 kHz Mono Audio<br>• Detects Spoken BCP-47 Language Code<br>• Builds Domain Terminology Table"]:::asrStyle
         ASREngine{"ASR Engine Selection"}:::asrStyle
-        ASR_Gemini["Cloud Default: Gemini 3.5 Transcribe<br>• Physical Timestamps [MM:SS - MM:SS]<br>• Native Speaker Diarization"]:::asrStyle
+        ASR_Chirp["Cloud Default: Dual-Pass Chirp 3 (STT v2)<br>• Track A: Unchunked Global Diarization<br>• Track B: Parallel Chunked Word Timestamps<br>• Hybrid CJK/Western LCS Alignment"]:::asrStyle
         ASR_Whisper["Offline Explicit: Local Whisper<br>• Apple Silicon MLX / Faster-Whisper<br>• Sherpa-ONNX Speaker Clustering"]:::asrStyle
-        RawTranscript["Stage 1 Verbatim Transcript<br>• Immutable Physical Timestamps<br>• Initial Speaker Labels (spk_0, spk_1)"]:::asrStyle
+        RawTranscript["Stage 1 Verbatim Transcript<br>• Immutable Physical Timestamps<br>• Global Speaker Labels (Speaker 1, Speaker 2)"]:::asrStyle
 
         ExtractTrack --> ASREngine
-        ASREngine -- "Cloud (Default)" --> ASR_Gemini --> RawTranscript
+        ASREngine -- "Cloud (Default)" --> ASR_Chirp --> RawTranscript
         ASREngine -- "Offline (Explicit Request)" --> ASR_Whisper --> RawTranscript
         O -. "Inject Context" .-> ExtractTrack
     end
 
-    subgraph Stage2Divergence["Stage 2: Multimodal Synthesis & Chunked Proofreading"]
+    subgraph Stage2Divergence["Stage 2: Multimodal Synthesis, Semantic Paragraphing & Proofreading"]
         subgraph LocalVideoStage2["Local Video: Vision Fusion"]
             Stage2Video["Google Gemini 3.8 Flash<br>• Visual Slide & Nameplate OCR<br>• Maps Speaker IDs to Real Names<br>• Synthesizes Sections 1-5"]:::fusionStyle
-            Deterministic["Deterministic Assembly & Chunked Proofreading<br>• Parallel 60-Line Verbatim Proofreading<br>• Locks Stage 1 Physical Timestamps"]:::fusionStyle
+            Deterministic["Deterministic Assembly & Chunked Proofreading<br>• Parallel 60-Line Verbatim Proofreading<br>• Semantic Paragraph (<PARA>) Re-Projection"]:::fusionStyle
             Stage2Video --> Deterministic
         end
 
         subgraph AudioStage2["Pure Audio: Semantic Restructuring"]
-            Restructure["Google Gemini 3.8 Flash<br>• Synthesizes Sections 1-5<br>• Parallel 60-Line Verbatim Proofreading<br>• Plain-Text Headings (Zero Emojis)"]:::audioStyle
+            Restructure["Google Gemini 3.8 Flash<br>• Synthesizes Sections 1-5<br>• Parallel 60-Line Proofreading & <PARA> Split<br>• Plain-Text Headings (Zero Emojis)"]:::audioStyle
         end
     end
 
@@ -263,25 +278,25 @@ flowchart TD
 
 #### Step 2B: Local Video Two-Stage Fusion Pipeline
 1. **Stage 0 & Stage 1 (Shared Acoustic Core)**:
-   - Extracts 16 kHz mono audio and builds the domain glossary with primary `BCP-47` language detection.
-   - Transcribes speech via `gemini-3.5-transcribe-preview` (or local `whisper`) to establish physical `[MM:SS - MM:SS]` timestamps.
+   - Extracts 16 kHz mono MP3 audio and builds the domain glossary with primary `BCP-47` language detection.
+   - Transcribes speech via Dual-Pass Cloud STT v2 `chirp_3` (or local `whisper`) to establish global speaker labels and physical `[MM:SS - MM:SS]` word timestamps.
 2. **Stage 2 (Multimodal Vision Fusion)**:
    - Stages a 720p H.264 copy to Cloud Storage (`gs://<bucket>/raw/`) and deletes it in a `finally` block after inference.
    - Sends the staged video and Stage 1 transcript to `gemini-3.8-flash` to resolve speaker identities and synthesize Sections 1–5.
-3. **Chunked Proofreading & Deterministic Assembly**:
-   - Proofreads Section 6 in parallel 60-line chunks for orthographic script and terminology consistency.
-   - Re-attaches exact Stage 1 timestamps and resolved speaker names with zero timestamp drift.
+3. **Chunked Proofreading, Semantic Paragraphing & Deterministic Assembly**:
+   - Proofreads Section 6 in parallel 60-line chunks for orthographic script and terminology consistency, inserting `<PARA>` breaks at topic transitions inside long monologues.
+   - Re-projects semantic paragraphs onto physical word timestamps and attaches resolved speaker names with zero timestamp drift.
 
 #### Step 2C: Pure Audio Pipeline
 1. **Stage 0 & Stage 1 (Shared Acoustic Core)**:
-   - Runs Stage 0 glossary extraction and language detection, followed by Stage 1 acoustic transcription.
+   - Runs Stage 0 glossary extraction and language detection, followed by Stage 1 Dual-Pass `chirp_3` acoustic transcription.
 2. **Stage 2 (Semantic Restructuring & Proofreading)**:
-   - Synthesizes Sections 1–5 and runs parallel 60-line orthographic proofreading on Section 6 via `gemini-3.8-flash`.
+   - Synthesizes Sections 1–5, runs parallel 60-line orthographic proofreading on Section 6 via `gemini-3.8-flash`, and re-projects `<PARA>` semantic paragraphs onto word timestamps.
 
 #### Step 3: Deliverable Generation (Isolated in `<input_dir>/output/`)
 All generated deliverables and intermediate caches are automatically isolated inside `<input_dir>/output/` by default to keep the source media directory clean:
 1. **Markdown Report (`output/<Meeting_Title>_minutes.md`)**: Contains 6 structured sections with plain-text headings.
-2. **Interactive Video Player (`output/<Meeting_Title>_player.html`)**: Provides a 3-pane layout (video, executive summary, and synchronized transcript) with summary-first copy buttons.
+2. **Interactive Video Player (`output/<Meeting_Title>_player.html`)**: Provides a 3-pane layout (video, executive summary, and synchronized transcript with grouped same-speaker cards) and summary-first copy buttons.
 3. **Interactive Audio Player (`output/<Meeting_Title>_player.html`)**: Provides a 2-pane layout and a bottom floating audio controller that runs 100% offline via `file://`.
 4. **Terminology Glossary (`output/glossary_<stem>.md`)**: Stores extracted domain terms and detected language metadata.
 
@@ -306,7 +321,7 @@ Select one of the two deployment methods below:
    - **Windows**: `winget install Gyan.FFmpeg`
 
 2. **Authenticate Google Cloud ADC**:
-   Authenticate Application Default Credentials (ADC) for Vertex AI and Cloud Storage access:
+   Authenticate Application Default Credentials (ADC) for Vertex AI, Cloud Speech-to-Text v2, and Cloud Storage access:
    ```bash
    gcloud auth application-default login
    ```
@@ -340,9 +355,9 @@ Select one of the two deployment methods below:
 3. **Initialize Google Cloud Environment (`./setup.sh`)**:
    Run `setup.sh` to configure the cloud environment:
    - Verify ADC authentication.
-   - Enable Vertex AI, Cloud Storage, and Google Drive APIs.
+   - Enable Vertex AI, Cloud Speech-to-Text, Cloud Storage, and Google Drive APIs.
    - Create the staging bucket with CORS and two-tier lifecycle rules (`raw/`: 2 days; deliverables: 15 days).
-   - Generate the `.env` configuration file.
+   - Generate the `.env` configuration file (`TRANSCRIBE_MODEL=chirp_3`, `SUMMARY_MODEL=gemini-3.8-flash`, `STT_LOCATION=us`).
    ```bash
    cd ~/.gemini/config/plugins/meeting-transcribe-agent
    chmod +x setup.sh
@@ -366,6 +381,8 @@ meeting-transcribe-agent/
 │       ├── SKILL.md                                      # Skill definition & CLI options reference for AI agents
 │       ├── scripts/                                      # Canonical core components (SSOT)
 │       │   ├── meeting_transcribe.py                     # Master pipeline orchestrator
+│       │   ├── chirp3_engine.py                          # Dual-Pass Cloud STT v2 Chirp 3 engine
+│       │   ├── alignment_engine.py                       # Hybrid CJK/Western LCS word alignment & <PARA> re-projection
 │       │   ├── audio_utils.py                            # Video detection, FFmpeg compression, audio extraction
 │       │   ├── gcs_utils.py                              # Cloud Storage upload/download & ephemeral cleanup
 │       │   ├── gemini_engine.py                          # Multimodal video fusion & Cloud Storage auto-cleanup
@@ -424,7 +441,7 @@ Deploy the agent to Google Cloud Vertex AI Agent Runtime using ADK 2.0 and `agen
 # Authenticate ADC with Google Drive read-only scope
 gcloud auth application-default login --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
 
-# Provision Vertex AI, GCS bucket, and two-tier lifecycle rules
+# Provision Vertex AI, Cloud Speech-to-Text, GCS bucket, and two-tier lifecycle rules
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
@@ -432,8 +449,8 @@ gcloud auth application-default login --scopes="https://www.googleapis.com/auth/
 
 | Scenario | Antigravity Command Syntax | Processing Behavior |
 | :--- | :--- | :--- |
-| **Scenario A: Video on Google Drive**<br/>*(MP4 / MOV)* | `/meeting-transcribe-agent Video: https://drive.google.com/file/d/FILE_ID/view` | Verifies remote `md5Checksum`, caches in `gdrive_inputs/`, recovers UTF-8 CJK filenames, extracts 16 kHz audio, stages 720p video to GCS `raw/`, and runs Stage 1 + Stage 2 fusion. |
-| **Scenario B: Audio on Google Drive**<br/>*(M4A / MP3 / WAV)* | `/meeting-transcribe-agent File: https://drive.google.com/file/d/FILE_ID/view, Agenda: @agenda.md` | Verifies MD5 cache, runs Stage 0 language/glossary detection, transcribes with Gemini 3.5 Transcribe, and synthesizes minutes with Gemini 3.8 Flash. |
+| **Scenario A: Video on Google Drive**<br/>*(MP4 / MOV)* | `/meeting-transcribe-agent Video: https://drive.google.com/file/d/FILE_ID/view` | Verifies remote `md5Checksum`, caches in `gdrive_inputs/`, recovers UTF-8 CJK filenames, extracts 16 kHz audio, stages 720p video to GCS `raw/`, and runs Stage 1 Dual-Pass Chirp 3 + Stage 2 vision fusion. |
+| **Scenario B: Audio on Google Drive**<br/>*(M4A / MP3 / WAV)* | `/meeting-transcribe-agent File: https://drive.google.com/file/d/FILE_ID/view, Agenda: @agenda.md` | Verifies MD5 cache, runs Stage 0 language/glossary detection, transcribes with Dual-Pass Chirp 3 (`chirp_3`), and synthesizes minutes with Gemini 3.8 Flash. |
 
 ### 3. Two-Tier GCS Bucket Lifecycle Policy (`raw/` 2 Days / Deliverables 15 Days)
 

@@ -10,7 +10,7 @@ This package wraps the core transcription engine as a managed cloud agent. It pr
 
 1. **Google Drive Recordings**: Streams video and audio from Google Drive to Cloud Storage (`gs://<bucket>/raw/`), recovers UTF-8 CJK filenames, and runs multimodal vision and audio analysis.
 2. **YouTube Video URLs**: Streams YouTube videos directly to Vertex AI without local file downloads.
-3. **Google Cloud Storage (GCS) Media**: Transcribes audio and video stored in GCS using **Gemini 3.5 Transcribe** (`gemini-3.5-transcribe-preview`) and **Gemini 3.8 Flash** (`gemini-3.8-flash`).
+3. **Google Cloud Storage (GCS) Media**: Transcribes audio and video stored in GCS using **Dual-Pass Cloud Speech-to-Text v2 Chirp 3** (`chirp_3`) for acoustic diarization and word-level timestamps, and **Gemini 3.8 Flash** (`gemini-3.8-flash`) for multimodal synthesis and semantic paragraph segmentation.
 4. **Automated Deliverable Hosting**: Uploads Markdown meeting minutes (`.md`) and interactive HTML players (`.html`) to GCS and returns **24-hour v4 signed URLs**.
 
 ---

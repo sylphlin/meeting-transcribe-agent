@@ -223,6 +223,15 @@ RUNTIME_ENV=()
 if [ -n "$BUCKET_NAME" ]; then
     RUNTIME_ENV+=("MEETING_STORAGE_BUCKET=gs://$BUCKET_NAME")
 fi
+TRANSCRIBE_MODEL="${TRANSCRIBE_MODEL:-chirp_3}"
+if [[ ! "$TRANSCRIBE_MODEL" =~ ^[Cc]hirp ]]; then
+    echo "❌ Error: Invalid TRANSCRIBE_MODEL '$TRANSCRIBE_MODEL'. Stage 1 Cloud STT v2 only supports Chirp-series models (e.g., 'chirp_3')."
+    exit 1
+fi
+RUNTIME_ENV+=("TRANSCRIBE_MODEL=$TRANSCRIBE_MODEL")
+if [ -n "${STT_LOCATION:-}" ]; then
+    RUNTIME_ENV+=("STT_LOCATION=$STT_LOCATION")
+fi
 
 if [ ${#RUNTIME_ENV[@]} -gt 0 ]; then
     ENV_STR=$(IFS=,; echo "${RUNTIME_ENV[*]}")

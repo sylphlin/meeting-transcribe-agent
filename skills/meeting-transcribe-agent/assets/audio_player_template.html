@@ -548,6 +548,13 @@
             background: var(--highlight-bg);
             box-shadow: 0 0 0 1px var(--highlight-border);
         }
+        .transcript-turn.grouped-turn {
+            margin-top: -6px;
+            border-top-style: dashed;
+        }
+        .transcript-turn.grouped-turn .speaker-tag {
+            display: none;
+        }
 
         .turn-meta {
             display: flex;
@@ -1576,7 +1583,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                 // Visual-grouping state: consecutive same-speaker turns with a small gap
                 // are rendered as visually chained cards (no repeated speaker tag), while
                 // remaining fully separate containers with their own timestamps.
-                const GROUP_GAP_SECONDS = 3;
+                const GROUP_GAP_SECONDS = 5;
                 let prevSpeakerKey = null;
                 let prevEndSec = null;
 
@@ -1619,7 +1626,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
                         );
 
                         const card = document.createElement('div');
-                        card.className = 'transcript-turn';
+                        card.className = isGrouped ? 'transcript-turn grouped-turn' : 'transcript-turn';
                         if (startStr) {
                             card.dataset.start = sSec;
                             card.dataset.end = eSec;

@@ -2,14 +2,14 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Google GenAI SDK](https://img.shields.io/badge/Google%20GenAI%20SDK-v1.0+-4285F4.svg)](https://github.com/google-gemini/generative-ai-python)
-[![Gemini 3.5 Transcribe](https://img.shields.io/badge/Gemini%203.5-Transcribe-orange.svg)](https://ai.google.dev/)
+[![Cloud STT v2 Chirp 3](https://img.shields.io/badge/Cloud%20STT%20v2-Chirp%203-orange.svg)](https://cloud.google.com/speech-to-text)
 [![Gemini 3.8 Flash](https://img.shields.io/badge/Gemini%203.8-Flash-yellow.svg)](https://ai.google.dev/)
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ## 概要 (Overview)
 
-**Meeting Transcribe Agent** は、**Google Gemini 3.5 Transcribe** と **Gemini 3.8 Flash** を基盤としたマルチモーダル会議議事録および全文文字起こし生成システムです。YouTube URL、ローカル動画ファイル、Google Drive 共有リンク、および音声ファイルに対応しています。実行ごとに `<input_dir>/output/` サブディレクトリへ構造化された Markdown 議事録とスタンドアロン型のインタラクティブ HTML プレーヤーを自動的に分離出力します。
+**Meeting Transcribe Agent** は、**Google Cloud Speech-to-Text v2 デュアルパス Chirp 3 (`chirp_3`)** と **Gemini 3.8 Flash (`gemini-3.8-flash`)** を基盤としたマルチモーダル会議議事録および全文文字起こし生成システムです。YouTube URL、ローカル動画ファイル、Google Drive 共有リンク、および音声ファイルに対応しています。実行ごとに `<input_dir>/output/` サブディレクトリへ構造化された Markdown 議事録とスタンドアロン型のインタラクティブ HTML プレーヤーを自動的に分離出力します。
 
 ### 3つの専用処理パイプライン
 
@@ -21,23 +21,37 @@
 2. **ローカル動画 2 段階融合パイプライン (Acoustic Ground Truth + Vision Fusion)**：
    - **埋め込み字幕の抽出**：動画コンテナ内の字幕トラック（`mov_text`, `srt`, `vtt`）または `.srt` ファイルを検出し、参加者リストや議題のリファレンスとして活用します。
    - **Stage 0（専門用語集＆言語コード検出）**：ドメイン用語集を構築し、主要な音声言語の `BCP-47` コード（`ja-JP`, `cmn-Hant-TW`, `en-US` など）を自動検出します。
-   - **Stage 1（音響基準 ASR 文字起こし）**：16 kHz モノラル音声を抽出し、**Gemini 3.5 Transcribe**（デフォルト）または **ローカル Whisper + Sherpa-ONNX**（オフラインモード指定時）で物理タイムスタンプ `[MM:SS - MM:SS]` と話者分離を確定します。
-   - **Stage 2（マルチモーダル視覚融合＆チャンク校正）**：大容量動画（>250 MB）を Apple Silicon `VideoToolbox` ハードウェアアクセラレーションにより 720p H.264（`10 fps`、`1 秒 GOP -g 10`、`+faststart`、`libx264` 自動フォールバック対応）へ高速圧縮してクラウド転送および Agentic フレーム探索を高速化し、Stage 1 の文字起こしとともに **Gemini 3.8 Flash** に入力します。スライドやネームプレートから実名・役職を特定してセクション 1〜5 を作成し、セクション 6（全文記録）を 60 行単位の並列バッチで表記・専門用語校正します（タイムスタンプは厳密に維持されます）。
+   - **Stage 1（デュアルパス Chirp 3 音響基準 ASR 文字起こし）**：16 kHz モノラル MP3 音声を抽出し、**デュアルパス Cloud Speech-to-Text v2 Chirp 3 (`chirp_3`)**（デフォルト）または **ローカル Whisper + Sherpa-ONNX**（オフラインモード指定時）でグローバル話者分離（`Speaker 1`, `Speaker 2`）と物理単語タイムスタンプ `[MM:SS - MM:SS]` を確定します。
+   - **Stage 2（マルチモーダル視覚融合・意味段落分割＆チャンク校正）**：大容量動画（>250 MB）を Apple Silicon `VideoToolbox` ハードウェアアクセラレーションにより 720p H.264（`10 fps`、`1 秒 GOP -g 10`、`+faststart`、`libx264` 自動フォールバック対応）へ高速圧縮してクラウド転送および Agentic フレーム探索を高速化し、Stage 1 の文字起こしとともに **Gemini 3.8 Flash** に入力します。スライドやネームプレートから実名・役職を特定してセクション 1〜5 を作成し、セクション 6（全文記録）を 60 行単位の並列バッチで表記校正および長尺発話の意味段落分割（`<PARA>`）を行い、単語タイムスタンプへ再投影します。
 
 3. **純音声・高精度パイプライン (Voice Recorders & Podcasts)**：
    - **Stage 0（専門用語集＆言語コード検出）**：音声から専門用語と主要言語コードを抽出します。
-   - **Stage 1（音響文字起こし）**：**Gemini 3.5 Transcribe**（またはオフライン Whisper + Sherpa-ONNX）でタイムスタンプ付き発話を作成します。
-   - **Stage 2（要約生成＆表記校正）**：**Gemini 3.8 Flash** によりエグゼクティブサマリーとアクションアイテムを生成し、全文文字起こしの表記を校正します。
+   - **Stage 1（デュアルパス Chirp 3 音響文字起こし）**：**デュアルパス Chirp 3 (`chirp_3`)**（またはオフライン Whisper + Sherpa-ONNX）でグローバル話者分離とタイムスタンプ付き発話を作成します。
+   - **Stage 2（要約生成・意味段落分割＆表記校正）**：**Gemini 3.8 Flash** によりエグゼクティブサマリーとアクションアイテムを生成し、全文文字起こしの表記校正と意味段落分割を実行します。
+
+---
+
+### デュアルパス Chirp 3 (Dual-Pass Chirp 3) アーキテクチャの目的
+
+従来の長時間音声のチャンク分割文字起こしには、2つの構造的な課題がありました：
+1. **チャンク間の話者ラベルリセットと司会引き継ぎの結合**：15 分ごとに音声を分割するとチャンク境界で話者 ID（`spk_0`, `spk_1`）がリセットされ、司会者が次の発言者を紹介する箇所で同一話者として結合される問題が発生します。
+2. **Cloud STT v2 単語タイムスタンプの 20 分制限**：Google Cloud Speech-to-Text v2 (`chirp_3`) は `enableWordTimeOffsets=True` の場合インライン処理が最大 20 分に制限されますが、`enableWordTimeOffsets=False` の場合は最大 8 時間の音声を分割せずに一括処理し、一貫したグローバル話者分離を維持できます。
+
+**「数時間にわたるグローバルな話者一貫性」**と**「ミリ秒単位の単語タイムスタンプ」**を両立するため、Stage 1 では 2 つのトラックを並列実行します：
+- **Track A — グローバル話者分離 (Macro Global Diarization)**：分割なしの完全な 16 kHz モノラル音声に対して単一の `BatchRecognize`（`enableSpeakerDiarization=True`、`enableWordTimeOffsets=False`）を実行し、会議全体で単一の話者空間を維持します。
+- **Track B — 単語タイムスタンプ抽出 (Micro Word Timestamps)**：音声を 5 秒のオーバーラップを持つ 18 分（`1080s`）チャンクに分割して並列実行（`enableWordTimeOffsets=True`、`enableSpeakerDiarization=False`）し、オーバーラップ中央値で重複排除して単調増加タイムスタンプを保証します。
+- **ハイブリッド多言語 LCS アライメント (`AlignmentEngine`)**：CJK 文字単位＋欧文単語単位のハイブリッド最長共通部分列（LCS）アルゴリズムにより、Track B の単語タイムスタンプを Track A の話者付き単語列へ 100% 投影します。
+- **Stage 2 意味段落分割とタイムスタンプ再投影**：数分間に及ぶ独演に対して、**Gemini 3.8 Flash** が話題の転換点で `<PARA>` マーカーを挿入し、`AlignmentEngine` が各意味段落の開始・終了時刻を物理単語タイムスタンプから再計算します。インタラクティブ HTML プレーヤーでは同一話者の連続段落を視覚的に連結（`isGrouped`）して表示します。
 
 ---
 
 ## デュアルエンジン・アーキテクチャ (Dual-Engine Architecture)
 
-### 1. クラウド Vertex AI モード（デフォルト）
-* **モデル連携**：音響文字起こしに **Gemini 3.5 Transcribe**（`TRANSCRIBE_MODEL`）、視覚分析・要約・校正に **Gemini 3.8 Flash**（`SUMMARY_MODEL`）を使用します。
-* **アダプティブ音声前処理**：25 分を超える長時間音声は無音区間で 20 分チャンクに分割し、並列で文字起こしを実行します。
-* **タイムスタンプ接頭辞ロック**：セクション 6 の各発話に対して Stage 1 の `[MM:SS - MM:SS] **spk_X**:` 接頭辞をプログラムで再結合し、時刻ずれや出力途切れを防止します。
-* **GCS 2 階層ライフサイクル管理**：`gs://<bucket>/raw/` の一時メディアは **2 日後** に自動削除され、生成された成果物は **15 日間** 保持されます。
+### 1. クラウド デュアルパス Chirp 3 + Vertex AI モード（デフォルト）
+* **モデル連携**：音響話者分離と単語タイムスタンプに **Cloud Speech-to-Text v2 Chirp 3**（`TRANSCRIBE_MODEL=chirp_3`、Chirp シリーズのみ）、視覚分析・要約・意味段落分割・校正に **Gemini 3.8 Flash**（`SUMMARY_MODEL=gemini-3.8-flash`）を使用します。
+* **デュアルパス並列実行**：Track A（非分割グローバル話者分離）と Track B（18 分並列チャンク単語タイムスタンプ＋5 秒オーバーラップ重複排除）を同時実行します。
+* **決定論的タイムスタンプ投影**：ハイブリッド LCS アライメントにより Track A と Track B を結合し、Stage 2 の意味段落を物理単語境界へ再投影します。
+* **GCS 2 階層ライフサイクル管理**：`gs://<bucket>/raw/` の一時メディアは処理完了時に `finally` ブロックで即時削除（および 2 日ライフサイクルルールで自動削除）され、生成された成果物は **15 日間** 保持されます。
 
 ### 2. ローカル・オフラインモード（明示的要求のみ）
 * **明示的有効化**：ユーザーが対話内で「ローカル/オフライン文字起こし」を明示的に要求した場合のみ起動します（クラウドエラー時に無断でローカルへフォールバックすることはありません）。

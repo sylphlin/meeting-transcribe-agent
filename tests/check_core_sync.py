@@ -40,8 +40,10 @@ ENTERPRISE_ASSETS = ROOT / "gemini-enterprise" / "app" / "assets"
 # Shared Python modules expected to exist as a near-identical pair.
 PYTHON_PAIRS = [
     "__init__.py",
+    "alignment_engine.py",
     "audio_utils.py",
     "canonicalizer.py",
+    "chirp3_engine.py",
     "diarization.py",
     "gcs_utils.py",
     "gemini_engine.py",
@@ -131,7 +133,7 @@ def get_designated_models() -> set[str]:
     if env_example.exists():
         for line in env_example.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if line.startswith("TRANSCRIBE_MODEL=") or line.startswith("SUMMARY_MODEL="):
+            if line.startswith(("TRANSCRIBE_MODEL=", "SUMMARY_MODEL=")):
                 val = line.split("=", 1)[1].strip()
                 if val:
                     models.add(val)
@@ -147,7 +149,7 @@ def check_model_invariants() -> list[str]:
     designated_models = get_designated_models()
     errors = []
     
-    # Matches any gemini model string (e.g. gemini-3.5-transcribe, gemini-1.5-flash, etc.)
+    # Matches any gemini model string (e.g. gemini-2.5-pro, gemini-1.5-flash, etc.)
     model_pattern = re.compile(r"gemini-[0-9]+(?:\.[0-9]+)?-[a-z0-9\-]+")
 
     # Scan python source code and evaluation scripts

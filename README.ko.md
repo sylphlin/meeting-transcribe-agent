@@ -2,14 +2,14 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Google GenAI SDK](https://img.shields.io/badge/Google%20GenAI%20SDK-v1.0+-4285F4.svg)](https://github.com/google-gemini/generative-ai-python)
-[![Gemini 3.5 Transcribe](https://img.shields.io/badge/Gemini%203.5-Transcribe-orange.svg)](https://ai.google.dev/)
+[![Cloud STT v2 Chirp 3](https://img.shields.io/badge/Cloud%20STT%20v2-Chirp%203-orange.svg)](https://cloud.google.com/speech-to-text)
 [![Gemini 3.8 Flash](https://img.shields.io/badge/Gemini%203.8-Flash-yellow.svg)](https://ai.google.dev/)
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ## 개요 (Overview)
 
-**Meeting Transcribe Agent**는 **Google Gemini 3.5 Transcribe**와 **Gemini 3.8 Flash**를 기반으로 구축된 멀티모달 회의록 및 전문 녹취록 생성 시스템입니다. YouTube URL, 로컬 비디오 파일, Google Drive 공유 링크 및 오디오 녹음 파일을 처리합니다. 실행할 때마다 `<input_dir>/output/` 하위 디렉터리에 구조화된 Markdown 회의록과 독립 실행형 인터랙티브 HTML 플레이어를 자동으로 격리 생성합니다.
+**Meeting Transcribe Agent**는 **Google Cloud Speech-to-Text v2 듀얼 패스 Chirp 3 (`chirp_3`)**와 **Gemini 3.8 Flash (`gemini-3.8-flash`)**를 기반으로 구축된 멀티모달 회의록 및 전문 녹취록 생성 시스템입니다. YouTube URL, 로컬 비디오 파일, Google Drive 공유 링크 및 오디오 녹음 파일을 처리합니다. 실행할 때마다 `<input_dir>/output/` 하위 디렉터리에 구조화된 Markdown 회의록과 독립 실행형 인터랙티브 HTML 플레이어를 자동으로 격리 생성합니다.
 
 ### 3가지 전용 처리 파이프라인
 
@@ -21,23 +21,37 @@
 2. **로컬 비디오 2단계 융합 파이프라인 (Acoustic Ground Truth + Vision Fusion)**:
    - **내장 자막 추출**: 비디오 컨테이너의 자막 트랙(`mov_text`, `srt`, `vtt`) 또는 `.srt` 파일을 감지하여 참석자 명단 및 안건 참조로 활용합니다.
    - **Stage 0 (전문 용어집 및 언어 코드 감지)**: 도메인 용어집을 구축하고 주요 음성 `BCP-47` 언어 코드(예: `ko-KR`, `cmn-Hant-TW`, `en-US`, `ja-JP`)를 감지합니다.
-   - **Stage 1 (음향 기준 ASR 전사)**: 16 kHz 모노 오디오를 추출하고 **Gemini 3.5 Transcribe**(기본값) 또는 **로컬 Whisper + Sherpa-ONNX**(오프라인 모드 지정 시)를 통해 물리적 타임스탬프 `[MM:SS - MM:SS]`와 화자 구간을 고정합니다.
-   - **Stage 2 (멀티모달 비전 융합 및 청크 교정)**: 대용량 비디오(>250 MB)를 Apple Silicon `VideoToolbox` 하드웨어 가속으로 720p H.264(`10 fps`, `1초 GOP -g 10`, `+faststart`, `libx264` 자동 폴백 지원)로 압축하여 클라우드 업로드 및 Agentic 프레임 탐색을 가속화한 뒤, Stage 1 녹취록과 함께 **Gemini 3.8 Flash**에 전달합니다. 슬라이드와 명패를 읽어 섹션 1–5 요약을 생성하고, 섹션 6 전문 녹취록을 60줄 단위 병렬 배치로 표기법 및 용어 교정을 수행합니다(원본 타임스탬프는 엄격히 유지됨).
+   - **Stage 1 (듀얼 패스 Chirp 3 음향 기준 ASR 전사)**: 16 kHz 모노 MP3 오디오를 추출하고 **듀얼 패스 Cloud Speech-to-Text v2 Chirp 3 (`chirp_3`)**(기본값) 또는 **로컬 Whisper + Sherpa-ONNX**(오프라인 모드 지정 시)를 통해 글로벌 화자 레이블(`Speaker 1`, `Speaker 2`)과 물리적 단어 타임스탬프 `[MM:SS - MM:SS]`를 고정합니다.
+   - **Stage 2 (멀티모달 비전 융합, 의미 문단 분할 및 청크 교정)**: 대용량 비디오(>250 MB)를 Apple Silicon `VideoToolbox` 하드웨어 가속으로 720p H.264(`10 fps`, `1초 GOP -g 10`, `+faststart`, `libx264` 자동 폴백 지원)로 압축하여 클라우드 업로드 및 Agentic 프레임 탐색을 가속화한 뒤, Stage 1 녹취록과 함께 **Gemini 3.8 Flash**에 전달합니다. 슬라이드와 명패를 읽어 섹션 1–5 요약을 생성하고, 섹션 6 전문 녹취록을 60줄 단위 병렬 배치로 표기 교정 및 장시간 독백의 의미 문단 분할(`<PARA>`)을 수행하여 단어 타임스탬프에 재투영합니다.
 
 3. **순수 오디오 고정밀 파이프라인 (Voice Recorders & Podcasts)**:
    - **Stage 0 (전문 용어집 및 언어 코드 감지)**: 오디오에서 전문 용어와 주요 발화 언어 코드를 추출합니다.
-   - **Stage 1 (음향 음성 전사)**: **Gemini 3.5 Transcribe**(또는 오프라인 Whisper + Sherpa-ONNX)로 타임스탬프가 포함된 발화 기록을 생성합니다.
-   - **Stage 2 (핵심 요약 및 표기 교정)**: **Gemini 3.8 Flash**를 사용하여 임원 요약과 실행 항목을 생성하고 섹션 6 전문 녹취록의 표기를 교정합니다.
+   - **Stage 1 (듀얼 패스 Chirp 3 음향 음성 전사)**: **듀얼 패스 Chirp 3 (`chirp_3`)**(또는 오프라인 Whisper + Sherpa-ONNX)로 글로벌 화자 분리 및 타임스탬프가 포함된 발화 기록을 생성합니다.
+   - **Stage 2 (핵심 요약, 의미 문단 분할 및 표기 교정)**: **Gemini 3.8 Flash**를 사용하여 임원 요약과 실행 항목을 생성하고 섹션 6 전문 녹취록의 표기 교정 및 의미 문단 분할을 수행합니다.
+
+---
+
+### 듀얼 패스 Chirp 3 (Dual-Pass Chirp 3) 아키텍처의 목적
+
+기존의 장시간 오디오 청크 분할 전사 방식은 긴 회의에서 두 가지 구조적 한계를 가집니다:
+1. **청크 간 화자 레이블 초기화 및 발언 인계 삼킴 현상**: 15분마다 오디오를 분할하면 청크 경계에서 화자 ID(`spk_0`, `spk_1`)가 초기화되며, 사회자가 다음 발언자를 소개할 때 두 사람의 발화가 한 화자로 병합되는 문제가 발생합니다.
+2. **Cloud STT v2 단어 타임스탬프의 20분 제한**: Google Cloud Speech-to-Text v2 (`chirp_3`)는 `enableWordTimeOffsets=True` 활성화 시 인라인 요청이 최대 20분으로 제한되지만, `enableWordTimeOffsets=False`일 때는 최대 8시간 분량의 오디오를 분할 없이 단일 요청으로 처리하여 글로벌 화자 일관성을 유지할 수 있습니다.
+
+**'다시간 글로벌 화자 일관성'**과 **'밀리초 단위의 단어 타임스탬프'**를 동시에 달성하기 위해 Stage 1은 두 개의 트랙을 병렬로 실행합니다:
+- **Track A — 글로벌 거시 화자 분리 (Macro Global Diarization)**: 분할하지 않은 전체 16 kHz 모노 오디오에 대해 단일 `BatchRecognize`(`enableSpeakerDiarization=True`, `enableWordTimeOffsets=False`)를 실행하여 회의 전체에서 단일 화자 성문 공간을 유지합니다.
+- **Track B — 미시 단어 타임스탬프 추출 (Micro Word Timestamps)**: 오디오를 5초 중첩 구간을 가진 18분(`1080s`) 청크로 분할하여 병렬 실행(`enableWordTimeOffsets=True`, `enableSpeakerDiarization=False`)하고, 중첩 구간 중앙값에서 중복을 제거하여 단조 증가하는 타임스탬프를 보장합니다.
+- **하이브리드 다국어 LCS 정렬 (`AlignmentEngine`)**: CJK 문자 단위 및 서구권 단어 단위의 하이브리드 최장 공통 부분 수열(LCS) 알고리즘을 통해 Track B의 물리적 단어 타임스탬프를 Track A의 화자 분리 단어 스트림에 100% 투영합니다.
+- **Stage 2 의미 문단 분할 및 타임스탬프 재투영**: 수 분간 이어지는 긴 독백에서 **Gemini 3.8 Flash**가 주제 전환 지점에 `<PARA>` 마커를 삽입하면, `AlignmentEngine`이 각 의미 문단의 시작/종료 시각을 물리적 단어 타임스탬프로 재투영합니다. 인터랙티브 HTML 플레이어는 동일 화자의 연속 문단을 시각적으로 연결(`isGrouped`)하여 가독성과 개별 구간 탐색을 동시에 제공합니다.
 
 ---
 
 ## 듀얼 엔진 아키텍처 (Dual-Engine Architecture)
 
-### 1. 클라우드 Vertex AI 모드 (기본값)
-* **모델 연동**: 음향 전사에는 **Gemini 3.5 Transcribe**(`TRANSCRIBE_MODEL`), 멀티모달 분석 및 교정에는 **Gemini 3.8 Flash**(`SUMMARY_MODEL`)를 사용합니다.
-* **적응형 오디오 전처리**: 25분을 초과하는 장시간 오디오는 무음 구간을 기준으로 20분 청크로 분할하여 병렬 전사합니다.
-* **결정론적 접두사 잠금**: 섹션 6의 모든 교정된 발화에 Stage 1의 `[MM:SS - MM:SS] **spk_X**:` 접두사를 재결합하여 타임스탬프 오차나 출력 잘림을 방지합니다.
-* **GCS 2단계 수명 주기 관리**: `gs://<bucket>/raw/`에 스테이징된 원본 미디어는 **2일 후** 자동 삭제되며, 최종 결과물은 **15일간** 보관됩니다.
+### 1. 클라우드 듀얼 패스 Chirp 3 + Vertex AI 모드 (기본값)
+* **모델 연동**: 음향 화자 분리 및 단어 타임스탬프에는 **Cloud Speech-to-Text v2 Chirp 3**(`TRANSCRIBE_MODEL=chirp_3`, Chirp 시리즈 전용), 멀티모달 분석, 의미 문단 분할 및 교정에는 **Gemini 3.8 Flash**(`SUMMARY_MODEL=gemini-3.8-flash`)를 사용합니다.
+* **듀얼 패스 병렬 실행**: Track A(비분할 글로벌 화자 분리)와 Track B(18분 병렬 청크 단어 타임스탬프 + 5초 중첩 중복 제거)를 동시에 실행합니다.
+* **결정론적 타임스탬프 투영**: 하이브리드 LCS 알고리즘으로 Track A와 Track B를 정렬하고 Stage 2 의미 문단을 물리적 단어 경계로 재투영합니다.
+* **GCS 2단계 수명 주기 관리**: `gs://<bucket>/raw/`에 스테이징된 원본 미디어는 추론 완료 즉시 `finally` 블록에서 삭제(및 2일 수명 주기 규칙으로 자동 삭제)되며, 최종 결과물은 **15일간** 보관됩니다.
 
 ### 2. 로컬 오프라인 모드 (명시적 요청 전용)
 * **명시적 활성화**: 사용자가 대화에서 "로컬/오프라인 전사"를 명시적으로 요청한 경우에만 실행되며, 클라우드 오류 시 임의로 로컬 모드로 전환하지 않습니다.
