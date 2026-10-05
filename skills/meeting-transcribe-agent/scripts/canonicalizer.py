@@ -422,12 +422,60 @@ def parse_speaker_mapping_from_markdown(markdown_text: str) -> Dict[str, str]:
     return mapping
 
 
+ENTITY_CORRECTIONS_START = "<!-- ENTITY_CORRECTIONS_START -->"
+ENTITY_CORRECTIONS_END = "<!-- ENTITY_CORRECTIONS_END -->"
+_ENTITY_CORRECTIONS_BLOCK_RE = re.compile(
+    re.escape(ENTITY_CORRECTIONS_START) + r'.*?' + re.escape(ENTITY_CORRECTIONS_END) + r'[ \t]*\n?',
+    re.DOTALL
+)
+
+
+def _parse_corrections_table_by_position(block_text: str) -> Dict[str, str]:
+    """
+    Read the corrections table inside the marker block by column position:
+    column 0 = mistranscribed term, column 1 = corrected term. Header text is ignored.
+    """
+    corrections: Dict[str, str] = {}
+    table_row_pattern = re.compile(r'^\s*\|(.+)\|\s*$')
+    rows = []
+    for line in block_text.splitlines():
+        m = table_row_pattern.match(line.strip())
+        if m:
+            rows.append([c.strip() for c in m.group(1).split("|")])
+    for row in rows[1:]:
+        if len(row) < 2:
+            continue
+        if all(re.match(r'^:?-+:?$', _clean_cell(c) or "-") for c in row):
+            continue
+        err_val = _clean_cell(row[0])
+        fix_val = _clean_cell(row[1])
+        if err_val and fix_val and err_val.lower() != fix_val.lower():
+            corrections[err_val] = fix_val
+    return corrections
+
+
+def strip_entity_corrections_block(markdown_text: str) -> str:
+    """
+    Remove the internal entity corrections block (markers, label, and table) from the
+    deliverable. The corrections are already applied to the transcript before this step.
+    """
+    if ENTITY_CORRECTIONS_START not in markdown_text:
+        return markdown_text
+    cleaned = _ENTITY_CORRECTIONS_BLOCK_RE.sub("", markdown_text)
+    return re.sub(r'\n{3,}', '\n\n', cleaned)
+
+
 def parse_entity_corrections_from_markdown(markdown_text: str) -> Dict[str, str]:
     """
-    Parses phonetic slips and mistranscribed entity corrections structurally from
-    any `Phonetic & Entity Corrections Table` generated in Stage 2.
+    Parse phonetic slips and mistranscribed entity corrections generated in Stage 2.
+    Primary path: the marker block `<!-- ENTITY_CORRECTIONS_START --> ... <!-- ENTITY_CORRECTIONS_END -->`
+    read by column position. Legacy path (documents without markers): header keyword detection.
     Returns mapping from mistranscribed term to corrected term.
     """
+    marker_match = _ENTITY_CORRECTIONS_BLOCK_RE.search(markdown_text)
+    if marker_match:
+        return _parse_corrections_table_by_position(marker_match.group(0))
+
     corrections = {}
     table_row_pattern = re.compile(r'^\s*\|(.+)\|\s*$')
     re_mistranscribed = re.compile(r'\b(?:mistranscrib\w*|misheard|original|error|slip)\b|誤聽|錯字|原始', re.IGNORECASE)
@@ -798,8 +846,10 @@ def consolidate_meeting_minutes(
     if srt_path:
         timeline_events = parse_srt_timeline(srt_path, speaker_resolver=speaker_resolver)
 
+    # The corrections block is internal: apply it, then remove it from the deliverable.
+    summary_part = strip_entity_corrections_block(summary_part or "")
     if not transcript_body:
-        return markdown_content
+        return strip_entity_corrections_block(markdown_content)
 
     clean_transcript = consolidate_verbatim_transcript(
         transcript_body,

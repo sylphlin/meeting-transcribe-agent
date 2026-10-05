@@ -61,12 +61,28 @@ SPEAKER_TABLE_CONTRACT = (
     "     `Speaker ID | Time Range | Role / Title | Name | Organization / Team | Remarks`\n"
     "  2. Keep the original `Speaker X` / `spk_X` identifier unchanged in the first column.\n"
     "  3. Time Range: write `MM:SS - MM:SS`. When one person holds the identifier for the whole meeting, write `-`. Never write words such as \"entire meeting\" in this cell.\n"
-    "  4. Name: write the real person name. When the name is not known, write `-`. Never write placeholders such as \"N/A\", \"Unknown\", or a translated equivalent. The pipeline then shows the Role / Title alone.\n"
+    "  4. Name: resolve the real person name from EVERY available signal and infer actively: self-introductions, direct address by other speakers (for example the chair or the emcee calling a person by name before they speak), the agenda or outline, the glossary, slides, nameplates, lower-thirds, and attendee video boxes. A name stated anywhere in the recording for that role and segment is sufficient. Write `-` ONLY when no signal in the whole recording gives the name. Never write placeholder words such as \"N/A\", \"Unknown\", or a translated equivalent; the pipeline then shows the Role / Title alone.\n"
     "  | Speaker ID | Time Range | Role / Title | Name | Organization / Team | Remarks |\n"
     "  | :--- | :--- | :--- | :--- | :--- | :--- |\n"
     "  | `spk_0` | `00:00 - 00:04` | Meeting Host | Alice Smith | Executive Board | Opens the meeting |\n"
     "  | `spk_0` | `07:35 - 10:20` | Keynote Speaker | Bob Jones | Architecture Dept | Same acoustic ID, different person |\n"
     "  | `spk_1` | - | Master of Ceremonies | - | Secretariat | Name not stated; role only |"
+)
+
+
+# Section 1 entity corrections contract. The block is machine-read (column position) and then
+# removed from the final deliverable, so the markers must be present and exact.
+ENTITY_CORRECTIONS_START = "<!-- ENTITY_CORRECTIONS_START -->"
+ENTITY_CORRECTIONS_END = "<!-- ENTITY_CORRECTIONS_END -->"
+ENTITY_CORRECTIONS_CONTRACT = (
+    f"{ENTITY_CORRECTIONS_START}\n"
+    "- **Phonetic & Entity Corrections Table** (internal; removed from the final document by the pipeline):\n"
+    "  Identify proper names, participant names, and technical terms in the draft transcript that were mistranscribed because of phonetic slips or rare name mishearings. "
+    "Output exactly three columns in this order (you may translate the header text): `Mistranscribed Term | Corrected Name / Term | Target Speaker / Context`. "
+    "Keep the two marker comment lines exactly as written, one before the label and one after the table.\n"
+    "  | Mistranscribed Term | Corrected Name / Term | Target Speaker / Context |\n"
+    "  | :--- | :--- | :--- |\n"
+    f"{ENTITY_CORRECTIONS_END}"
 )
 
 
@@ -519,10 +535,7 @@ Output strictly and exclusively Sections 1 to 5, ending immediately with the loc
 - **Speaker Mapping Table**:
   Cross-reference dialogue context, self-introductions, titles, organizations, and acoustic turns to map every `spk_X` or `Speaker X` identifier to a real person and role (if an acoustic ID is shared across different segments, add one row per segment with its Time Range).
 {SPEAKER_TABLE_CONTRACT}
-- **Phonetic & Entity Corrections Table**:
-  Identify any proper names, participant names, or technical terms in the draft transcript that were mistranscribed due to acoustic phonetic slips or rare name mishearings:
-  | Mistranscribed Term | Corrected Name / Term | Target Speaker / Context |
-  | :--- | :--- | :--- |
+{ENTITY_CORRECTIONS_CONTRACT}
 
 ## 2. Executive Summary
 - A high-level, 300–400 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.
@@ -837,10 +850,7 @@ def analyze_video_with_transcript(
   Cross-reference the draft transcript's dialogue turns with video frames, presentation slides, attendee video boxes, nameplates, and lower-third titles.
   If multiple people share the same acoustic ID across different time segments (under-clustering), add one row per segment with its Time Range.
 {SPEAKER_TABLE_CONTRACT}
-- **Phonetic & Entity Corrections Table**:
-  Cross-reference visual slide text, nameplates, and titles with the acoustic draft transcript. Identify any proper names, participant names, or technical terms that were mistranscribed due to acoustic phonetic slips or rare name mishearings:
-  | Mistranscribed Term | Corrected Name / Term | Target Speaker / Context |
-  | :--- | :--- | :--- |
+{ENTITY_CORRECTIONS_CONTRACT}
 
 ## 2. Executive Summary
 - A high-level, 300–400 word executive overview synthesizing core purpose, major themes, decisions, and outcomes.

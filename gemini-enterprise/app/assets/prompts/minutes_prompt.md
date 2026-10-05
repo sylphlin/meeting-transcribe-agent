@@ -36,12 +36,18 @@ CRITICAL FORMATTING RULES:
      `Speaker ID | Time Range | Role / Title | Name | Organization / Team | Remarks`
   2. Keep the original `Speaker X` / `spk_X` identifier unchanged in the first column.
   3. Time Range: write `MM:SS - MM:SS`. When one person holds the identifier for the whole meeting, write `-`. Never write words such as "entire meeting" in this cell.
-  4. Name: write the real person name. When the name is not known, write `-`. Never write placeholders such as "N/A", "Unknown", or a translated equivalent. The pipeline then shows the Role / Title alone.
+  4. Name: resolve the real person name from EVERY available signal and infer actively: self-introductions, direct address by other speakers (for example the chair or the emcee calling a person by name before they speak), the agenda or outline, the glossary, slides, nameplates, lower-thirds, and attendee video boxes. A name stated anywhere in the recording for that role and segment is sufficient. Write `-` ONLY when no signal in the whole recording gives the name. Never write placeholder words such as "N/A", "Unknown", or a translated equivalent; the pipeline then shows the Role / Title alone.
   | Speaker ID | Time Range | Role / Title | Name | Organization / Team | Remarks |
   | :--- | :--- | :--- | :--- | :--- | :--- |
   | `spk_0` | `00:00 - 00:04` | Meeting Host | Alice Smith | Executive Board | Opens the meeting |
   | `spk_0` | `07:35 - 10:20` | Keynote Speaker | Bob Jones | Architecture Dept | Same acoustic ID, different person |
   | `spk_1` | - | Master of Ceremonies | - | Secretariat | Name not stated; role only |
+<!-- ENTITY_CORRECTIONS_START -->
+- **Phonetic & Entity Corrections Table** (internal; removed from the final document by the pipeline):
+  Identify proper names, participant names, and technical terms in the draft transcript that were mistranscribed because of phonetic slips or rare name mishearings. Output exactly three columns in this order (you may translate the header text): `Mistranscribed Term | Corrected Name / Term | Target Speaker / Context`. Keep the two marker comment lines exactly as written, one before the label and one after the table.
+  | Mistranscribed Term | Corrected Name / Term | Target Speaker / Context |
+  | :--- | :--- | :--- |
+<!-- ENTITY_CORRECTIONS_END -->
 
 ## 2. Executive Summary
 - A high-level, 200–300 word executive overview synthesizing the core strategic purpose, major discussion themes, pivotal agreements, and overarching outcomes.

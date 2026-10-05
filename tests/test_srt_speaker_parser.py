@@ -237,3 +237,34 @@ class TestRoleColumnFallback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEntityCorrectionsBlock(unittest.TestCase):
+    MD = (
+        "## 1. 會議基本資訊\n\n"
+        "| 發言代碼 | 時間區間 | 職稱 | 姓名 | 機關 | 備註 |\n"
+        "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+        "| `Speaker 1` | - | 市長 | 黃偉哲 | 市政府 | 主席 |\n"
+        "<!-- ENTITY_CORRECTIONS_START -->\n"
+        "- **語音辨識名詞更正表**：\n"
+        "  | 原音誤聽詞 | 更正後 | 語境 |\n"
+        "  | :--- | :--- | :--- |\n"
+        "  | 陳豪起 | 陳豪吉 | 專門委員 |\n"
+        "<!-- ENTITY_CORRECTIONS_END -->\n\n"
+        "## 2. 執行摘要\n\n內容。\n\n"
+        "## 6. 完整逐字記錄\n\n"
+        "[00:01 - 00:03] **Speaker 1**: 請陳豪起報告。\n"
+    )
+
+    def test_corrections_parsed_by_position_inside_markers(self):
+        from scripts.canonicalizer import parse_entity_corrections_from_markdown
+        self.assertEqual(parse_entity_corrections_from_markdown(self.MD), {"陳豪起": "陳豪吉"})
+
+    def test_block_applied_then_removed_from_deliverable(self):
+        out = consolidate_meeting_minutes(self.MD)
+        self.assertIn("請陳豪吉報告", out)
+        self.assertNotIn("ENTITY_CORRECTIONS", out)
+        self.assertNotIn("語音辨識名詞更正表", out)
+        self.assertNotIn("陳豪起", out)
+        self.assertIn("## 2. 執行摘要", out)
+        self.assertIn("**黃偉哲 (市長)**", out)
