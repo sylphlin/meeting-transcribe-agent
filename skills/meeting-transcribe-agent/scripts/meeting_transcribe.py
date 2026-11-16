@@ -18,6 +18,7 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 from scripts.audio_utils import (
+    ensure_ffmpeg_in_path,
     get_audio_duration,
     format_offset,
     compress_audio_for_upload,
@@ -91,6 +92,7 @@ def generate_meeting_minutes_and_transcript(
     Media fed to Cloud STT v2 and Gemini (local audio/video, not YouTube URLs) is staged through a
     Cloud Storage bucket (bucket_name, or MEETING_STORAGE_BUCKET in the environment).
     """
+    ensure_ffmpeg_in_path()
     load_env_file()
     from scripts.chirp3_engine import validate_chirp_model
     transcribe_model = validate_chirp_model(transcribe_model) if engine.lower() != "whisper" else (transcribe_model or os.environ.get("TRANSCRIBE_MODEL") or "chirp_3")
@@ -467,6 +469,7 @@ def generate_meeting_minutes_and_transcript(
 
 
 def main():
+    ensure_ffmpeg_in_path()
     load_env_file()
     parser = argparse.ArgumentParser(
         description="Meeting Transcribe Agent - Universal Cloud-Scale Intelligence & Offline Whisper Backup Suite"

@@ -308,57 +308,41 @@ Select one of the two deployment methods below:
 
 | Method | Target Environment | Setup Tool | Primary Interface |
 | :--- | :--- | :--- | :--- |
-| **Method 1: Google Antigravity & Agent Plugins** | Local Antigravity IDE and Agent Skill | `pip` / `uv` + `./setup.sh` | Antigravity IDE chat |
+| **Method 1: Google Antigravity Plugin** | Local Antigravity IDE | `agy plugin install` + `pip` + `./setup.sh` | Antigravity IDE chat |
 | **Method 2: Gemini Enterprise** | Cloud Vertex AI Agent Runtime | `./deploy.sh` (native `gcloud`) | Gemini Enterprise Web UI, Agent Engine, A2A |
 
 ---
 
 ### System Prerequisites
 
-1. **Install FFmpeg**:
-   - **macOS**: `brew install ffmpeg`
-   - **Ubuntu / Debian**: `sudo apt update && sudo apt install ffmpeg`
-   - **Windows**: `winget install Gyan.FFmpeg`
-
-2. **Authenticate Google Cloud ADC**:
+1. **Authenticate Google Cloud ADC**:
    Authenticate Application Default Credentials (ADC) for Vertex AI, Cloud Speech-to-Text v2, and Cloud Storage access:
    ```bash
    gcloud auth application-default login
    ```
+2. **FFmpeg Media Tools (Automatic)**:
+   `requirements.txt` includes `static-ffmpeg`, which automatically provides cross-platform `ffmpeg` and `ffprobe` binaries when system FFmpeg is absent. If native FFmpeg is already installed on `PATH`, the system uses your native binaries first.
 
 ---
 
-### Method 1: Google Antigravity Plugin and Skill Setup
+### Method 1: Google Antigravity Plugin Setup
 
-1. **Clone the Repository as an Agent Plugin (Recommended)**:
-   - **Global Plugin**:
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
-     ```
-   - **Workspace Plugin**:
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agents/plugins/meeting-transcribe-agent
-     ```
-   - **Legacy Single-Skill Installation (`~/.gemini/config/skills/`)**:
-     To install into a legacy single-skill directory, link the inner `skills/meeting-transcribe-agent` subdirectory:
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
-     ln -s ~/.gemini/config/plugins/meeting-transcribe-agent/skills/meeting-transcribe-agent ~/.gemini/config/skills/meeting-transcribe-agent
-     ```
-
-2. **Install Python Dependencies**:
+1. **Install the Antigravity Plugin**:
    ```bash
-   pip install google-genai google-cloud-storage requests
+   agy plugin install https://github.com/sylphlin/meeting-transcribe-agent
    ```
-   *(Optional offline Whisper dependencies: run `pip install mlx-whisper sherpa-onnx` on Apple Silicon, or `pip install faster-whisper sherpa-onnx` on Linux/Windows).*
+
+2. **Install Python and Media Dependencies**:
+   `requirements.txt` installs the Google Cloud SDKs and `static-ffmpeg` (automatic `ffmpeg` and `ffprobe` fallback when system FFmpeg is not installed):
+   ```bash
+   pip install -r ~/.gemini/config/plugins/meeting-transcribe-agent/requirements.txt
+   ```
+   *(Optional offline Whisper mode: run `pip install mlx-whisper sherpa-onnx numpy` on macOS Apple Silicon, or `pip install faster-whisper sherpa-onnx numpy` on Linux/Windows).*
 
 3. **Initialize Google Cloud Environment (`./setup.sh`)**:
-   Run `setup.sh` to configure the cloud environment:
-   - Verify ADC authentication.
-   - Enable Vertex AI, Cloud Speech-to-Text, Cloud Storage, and Google Drive APIs.
-   - Create the staging bucket with CORS and two-tier lifecycle rules (`raw/`: 2 days; deliverables: 15 days).
-   - Generate the `.env` configuration file (`TRANSCRIBE_MODEL=chirp_3`, `SUMMARY_MODEL=gemini-3.8-flash`, `STT_LOCATION=us`).
+   Run `setup.sh` to verify ADC credentials, enable required Google Cloud APIs (Vertex AI, Cloud Speech-to-Text, Cloud Storage, Google Drive), create the staging bucket with two-tier lifecycle rules (`raw/`: 2 days; deliverables: 15 days), and write `.env`:
    ```bash
+   gcloud auth application-default login
    cd ~/.gemini/config/plugins/meeting-transcribe-agent
    chmod +x setup.sh
    ./setup.sh --project YOUR_GCP_PROJECT_ID
@@ -374,6 +358,7 @@ Select one of the two deployment methods below:
 ```text
 meeting-transcribe-agent/
 ├── plugin.json                                           # Agent Plugins 1.0 manifest
+├── requirements.txt                                      # Cloud Python packages & static-ffmpeg fallback
 ├── rules/
 │   └── AGENTS.md                                         # Packaged client execution invariants (read-only & fail-fast)
 ├── skills/
@@ -383,7 +368,7 @@ meeting-transcribe-agent/
 │       │   ├── meeting_transcribe.py                     # Master pipeline orchestrator
 │       │   ├── chirp3_engine.py                          # Dual-Pass Cloud STT v2 Chirp 3 engine
 │       │   ├── alignment_engine.py                       # Hybrid CJK/Western LCS word alignment & <PARA> re-projection
-│       │   ├── audio_utils.py                            # Video detection, FFmpeg compression, audio extraction
+│       │   ├── audio_utils.py                            # Video detection, FFmpeg compression, static-ffmpeg fallback
 │       │   ├── gcs_utils.py                              # Cloud Storage upload/download & ephemeral cleanup
 │       │   ├── gemini_engine.py                          # Multimodal video fusion & Cloud Storage auto-cleanup
 │       │   ├── diarization.py                            # Local Sherpa-ONNX acoustic diarization & Whisper/MLX

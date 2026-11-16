@@ -268,68 +268,52 @@ flowchart TD
 
 ## 安裝與部署 (Installation & Deployment)
 
-請依執行環境選擇以下兩種安裝部署方式之一：
+請選擇以下兩種安裝部署方式之一：
 
 | 部署方式 | 目標環境 | 安裝工具 | 主要操作介面 |
 | :--- | :--- | :--- | :--- |
-| **方式一：Google Antigravity & Agent Plugins** | 本地 Antigravity IDE 與 Agent Skill | `pip` / `uv` + `./setup.sh` | Antigravity IDE 對話視窗 |
+| **方式一：Google Antigravity Plugin** | 本地 Antigravity IDE | `agy plugin install` + `pip` + `./setup.sh` | Antigravity IDE 對話視窗 |
 | **方式二：Gemini Enterprise** | Cloud Vertex AI Agent Runtime | `./deploy.sh`（原生 `gcloud`） | Gemini Enterprise Web UI、Agent Engine、A2A |
 
 ---
 
 ### 系統前置需求
 
-1. **安裝 FFmpeg**：
-   - **macOS**：`brew install ffmpeg`
-   - **Ubuntu / Debian**：`sudo apt update && sudo apt install ffmpeg`
-   - **Windows**：`winget install Gyan.FFmpeg`
-
-2. **設定 Google Cloud ADC 驗證**：
+1. **設定 Google Cloud ADC 驗證**：
    執行以下指令以授權 Vertex AI、Cloud Speech-to-Text v2 與 Cloud Storage 存取權限：
    ```bash
    gcloud auth application-default login
    ```
+2. **FFmpeg 影音工具（自動配置）**：
+   `requirements.txt` 內建 `static-ffmpeg`。若系統尚未安裝 FFmpeg，程式會自動掛載跨平台 `ffmpeg` 與 `ffprobe` 執行檔；若系統 `PATH` 已有原生 FFmpeg，則優先使用系統原生版本。
 
 ---
 
-### 方式一：Google Antigravity Plugin 與 Skill 安裝
+### 方式一：Google Antigravity Plugin 安裝設定
 
-1. **安裝為 Agent Plugin（建議方式）**：
-   - **全域安裝（Global Plugin）**：
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
-     ```
-   - **工作區安裝（Workspace Plugin）**：
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git .agents/plugins/meeting-transcribe-agent
-     ```
-   - **舊版獨立 Skill 目錄安裝（`~/.gemini/config/skills/` 相容方式）**：
-     若要在僅支援舊版單一 Skill 目錄的環境中使用，請將內層 `skills/meeting-transcribe-agent` 子目錄連結至 `skills/`：
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
-     ln -s ~/.gemini/config/plugins/meeting-transcribe-agent/skills/meeting-transcribe-agent ~/.gemini/config/skills/meeting-transcribe-agent
-     ```
-
-2. **安裝 Python 相依套件**：
+1. **安裝 Antigravity Plugin**：
    ```bash
-   pip install google-genai google-cloud-storage requests
+   agy plugin install https://github.com/sylphlin/meeting-transcribe-agent
    ```
-   *（選用離線 Whisper 套件：Apple Silicon 請執行 `pip install mlx-whisper sherpa-onnx`；Linux/Windows 請執行 `pip install faster-whisper sherpa-onnx`）。*
+
+2. **安裝 Python 與影音處理套件**：
+   執行以下指令安裝雲端 SDK 與 `static-ffmpeg`（未安裝系統 FFmpeg 時自動提供 `ffmpeg` 與 `ffprobe` 支援）：
+   ```bash
+   pip install -r ~/.gemini/config/plugins/meeting-transcribe-agent/requirements.txt
+   ```
+   *（選用離線 Whisper 模式：macOS Apple Silicon 執行 `pip install mlx-whisper sherpa-onnx numpy`；Linux/Windows 執行 `pip install faster-whisper sherpa-onnx numpy`）。*
 
 3. **初始化 Google Cloud 環境 (`./setup.sh`)**：
-   執行 `setup.sh` 自動完成雲端環境設定：
-   - 驗證 ADC 憑證狀態。
-   - 啟用 Vertex AI、Cloud Speech-to-Text、Cloud Storage 與 Google Drive API。
-   - 建立儲存桶並設定 CORS 與雙層生命週期規則（`raw/`：2 天；產出物：15 天）。
-   - 自動產生 `.env` 設定檔（`TRANSCRIBE_MODEL=chirp_3`、`SUMMARY_MODEL=gemini-3.8-flash`、`STT_LOCATION=us`）。
+   執行 `setup.sh` 驗證 ADC 憑證、啟用必要 API（Vertex AI、Cloud Speech-to-Text、Cloud Storage、Google Drive）、建立雙層生命週期儲存桶（`raw/`：2 天；產出物：15 天），並產生 `.env` 設定檔：
    ```bash
+   gcloud auth application-default login
    cd ~/.gemini/config/plugins/meeting-transcribe-agent
    chmod +x setup.sh
    ./setup.sh --project YOUR_GCP_PROJECT_ID
    ```
 
-4. **在 Antigravity 中開始使用**：
-   直接在 Antigravity 對話視窗輸入：
+4. **在 Antigravity 中執行**：
+   在 Antigravity 對話視窗輸入指令：
    ```text
    /meeting-transcribe-agent 檔案: @meeting_recording.mp3
    ```
@@ -338,6 +322,7 @@ flowchart TD
 ```text
 meeting-transcribe-agent/
 ├── plugin.json                                           # Agent Plugins 1.0 宣告清單
+├── requirements.txt                                      # 雲端核心 Python 套件與 static-ffmpeg 自動支援
 ├── rules/
 │   └── AGENTS.md                                         # 打包於 Plugin 內的客戶端執行期守則（唯讀與 Fail-Fast）
 ├── skills/

@@ -17,6 +17,17 @@ VIDEO_EXTENSIONS = {'.mp4', '.mov', '.mkv', '.avi', '.webm', '.flv', '.wmv', '.m
 AUDIO_EXTENSIONS = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.opus', '.wma'}
 
 
+def ensure_ffmpeg_in_path() -> None:
+    """Add static-ffmpeg binaries to PATH when system ffmpeg or ffprobe is missing."""
+    if shutil.which("ffmpeg") and shutil.which("ffprobe"):
+        return
+    try:
+        import static_ffmpeg
+        static_ffmpeg.add_paths(weak=True)
+    except ImportError:
+        pass
+
+
 def is_youtube_url(url_str: str) -> bool:
     """Check if the input string is a valid YouTube URL."""
     if not isinstance(url_str, str):
@@ -196,6 +207,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path = None, bitrate
         print(f"[✓] Found existing extracted audio: {output_path.name} ({cached_mb:.1f} MB). Reusing.")
         return output_path
 
+    ensure_ffmpeg_in_path()
     print(f"[*] Extracting audio from video: {video_path.name} -> {output_path.name}...")
     cmd = [
         "ffmpeg", "-y", "-i", str(video_path),
@@ -283,6 +295,7 @@ def optimize_video_for_upload(video_path: Path, output_path: Path = None, max_si
         print(f"[✓] Found existing optimized video: {output_path.name} ({cached_mb:.1f} MB). Reusing.")
         return output_path
 
+    ensure_ffmpeg_in_path()
     print(f"[*] Video size is {orig_mb:.1f} MB (> {max_size_mb} MB). Optimizing to 720p (10 fps, GOP=10) for fast cloud upload...")
     cmd = _build_video_optimize_cmd(video_path, output_path, encoder="h264_videotoolbox", use_hwaccel=True)
     res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -306,6 +319,7 @@ def get_audio_duration(audio_path: Path) -> float:
     2. Audio stream duration (stream=duration)
     3. Fallback calculation via file size and detected bitrate
     """
+    ensure_ffmpeg_in_path()
     audio_path = Path(audio_path)
     # Layer 1: format=duration
     try:
@@ -375,6 +389,7 @@ def detect_audio_speech_onset(
     Return 0.0 when speech starts immediately or when detection is not possible.
     Use the result only as a lower bound for word timestamps.
     """
+    ensure_ffmpeg_in_path()
     try:
         cmd = [
             "ffmpeg", "-nostdin", "-hide_banner", "-y",
@@ -435,6 +450,7 @@ def compress_audio_for_upload(audio_path: Path, bitrate: str = "64k") -> Path:
     Essential because google-genai sets HTTP header 'X-Goog-Upload-File-Name'
     from the basename, which httpx encodes as ASCII.
     """
+    ensure_ffmpeg_in_path()
     safe_hash = hashlib.md5(audio_path.name.encode("utf-8")).hexdigest()[:12]
     out_path = audio_path.parent / f"upload_temp_{safe_hash}_{bitrate}.m4a"
     print(f"[*] Compressing audio for fast upload ({bitrate})...")
@@ -491,6 +507,7 @@ def detect_embedded_subtitles(video_path: Path | str) -> str | None:
     video_p = Path(video_path).resolve()
     if not video_p.is_file():
         return None
+    ensure_ffmpeg_in_path()
     try:
         cmd = [
             "ffprobe", "-v", "error",
@@ -532,6 +549,7 @@ def extract_embedded_subtitles(video_path: Path | str, output_path: Path | str =
         return out_p
 
     out_p.parent.mkdir(parents=True, exist_ok=True)
+    ensure_ffmpeg_in_path()
     print(f"[*] Extracting embedded subtitle stream ({codec}): {video_p.name} -> {out_p.name}...")
     try:
         cmd = [

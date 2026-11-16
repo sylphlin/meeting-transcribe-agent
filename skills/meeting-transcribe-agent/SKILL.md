@@ -31,6 +31,7 @@ This suite strictly complies with the [Agent Plugins 1.0](https://agent-plugins.
 ```text
 meeting-transcribe-agent/
 ├── plugin.json                       # Agent Plugins 1.0 manifest
+├── requirements.txt                  # Core cloud Python packages & static-ffmpeg cross-platform fallback
 ├── rules/
 │   └── AGENTS.md                     # Plugin runtime invariants (read-only execution & fail-fast)
 ├── skills/
@@ -41,7 +42,7 @@ meeting-transcribe-agent/
 │       │   ├── meeting_transcribe.py # Master pipeline orchestrator (YouTube, Local Video Fusion, & Audio)
 │       │   ├── chirp3_engine.py      # Dual-Pass Cloud STT v2 Chirp 3 engine (Track A macro diarization + Track B micro timestamps)
 │       │   ├── alignment_engine.py   # Hybrid CJK/Western LCS word alignment, overlap deduplication, semantic paragraph re-projection
-│       │   ├── audio_utils.py        # Video detection, YouTube title fetching, FFmpeg compression, audio extraction
+│       │   ├── audio_utils.py        # Video detection, YouTube title fetching, FFmpeg compression, audio extraction, static-ffmpeg fallback
 │       │   ├── gcs_utils.py          # Google Cloud Storage upload/download, signed URLs, ephemeral blob cleanup
 │       │   ├── gemini_engine.py      # Multimodal video end-to-end, two-stage video fusion, Cloud Storage auto-cleanup
 │       │   ├── diarization.py        # Local Sherpa-ONNX acoustic diarization & Whisper/MLX transcription
@@ -106,8 +107,8 @@ Set `Cwd` to `<PLUGIN_ROOT>` and invoke `python3 skills/meeting-transcribe-agent
    - **HALT EXECUTION IMMEDIATELY**.
    - **DO NOT** attempt blind speculative retries or probing alternative buckets.
    - **DO NOT** silently switch to `--engine whisper`, extract container subtitles, or run local OCR workarounds.
-   - Report the exact blocked error to the user with actionable remediation steps (e.g., `gcloud auth application-default login`, running `./setup.sh`, granting `roles/storage.objectUser`, or providing a bucket with `--bucket`) and wait for user direction.
-4. **Automated Cloud Environment Setup (`setup.sh`)**: When setting up a new environment or configuring Cloud Storage, the agent directly invokes `./setup.sh` to initialize the Google Cloud project, enable required APIs (`aiplatform.googleapis.com`, `speech.googleapis.com`, `storage.googleapis.com`), configure the GCS bucket with CORS and automated lifecycle deletion rules, and generate `.env`.
+   - Report the exact blocked error to the user with actionable remediation steps (for example, `gcloud auth application-default login`, `./setup.sh`, `pip install -r requirements.txt`, granting `roles/storage.objectUser`, or passing `--bucket`) and wait for user direction.
+4. **Automated Cloud Environment & Dependency Setup (`requirements.txt` & `setup.sh`)**: `requirements.txt` installs core Google Cloud packages and `static-ffmpeg` (which automatically adds cross-platform `ffmpeg` and `ffprobe` binaries with `weak=True` when system FFmpeg is absent). When setting up a new environment or configuring Cloud Storage, invoke `./setup.sh` to initialize the Google Cloud project, enable required APIs (`aiplatform.googleapis.com`, `speech.googleapis.com`, `storage.googleapis.com`), configure the GCS bucket with CORS and automated lifecycle deletion rules, and generate `.env`.
 
 ### Branch A: Video Pipelines (YouTube or Local Video)
 For YouTube links (`https://www.youtube.com/...`) or local video files (`.mp4`, `.mov`, `.mkv`), the agent runs the appropriate video pipeline (both natively use Agentic Video Understanding):
@@ -191,7 +192,7 @@ python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py "meeting_r
 
 ---
 
-## ☁️ Google Drive Direct Link & GCS Smart Caching (ADC)
+## Google Drive Direct Link & GCS Smart Caching (ADC)
 
 `meeting-transcribe-agent` natively supports passing Google Drive file links (`https://drive.google.com/file/d/.../view` or `gdrive://...`) directly as `input_source`:
 - Authenticated 100% via Application Default Credentials (`gcloud auth application-default login`).

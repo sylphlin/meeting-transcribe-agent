@@ -64,41 +64,40 @@
 
 | 方法 | 対象環境 | セットアップツール | 主なインターフェース |
 | :--- | :--- | :--- | :--- |
-| **方法 1：Google Antigravity & Agent Plugins** | ローカル Antigravity IDE、Agent Skill | `pip` / `uv` + `./setup.sh` | Antigravity IDE チャット |
+| **方法 1：Google Antigravity Plugin** | ローカル Antigravity IDE | `agy plugin install` + `pip` + `./setup.sh` | Antigravity IDE チャット |
 | **方法 2：Gemini Enterprise** | Cloud Vertex AI Agent Runtime | `./deploy.sh`（ネイティブ `gcloud`） | Gemini Enterprise Web UI、Agent Engine、A2A |
 
 ### システム前提条件
 
-1. **FFmpeg のインストール**：
-   - **macOS**：`brew install ffmpeg`
-   - **Ubuntu / Debian**：`sudo apt update && sudo apt install ffmpeg`
-   - **Windows**：`winget install Gyan.FFmpeg`
-
-2. **Google Cloud ADC 認証**：
+1. **Google Cloud ADC 認証**：
    ```bash
    gcloud auth application-default login
    ```
+2. **FFmpeg メディアツール（自動設定）**：
+   `requirements.txt` に `static-ffmpeg` が含まれます。システムに FFmpeg が未インストールの場合、クロスプラットフォームの `ffmpeg` と `ffprobe` バイナリを自動的に利用します。システム `PATH` に既存の FFmpeg がある場合はネイティブ版を優先します。
 
-### 方法 1：Google Antigravity Plugin / Skill セットアップ
+### 方法 1：Google Antigravity Plugin セットアップ
 
-1. **Agent Plugin としてクローン（推奨）**：
+1. **Antigravity Plugin をインストール**：
    ```bash
-   git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
+   agy plugin install https://github.com/sylphlin/meeting-transcribe-agent
    ```
-   - **従来の単一 Skill ディレクトリへのインストール（`~/.gemini/config/skills/` 互換）**：
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
-     ln -s ~/.gemini/config/plugins/meeting-transcribe-agent/skills/meeting-transcribe-agent ~/.gemini/config/skills/meeting-transcribe-agent
-     ```
-2. **Python 依存パッケージのインストール**：
+2. **Python およびメディア依存パッケージをインストール**：
+   `requirements.txt` はクラウド SDK と `static-ffmpeg`（システム FFmpeg 未導入時の自動フォールバック）をインストールします：
    ```bash
-   pip install google-genai google-cloud-storage requests
+   pip install -r ~/.gemini/config/plugins/meeting-transcribe-agent/requirements.txt
    ```
-3. **Google Cloud 環境の初期化 (`./setup.sh`)**：
+   *（任意のオフライン Whisper モード：macOS Apple Silicon は `pip install mlx-whisper sherpa-onnx numpy`、Linux/Windows は `pip install faster-whisper sherpa-onnx numpy` を実行してください）。*
+3. **Google Cloud 環境を初期化 (`./setup.sh`)**：
    ```bash
+   gcloud auth application-default login
    cd ~/.gemini/config/plugins/meeting-transcribe-agent
    chmod +x setup.sh
    ./setup.sh --project YOUR_GCP_PROJECT_ID
+   ```
+4. **Antigravity で実行**：
+   ```text
+   /meeting-transcribe-agent ファイル: @meeting_recording.mp3
    ```
 
 ### 方法 2：Gemini Enterprise クラウドデプロイ (`./deploy.sh`)
@@ -109,9 +108,21 @@ chmod +x setup.sh deploy.sh
 ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
 ```
 
-### ディレクトリ構造（Agent Plugins 1.0 準拠）
-- **SSOT 実体ディレクトリ**：`skills/meeting-transcribe-agent/`（エージェント専用 CLI リファレンスを含む `SKILL.md`、`scripts/`、`assets/` を格納）を単一の信頼できる情報源とします。
-- **2 層 `AGENTS.md` 構成**：ルートの `AGENTS.md` は開発・エンジニアリング規約（Part I & Part II）を定義し、`rules/AGENTS.md` はプラグインに同梱される AI クライアント実行時ルール（読み取り専用、Fail-Fast）を定義します。
+### プロジェクトのディレクトリ構造（Agent Plugins 1.0 準拠）
+```text
+meeting-transcribe-agent/
+├── plugin.json                                           # Agent Plugins 1.0 マニフェスト
+├── requirements.txt                                      # クラウド Python パッケージ＆static-ffmpeg 自動対応
+├── rules/
+│   └── AGENTS.md                                         # プラグイン同梱の実行時ルール（読み取り専用・Fail-Fast）
+├── skills/
+│   └── meeting-transcribe-agent/                         # 標準スキルバンドル（Single Source of Truth）
+│       ├── SKILL.md                                      # スキル定義＆エージェント専用 CLI リファレンス
+│       ├── scripts/                                      # 文字起こし・デュアルパス Chirp 3・視覚融合コアモジュール (SSOT)
+│       └── assets/                                       # プレーヤーテンプレート＆プロンプト定義 (SSOT)
+├── AGENTS.md                                             # 開発・エンジニアリング規約（Part I & Part II）
+└── setup.sh / deploy.sh                                  # ネイティブ gcloud セットアップ＆デプロイスクリプト
+```
 
 ---
 

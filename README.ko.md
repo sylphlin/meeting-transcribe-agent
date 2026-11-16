@@ -64,41 +64,40 @@
 
 | 방법 | 대상 환경 | 설정 도구 | 주요 인터페이스 |
 | :--- | :--- | :--- | :--- |
-| **방법 1: Google Antigravity & Agent Plugins** | 로컬 Antigravity IDE, Agent Skill | `pip` / `uv` + `./setup.sh` | Antigravity IDE 채팅 |
+| **방법 1: Google Antigravity Plugin** | 로컬 Antigravity IDE | `agy plugin install` + `pip` + `./setup.sh` | Antigravity IDE 채팅 |
 | **방법 2: Gemini Enterprise** | Cloud Vertex AI Agent Runtime | `./deploy.sh` (네이티브 `gcloud`) | Gemini Enterprise Web UI, Agent Engine, A2A |
 
 ### 시스템 사전 요구 사항
 
-1. **FFmpeg 설치**:
-   - **macOS**: `brew install ffmpeg`
-   - **Ubuntu / Debian**: `sudo apt update && sudo apt install ffmpeg`
-   - **Windows**: `winget install Gyan.FFmpeg`
-
-2. **Google Cloud ADC 인증**:
+1. **Google Cloud ADC 인증**:
    ```bash
    gcloud auth application-default login
    ```
+2. **FFmpeg 미디어 도구 (자동 설정)**:
+   `requirements.txt`에 `static-ffmpeg`가 포함되어 있습니다. 시스템에 FFmpeg가 설치되어 있지 않으면 크로스 플랫폼 `ffmpeg` 및 `ffprobe` 바이너리를 자동으로 제공하며, 시스템 `PATH`에 네이티브 FFmpeg가 있으면 기존 바이너리를 우선 사용합니다.
 
-### 방법 1: Google Antigravity Plugin / Skill 설정
+### 방법 1: Google Antigravity Plugin 설정
 
-1. **Agent Plugin으로 클론 (권장)**:
+1. **Antigravity Plugin 설치**:
    ```bash
-   git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
+   agy plugin install https://github.com/sylphlin/meeting-transcribe-agent
    ```
-   - **기존 단일 Skill 디렉터리 설치 (`~/.gemini/config/skills/` 호환 방식)**:
-     ```bash
-     git clone https://github.com/sylphlin/meeting-transcribe-agent.git ~/.gemini/config/plugins/meeting-transcribe-agent
-     ln -s ~/.gemini/config/plugins/meeting-transcribe-agent/skills/meeting-transcribe-agent ~/.gemini/config/skills/meeting-transcribe-agent
-     ```
-2. **Python 의존성 패키지 설치**:
+2. **Python 및 미디어 의존성 패키지 설치**:
+   `requirements.txt`는 클라우드 SDK와 `static-ffmpeg`(시스템 FFmpeg 미설치 시 자동 폴백)를 설치합니다:
    ```bash
-   pip install google-genai google-cloud-storage requests
+   pip install -r ~/.gemini/config/plugins/meeting-transcribe-agent/requirements.txt
    ```
+   *(선택적 오프라인 Whisper 모드: macOS Apple Silicon은 `pip install mlx-whisper sherpa-onnx numpy`, Linux/Windows는 `pip install faster-whisper sherpa-onnx numpy`를 실행하세요).*
 3. **Google Cloud 환경 초기화 (`./setup.sh`)**:
    ```bash
+   gcloud auth application-default login
    cd ~/.gemini/config/plugins/meeting-transcribe-agent
    chmod +x setup.sh
    ./setup.sh --project YOUR_GCP_PROJECT_ID
+   ```
+4. **Antigravity에서 실행**:
+   ```text
+   /meeting-transcribe-agent 파일: @meeting_recording.mp3
    ```
 
 ### 방법 2: Gemini Enterprise 클라우드 배포 (`./deploy.sh`)
@@ -109,9 +108,21 @@ chmod +x setup.sh deploy.sh
 ./deploy.sh --project YOUR_GCP_PROJECT_ID --region us-central1
 ```
 
-### 디렉터리 구조 (Agent Plugins 1.0 표준)
-- **SSOT 실제 디렉터리**: `skills/meeting-transcribe-agent/`(에이전트 전용 CLI 레퍼런스가 포함된 `SKILL.md`, `scripts/`, `assets/` 포함)를 단일 진실 공급원(SSOT)으로 사용합니다.
-- **2계층 `AGENTS.md` 구성**: 루트 `AGENTS.md`는 워크스페이스 및 개발 표준(Part I & Part II)을 정의하고, 플러그인 내부의 `rules/AGENTS.md`는 AI 클라이언트 실행 규칙(읽기 전용, Fail-Fast)을 정의합니다.
+### 프로젝트 디렉터리 구조 (Agent Plugins 1.0 표준)
+```text
+meeting-transcribe-agent/
+├── plugin.json                                           # Agent Plugins 1.0 매니페스트
+├── requirements.txt                                      # 클라우드 Python 패키지 및 static-ffmpeg 자동 폴백
+├── rules/
+│   └── AGENTS.md                                         # 플러그인 내장 AI 클라이언트 실행 규칙 (읽기 전용, Fail-Fast)
+├── skills/
+│   └── meeting-transcribe-agent/                         # 표준 스킬 번들 (Single Source of Truth)
+│       ├── SKILL.md                                      # 스킬 정의 및 에이전트 전용 CLI 레퍼런스
+│       ├── scripts/                                      # 전사, 듀얼 패스 Chirp 3, 비전 융합 핵심 모듈 (SSOT)
+│       └── assets/                                       # 플레이어 템플릿 및 프롬프트 사양 (SSOT)
+├── AGENTS.md                                             # 워크스페이스 및 개발 표준 (Part I & Part II)
+└── setup.sh / deploy.sh                                  # 네이티브 gcloud 설정 및 배포 스크립트
+```
 
 ---
 

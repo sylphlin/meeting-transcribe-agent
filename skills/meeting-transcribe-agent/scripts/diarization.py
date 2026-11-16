@@ -11,7 +11,7 @@ import platform
 from pathlib import Path
 from typing import Tuple, List
 
-from scripts.audio_utils import format_offset
+from scripts.audio_utils import ensure_ffmpeg_in_path, format_offset
 
 
 def join_cjk_text(tokens: List[str]) -> str:
@@ -53,6 +53,7 @@ def join_cjk_text(tokens: List[str]) -> str:
 
 def preprocess_audio_for_diarization(audio_path: Path) -> Path:
     """Convert audio to 16kHz Mono WAV required by Sherpa-ONNX."""
+    ensure_ffmpeg_in_path()
     out_wav = audio_path.parent / f"temp_diar_{audio_path.stem}.wav"
     cmd = [
         "ffmpeg", "-y", "-i", str(audio_path),
@@ -65,6 +66,7 @@ def preprocess_audio_for_diarization(audio_path: Path) -> Path:
 
 def enhance_speech_audio(wav_path: Path) -> Path:
     """Denoise and speech-enhance WAV audio with highpass, lowpass, and EBU R128 loudness normalization."""
+    ensure_ffmpeg_in_path()
     enhanced_wav = wav_path.parent / f"temp_enhanced_{wav_path.stem}.wav"
     print(f"[*] Preprocessing audio enhancement (bandpass 80Hz~7.5kHz + dynamic loudness normalization)...")
     cmd = [

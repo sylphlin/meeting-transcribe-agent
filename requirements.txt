@@ -1,0 +1,10 @@
+# Core cloud pipeline dependencies (Vertex AI Gemini + Cloud STT v2 Chirp 3 + GCS + cross-platform FFmpeg)
+google-genai>=1.0.0
+google-cloud-storage>=2.14.0
+google-auth>=2.28.0
+requests>=2.31.0
+static-ffmpeg>=3.0
+
+# Optional local offline Whisper + Sherpa-ONNX diarization (--engine whisper):
+# macOS Apple Silicon: pip install mlx-whisper sherpa-onnx numpy
+# Linux / Windows:     pip install faster-whisper sherpa-onnx numpy

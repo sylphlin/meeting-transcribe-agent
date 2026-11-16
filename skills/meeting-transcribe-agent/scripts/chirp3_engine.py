@@ -30,6 +30,7 @@ from scripts.alignment_engine import (
 )
 from scripts.audio_utils import (
     detect_audio_speech_onset,
+    ensure_ffmpeg_in_path,
     format_offset,
     get_audio_duration,
     safe_ascii_upload_path,
@@ -277,6 +278,7 @@ def prepare_16k_mono_mp3(audio_path: Path) -> Tuple[Path, bool]:
     Transcode input audio to a 16kHz mono 64kbps MP3 file for Chirp 3 ingestion.
     Returns (mp3_path, is_temporary).
     """
+    ensure_ffmpeg_in_path()
     temp_mp3 = Path(tempfile.gettempdir()) / f"chirp3_16k_{uuid.uuid4().hex[:8]}.mp3"
     cmd = [
         "ffmpeg",
@@ -561,6 +563,7 @@ def run_track_b_micro(
             if num_chunks == 1 and c_start == 0.0:
                 upload_source = mp3_path
             else:
+                ensure_ffmpeg_in_path()
                 temp_chunk = Path(tempfile.gettempdir()) / f"chirp3_chunk_{run_id}_{chunk_idx:02d}.mp3"
                 slice_cmd = [
                     "ffmpeg",
