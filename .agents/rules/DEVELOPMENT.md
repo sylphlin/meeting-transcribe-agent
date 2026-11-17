@@ -1,6 +1,9 @@
-# Meeting Transcribe Agent — Workspace & Development Rules (AGENTS.md)
+---
+trigger: always_on
+---
+# Meeting Transcribe Agent — Workspace & Development Rules
 
-This file defines the authoritative rules for AI Coding Agents (Google Antigravity / Jetski, Claude Code, Codex, etc.) working in this repository. It covers both **Client Execution Invariants** (when running the meeting transcription and intelligence pipeline for end users) and **Repository Engineering Standards** (when developing, maintaining, or extending this project).
+This file defines the authoritative rules for AI Coding Agents working in this repository. It covers both **Client Execution Invariants** (when running the meeting transcription and intelligence pipeline for end users) and **Repository Engineering Standards** (when developing, maintaining, or extending this project).
 
 ---
 
@@ -10,13 +13,13 @@ This file defines the authoritative rules for AI Coding Agents (Google Antigravi
    - Execute all meeting transcription, diarization, glossary extraction, minutes structuring, and interactive HTML player generation exclusively via the official scripts in `skills/meeting-transcribe-agent/scripts/`.
    - Writing temporary Python scripts or ad-hoc transcription/summarization scripts is **STRICTLY FORBIDDEN**.
 2. **Direct CLI Invocation from `<PLUGIN_ROOT>`**:
-   - Resolve `<PLUGIN_ROOT>` as two directory levels above `skills/meeting-transcribe-agent/SKILL.md` (`../../`, e.g., `/Users/sylph/.gemini/config/plugins/meeting-transcribe-agent`).
+   - Resolve `<PLUGIN_ROOT>` as two directory levels above `skills/meeting-transcribe-agent/SKILL.md` (`../../`, e.g., `~/.gemini/config/plugins/meeting-transcribe-agent`).
    - Set `Cwd` to `<PLUGIN_ROOT>` and run `python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py` directly via `run_command`. Do NOT search for global CLI aliases with `find_by_name` or `list_dir`.
 3. **Explicit Engine Selection & Fail-Fast Protocol**:
    - **Default to Cloud Engine (`--engine gemini`)**: The local Whisper engine (`--engine whisper`) is strictly user-explicit and MUST NEVER be activated autonomously as a silent fallback.
    - **Fail-Fast on External Infrastructure & Auth Errors**: Whenever encountering external authentication (`401`, `RefreshError`), permission denials (`403 AccessDeniedException`), cloud storage, or quota errors, stop immediately, report the exact error and exit status, and instruct the user to run `./setup.sh` or `gcloud auth application-default login`.
 4. **Strict Zero-Emoji Policy & Verbatim Language Integrity**:
-   - Do NOT use decorative emojis or icons (e.g., 📌, 🎯, 💡, ⚖️, 📋, 🎙️) in section headings (`## 1. `, `## 2. `, etc.), sub-headings, or table headers.
+   - Do NOT use decorative emojis or icons in section headings (`## 1. `, `## 2. `, etc.), sub-headings, or table headers.
    - Section 6 (Full Verbatim Transcript) MUST strictly preserve the original spoken language and words of each participant without translation.
 
 ---
@@ -25,8 +28,8 @@ This file defines the authoritative rules for AI Coding Agents (Google Antigravi
 
 When modifying code, prompts, infrastructure scripts, or documentation in this repository, you MUST adhere to the following engineering standards:
 
-### 1. Single Source of Truth (SSOT) Directory Architecture (Agent Plugins 1.0 Specification)
-- **Canonical Code Location**: All core scripts (`scripts/*.py`), templates (`assets/*.html`), and prompt specifications (`assets/prompts/*.md`) physically reside inside `skills/meeting-transcribe-agent/scripts/` and `skills/meeting-transcribe-agent/assets/` in compliance with the [Agent Plugins 1.0 Specification](https://agent-plugins.org/specification) (§4.2 & §7.1). Do not create root-level symlinks or duplicate physical directories at the repository root.
+### 1. Single Source of Truth (SSOT) Directory Architecture
+- **Canonical Code Location**: All core scripts (`scripts/*.py`), templates (`assets/*.html`), and prompt specifications (`assets/prompts/*.md`) physically reside inside `skills/meeting-transcribe-agent/scripts/` and `skills/meeting-transcribe-agent/assets/`. Do not create root-level symlinks or duplicate physical directories at the repository root.
 - **Downstream Enterprise Mirror**: `gemini-enterprise/app/core/` and `gemini-enterprise/app/assets/` are downstream mirrors required by `agents-cli` Docker scoping. Always edit files under `skills/meeting-transcribe-agent/scripts/` and `skills/meeting-transcribe-agent/assets/` first, then port upstream changes down to `gemini-enterprise/`.
 
 ### 2. Universal Multi-Language Support (Zero Hardcoded Branching)
@@ -52,5 +55,5 @@ When modifying code, prompts, infrastructure scripts, or documentation in this r
   ```
 
 ### 6. Antigravity Plugin Architecture, 5-Language Parity, & Commit Policy
-- **Plugin & README Synchronization**: Keep [plugin.json](file:///Users/sylph/Documents/Antigravity/meeting-transcribe-agent/plugin.json), [rules/AGENTS.md](file:///Users/sylph/Documents/Antigravity/meeting-transcribe-agent/rules/AGENTS.md), [skills/meeting-transcribe-agent/SKILL.md](file:///Users/sylph/Documents/Antigravity/meeting-transcribe-agent/skills/meeting-transcribe-agent/SKILL.md), and all 5 language READMEs ([README.md](file:///Users/sylph/Documents/Antigravity/meeting-transcribe-agent/README.md), [README.zh-TW.md](file:///Users/sylph/Documents/Antigravity/meeting-transcribe-agent/README.zh-TW.md), [README.zh-CN.md](file:///Users/sylph/Documents/Antigravity/meeting-transcribe-agent/README.zh-CN.md), [README.ja.md](file:///Users/sylph/Documents/Antigravity/meeting-transcribe-agent/README.ja.md), [README.ko.md](file:///Users/sylph/Documents/Antigravity/meeting-transcribe-agent/README.ko.md)) synchronized at all times.
-- **Human Authorship Only**: Author all commits as `sylphlin <sylph.lin@gmail.com>` with zero AI assistant branding or `Co-Authored-By` trailers.
+- **Plugin & README Synchronization**: Keep `plugin.json`, `rules/AGENTS.md`, `.agents/rules/DEVELOPMENT.md`, `skills/meeting-transcribe-agent/SKILL.md`, and all 5 language READMEs (`README.md`, `README.zh-TW.md`, `README.zh-CN.md`, `README.ja.md`, `README.ko.md`) synchronized at all times.
+- **Human Authorship Only**: Author all commits using the repository's configured human git user (`sylphlin`) with zero AI assistant branding or `Co-Authored-By` trailers.

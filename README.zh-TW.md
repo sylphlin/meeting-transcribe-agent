@@ -321,16 +321,20 @@ flowchart TD
 ### 專案目錄結構（Agent Plugins 1.0 標準規範）
 ```text
 meeting-transcribe-agent/
-├── plugin.json                                           # Agent Plugins 1.0 宣告清單
+├── plugin.json                                           # Antigravity 外掛宣告清單
+├── assets/
+│   └── logo.svg                                          # 外掛向量圖示
 ├── requirements.txt                                      # 雲端核心 Python 套件與 static-ffmpeg 自動支援
 ├── rules/
 │   └── AGENTS.md                                         # 打包於 Plugin 內的客戶端執行期守則（唯讀與 Fail-Fast）
+├── .agents/
+│   └── rules/
+│       └── DEVELOPMENT.md                                # 工作區與開發工程規範（Part I 執行守則 & Part II 開發規範）
 ├── skills/
 │   └── meeting-transcribe-agent/                         # 標準技能套件主幹（Single Source of Truth）
 │       ├── SKILL.md                                      # 技能規範與 Agent 專用 CLI 參數參考手冊
 │       ├── scripts/                                      # 核心轉錄、雙軌 Chirp 3、對齊引擎與視覺融合模組 (SSOT)
 │       └── assets/                                       # 播放器模板與提示詞規範實體目錄 (SSOT)
-├── AGENTS.md                                             # 工作區與開發工程規範（Part I 執行守則 & Part II 開發規範）
 └── setup.sh / deploy.sh                                  # 原生 gcloud 雲端環境配置與部署腳本
 ```
 

@@ -357,10 +357,15 @@ Select one of the two deployment methods below:
 ### Project Directory Structure (Agent Plugins 1.0 Specification)
 ```text
 meeting-transcribe-agent/
-├── plugin.json                                           # Agent Plugins 1.0 manifest
+├── plugin.json                                           # Antigravity plugin manifest
+├── assets/
+│   └── logo.svg                                          # Plugin vector icon
 ├── requirements.txt                                      # Cloud Python packages & static-ffmpeg fallback
 ├── rules/
 │   └── AGENTS.md                                         # Packaged client execution invariants (read-only & fail-fast)
+├── .agents/
+│   └── rules/
+│       └── DEVELOPMENT.md                                # Workspace & engineering development rules (Part I & Part II)
 ├── skills/
 │   └── meeting-transcribe-agent/                         # Canonical Skill Bundle (Single Source of Truth)
 │       ├── SKILL.md                                      # Skill definition & CLI options reference for AI agents
@@ -380,7 +385,6 @@ meeting-transcribe-agent/
 │           ├── audio_player_template.html                # 2-pane offline audio player template
 │           ├── video_player_template.html                # 3-pane video player template
 │           └── prompts/                                  # Structured Markdown prompts
-├── AGENTS.md                                             # Workspace & engineering development rules (Part I & Part II)
 ├── setup.sh                                              # Native gcloud setup script
 └── deploy.sh                                             # Native gcloud deployment to Vertex AI Agent Runtime
 ```

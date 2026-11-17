@@ -111,16 +111,20 @@ chmod +x setup.sh deploy.sh
 ### 프로젝트 디렉터리 구조 (Agent Plugins 1.0 표준)
 ```text
 meeting-transcribe-agent/
-├── plugin.json                                           # Agent Plugins 1.0 매니페스트
+├── plugin.json                                           # Antigravity 플러그인 매니페스트
+├── assets/
+│   └── logo.svg                                          # 플러그인 벡터 아이콘
 ├── requirements.txt                                      # 클라우드 Python 패키지 및 static-ffmpeg 자동 폴백
 ├── rules/
 │   └── AGENTS.md                                         # 플러그인 내장 AI 클라이언트 실행 규칙 (읽기 전용, Fail-Fast)
+├── .agents/
+│   └── rules/
+│       └── DEVELOPMENT.md                                # 워크스페이스 및 개발 표준 (Part I & Part II)
 ├── skills/
 │   └── meeting-transcribe-agent/                         # 표준 스킬 번들 (Single Source of Truth)
 │       ├── SKILL.md                                      # 스킬 정의 및 에이전트 전용 CLI 레퍼런스
 │       ├── scripts/                                      # 전사, 듀얼 패스 Chirp 3, 비전 융합 핵심 모듈 (SSOT)
 │       └── assets/                                       # 플레이어 템플릿 및 프롬프트 사양 (SSOT)
-├── AGENTS.md                                             # 워크스페이스 및 개발 표준 (Part I & Part II)
 └── setup.sh / deploy.sh                                  # 네이티브 gcloud 설정 및 배포 스크립트
 ```
 

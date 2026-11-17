@@ -112,16 +112,20 @@ chmod +x setup.sh deploy.sh
 ### 项目目录结构（Agent Plugins 1.0 标准规范）
 ```text
 meeting-transcribe-agent/
-├── plugin.json                                           # Agent Plugins 1.0 清单
+├── plugin.json                                           # Antigravity 插件清单
+├── assets/
+│   └── logo.svg                                          # 插件矢量图标
 ├── requirements.txt                                      # 云端核心 Python 包与 static-ffmpeg 自动支持
 ├── rules/
 │   └── AGENTS.md                                         # 随 Plugin 打包的客户端执行期守则（只读与 Fail-Fast）
+├── .agents/
+│   └── rules/
+│       └── DEVELOPMENT.md                                # 工作区与开发工程规范（Part I & Part II）
 ├── skills/
 │   └── meeting-transcribe-agent/                         # 标准技能主干目录（Single Source of Truth）
 │       ├── SKILL.md                                      # 技能规范与 Agent 专用 CLI 参数手册
 │       ├── scripts/                                      # 核心转录、双轨 Chirp 3、对齐引擎与视觉融合模块 (SSOT)
 │       └── assets/                                       # 播放器模板与提示词规范实体目录 (SSOT)
-├── AGENTS.md                                             # 工作区与开发工程规范（Part I & Part II）
 └── setup.sh / deploy.sh                                  # 原生 gcloud 云端环境配置与部署脚本
 ```
 

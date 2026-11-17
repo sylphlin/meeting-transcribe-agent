@@ -1,8 +1,10 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "meeting-transcribe-agent",
   "displayName": "Meeting Transcribe Agent",
   "version": "1.0.0",
+  "category": "productivity",
+  "logo": "assets/logo.svg",
   "description": "Universal meeting intelligence and interactive verbatim transcription suite. Features native Multimodal Video Pipeline (YouTube URLs & local video files), Dual-Pass Google Cloud Speech-to-Text v2 Chirp 3 (chirp_3) acoustic diarization and word-timestamp alignment, local Apple Silicon MLX/Whisper + Sherpa-ONNX diarization, Gemini 3.8 Flash minutes structuring and semantic paragraph segmentation, canonical speaker consolidation, and standalone zero-dependency interactive HTML playback player.",
   "author": {
     "name": "sylphlin",

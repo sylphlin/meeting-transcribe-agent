@@ -30,10 +30,15 @@ This suite strictly complies with the [Agent Plugins 1.0](https://agent-plugins.
 
 ```text
 meeting-transcribe-agent/
-├── plugin.json                       # Agent Plugins 1.0 manifest
+├── plugin.json                       # Antigravity plugin manifest
+├── assets/
+│   └── logo.svg                      # Plugin vector icon
 ├── requirements.txt                  # Core cloud Python packages & static-ffmpeg cross-platform fallback
 ├── rules/
 │   └── AGENTS.md                     # Plugin runtime invariants (read-only execution & fail-fast)
+├── .agents/
+│   └── rules/
+│       └── DEVELOPMENT.md            # Workspace & engineering development rules
 ├── skills/
 │   └── meeting-transcribe-agent/     # Canonical skill bundle (SSOT)
 │       ├── SKILL.md                  # Skill definition and agent reference manual
@@ -56,7 +61,6 @@ meeting-transcribe-agent/
 │           └── prompts/              # Structured Markdown prompts
 │               ├── minutes_prompt.md # Stage 2 minutes structuring & universal language localization prompt
 │               └── audio_glossary_prompt.md # Track 1 audio pre-scan entity mining
-├── AGENTS.md                         # Workspace & engineering development rules
 ├── setup.sh                          # Automated Google Cloud environment setup (APIs, GCS, CORS/Lifecycle, .env)
 └── deploy.sh                         # Native gcloud deployment to Vertex AI Agent Runtime & Gemini Enterprise
 ```
@@ -97,7 +101,7 @@ meeting-transcribe-agent/
 ## Standard Agent Workflow (Autonomous Pipeline Execution)
 
 When Antigravity or any compatible agent is instructed by the user to transcribe, summarize, or analyze a meeting (audio file, video file, or YouTube URL), follow this protocol directly.
-Resolve `<PLUGIN_ROOT>` as the repository or plugin root located two levels above `skills/meeting-transcribe-agent/SKILL.md` (`../../`, for example `/Users/sylph/.gemini/config/plugins/meeting-transcribe-agent`).
+Resolve `<PLUGIN_ROOT>` as the repository or plugin root located two levels above `skills/meeting-transcribe-agent/SKILL.md` (`../../`, for example `~/.gemini/config/plugins/meeting-transcribe-agent`).
 Set `Cwd` to `<PLUGIN_ROOT>` and invoke `python3 skills/meeting-transcribe-agent/scripts/meeting_transcribe.py` directly. Do not search the filesystem with `find_by_name` or `list_dir` to locate global CLI aliases.
 
 ### Fail-Fast & Engine Selection Protocol
